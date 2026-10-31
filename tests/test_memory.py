@@ -60,3 +60,10 @@ def test_memory_search_does_not_return_unrelated_records(tmp_path):
     manager.remember("AETHER runs on Windows")
     manager.remember("The best pizza has a thin crust")
     assert manager.search("quantum chemistry") == []
+
+def test_superseded_memory_cannot_be_corrected_twice(tmp_path):
+    manager = MemoryManager(Store(tmp_path / "memory.sqlite3"))
+    original = manager.remember("Old fact")
+    manager.correct(original, "Corrected fact", "The original was inaccurate")
+    with pytest.raises(ValueError, match="already been superseded"):
+        manager.correct(original, "Another version", "Do not fork a correction chain")
