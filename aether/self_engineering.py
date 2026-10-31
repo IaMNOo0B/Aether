@@ -1,7 +1,7 @@
 """Controlled self-engineering: inspect, propose, and test patches without auto-integration."""
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 from uuid import uuid4
 import json
@@ -112,7 +112,9 @@ class SelfEngineer:
                 raise PatchRejected(f"Unsafe patch path: {raw_path}")
             normalized = raw_path[2:] if raw_path.startswith(("a/", "b/")) else raw_path
             normalized_path = Path(normalized)
-            if normalized_path.is_absolute() or normalized_path.drive:
+            windows_path = PureWindowsPath(normalized)
+            if (normalized_path.is_absolute() or normalized_path.drive
+                    or windows_path.is_absolute() or windows_path.drive):
                 raise PatchRejected(f"Absolute patch path is not allowed: {raw_path}")
             if any(
                 normalized == protected or normalized.startswith(protected + "/")
