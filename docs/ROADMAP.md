@@ -36,7 +36,7 @@ This roadmap translates the PROJECT AETHER — OMEGA directive into testable del
 
 ## Stage 3 — Planning and verification
 
-- [ ] Task decomposition and dependency graph.
+- [x] Deterministic dependency graph, cycle detection, ready-step frontier, and persisted plan progress.\n- [ ] LLM-assisted task decomposition with user-reviewable plans.
 - [ ] Plan/action/observation/verification state machine.
 - [ ] Independent validators for tool results.
 - [ ] Failure taxonomy and resumable task recovery.
