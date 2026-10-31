@@ -134,6 +134,54 @@ class Store:
             )
             return int(cursor.lastrowid)
 
+
+    def get_memory(self, memory_id: int) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT id, content, source, status, metadata_json, created_at FROM memories WHERE id=?",
+                (memory_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["metadata"] = json.loads(item.pop("metadata_json"))
+        return item
+
+    def list_memories(self, limit: int = 5000) -> list[dict[str, Any]]:
+        if limit < 1:
+            return []
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT id, content, source, status, metadata_json, created_at
+                   FROM memories ORDER BY id DESC LIMIT ?""",
+                (min(limit, 20000),),
+            ).fetchall()
+        items = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = json.loads(item.pop("metadata_json"))
+            items.append(item)
+        return items
+
+    def update_memory(
+        self, memory_id: int, *, status: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT status, metadata_json FROM memories WHERE id=?", (memory_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown memory: {memory_id}")
+            next_status = row["status"] if status is None else status
+            next_metadata = (
+                json.loads(row["metadata_json"]) if metadata is None else metadata
+            )
+            db.execute(
+                "UPDATE memories SET status=?, metadata_json=? WHERE id=?",
+                (next_status, json.dumps(next_metadata), memory_id),
+            )
+
     def search_memories(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
         terms = [term.strip() for term in query.split() if len(term.strip()) > 2]
         if not terms or limit < 1:
