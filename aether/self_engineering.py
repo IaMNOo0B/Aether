@@ -103,12 +103,16 @@ class SelfEngineer:
         if "GIT binary patch" in patch or chr(0) in patch:
             raise PatchRejected("Binary patches are not accepted")
         for line in patch.splitlines():
+            if line.startswith(("old mode ", "new mode ", "new file mode ", "deleted file mode ")):
+                raise PatchRejected("File mode and symlink changes are not accepted")
             if not (line.startswith("--- ") or line.startswith("+++ ")):
                 continue
             raw_path = line[4:].split("\t", 1)[0]
             if raw_path == "/dev/null":
                 continue
-            if raw_path.startswith(("/", "\\")) or ".." in Path(raw_path).parts:
+            if (raw_path.startswith(("/", "\\")) or "\\" in raw_path
+                    or ".." in Path(raw_path).parts
+                    or ".." in PureWindowsPath(raw_path).parts):
                 raise PatchRejected(f"Unsafe patch path: {raw_path}")
             normalized = raw_path[2:] if raw_path.startswith(("a/", "b/")) else raw_path
             normalized_path = Path(normalized)

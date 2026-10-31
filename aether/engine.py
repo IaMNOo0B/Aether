@@ -4,14 +4,35 @@ from __future__ import annotations
 import logging
 
 from aether.config import Settings
+from aether.decisions import DecisionManager
 from aether.context import fit_messages
 from aether.learning import SkillLearner
+from aether.memory import MemoryManager
 from aether.ollama import ModelUnavailable
-from aether.providers import build_registry
+from aether.providers import ProviderChain, build_registry
+from aether.self_model import SelfModel
 from aether.storage import Store
 from aether.tasks import TaskManager
 
 logger = logging.getLogger(__name__)
+
+
+BUILTIN_CAPABILITIES = (
+    ("identity.self_model", "Persistent self-model", "Versioned operational identity and evidence-backed capability records."),
+    ("memory.ranked_lexical", "Ranked local memory", "Typed memory records, BM25-style retrieval and correction lineage."),
+    ("tasks.event_recovery", "Task continuity and recovery", "Atomic task transitions, event history, checkpoints and conservative interruption recovery."),
+    ("providers.openai_compatible", "OpenAI-compatible provider", "Chat Completions adapter with environment-based API key lookup."),
+    ("providers.failover", "Provider failover", "Ordered fallback across explicitly configured model endpoints."),
+    ("research.indexed_sources", "Indexed-source research", "Bounded Crossref, arXiv and Wikipedia research with provenance."),
+    ("autonomy.bounded_tools", "Bounded autonomous tools", "Fixed tool registry with workspace containment and per-action approval."),
+    ("desktop.allowlisted", "Allowlisted desktop control", "Limited Windows application launch and approval-gated input."),
+    ("voice.offline_push_to_talk", "Offline push-to-talk voice", "Optional Vosk speech recognition and local speech output."),
+    ("learning.procedural_skills", "Procedural skill records", "Draft and manually validated reusable procedures."),
+    ("agents.sequential_specialists", "Sequential specialist agents", "Researcher, planner and critic role outputs with persistence."),
+    ("evolution.candidate_patches", "Candidate self-engineering", "Patch proposal and candidate testing without automatic production integration."),
+    ("calibration.outcome_metrics", "Outcome calibration metrics", "Brier, log loss, ECE and selective-risk measurements on resolved outcomes."),
+    ("decisions.empirical_abstention", "Evidence-based abstention gate", "Domain- and confidence-band-specific Wilson lower-bound policy."),
+)
 
 SYSTEM_PROMPT = (
     "You are AETHER, a practical AI assistant. Be accurate and direct. "
@@ -29,26 +50,51 @@ class AetherEngine:
             settings.models.base_url,
             settings.models.model,
             settings.models.timeout_seconds,
+            settings.models.provider,
+            settings.models.api_key_env,
+            settings.models.fallbacks,
         )
+        provider_sequence = [
+            (settings.models.provider, self.registry.get(settings.models.provider))
+        ]
+        provider_sequence.extend(
+            (f"fallback_{index}", self.registry.get(f"fallback_{index}"))
+            for index in range(1, len(settings.models.fallbacks) + 1)
+        )
+        self.provider_chain = ProviderChain(provider_sequence)
         self.tasks = TaskManager(store)
+        self.memory = MemoryManager(store)
+        self.decisions = DecisionManager(store)
+        self.self_model = SelfModel(
+            store.path, settings.app.name, "0.3.0"
+        )
+        for capability_id, name, description in BUILTIN_CAPABILITIES:
+            self.self_model.register_capability(
+                capability_id, name, description,
+                state="implemented_unverified",
+                limitations=["Capability record is not a substitute for its end-to-end acceptance test."],
+            )
         self.skills = SkillLearner(
             store,
-            self.registry.get(settings.models.provider) if settings.models.enabled else None,
+            self.provider() if settings.models.enabled else None,
         )
 
     def provider(self):
         if not self.settings.models.enabled:
             raise ModelUnavailable("The configured language model is disabled")
-        return self.registry.get(self.settings.models.provider)
+        return self.provider_chain
 
     def status(self) -> dict[str, object]:
-        provider = self.registry.get(self.settings.models.provider)
-        available = provider.is_available() if self.settings.models.enabled else False
+        available = self.provider_chain.is_available() if self.settings.models.enabled else False
+        identity = self.self_model.snapshot()
         return {
             "name": self.settings.app.name,
-            "version": "0.3.0",
+            "version": identity["version"],
+            "identity_id": identity["identity_id"],
             "provider": self.settings.models.provider,
             "registered_providers": self.registry.names(),
+            "fallback_count": len(self.settings.models.fallbacks),
+            "last_successful_provider": self.provider_chain.last_provider,
             "model": self.settings.models.model,
             "model_enabled": self.settings.models.enabled,
             "model_reachable": available,
@@ -56,6 +102,7 @@ class AetherEngine:
             "autonomy_enabled": self.settings.autonomy.enabled,
             "desktop_enabled": self.settings.desktop.enabled,
             "voice_enabled": self.settings.voice.enabled,
+            "capability_records": len(identity["capabilities"]),
             "database": str(self.store.path),
         }
 
@@ -68,12 +115,13 @@ class AetherEngine:
         task = self.tasks.create("Respond to user message", {"input_length": len(text)})
         self.tasks.transition(task.id, "running")
         try:
-            memories = self.store.search_memories(text)
+            memories = self.memory.search(text, limit=8)
             memory_context = ""
             if memories:
                 memory_context = "\n\nRelevant stored memories (verify before relying on them):\n"
                 memory_context += "\n".join(
-                    f"- [{item['source']}; {item['status']}] {item['content']}"
+                    f"- [{item['kind']}; {item['source']}; {item['status']}; "
+                    f"relevance={item['relevance']:.3f}] {item['content']}"
                     for item in memories
                 )
 

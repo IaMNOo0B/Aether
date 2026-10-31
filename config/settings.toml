@@ -9,6 +9,19 @@ enabled = false
 base_url = "http://127.0.0.1:11434"
 model = "phi3:mini-4k-q4_0"
 timeout_seconds = 120
+# For openai_compatible only: read the API key from this environment variable.
+# Leave empty for local OpenAI-compatible servers that do not require a key.
+api_key_env = "AETHER_API_KEY"
+
+# Optional ordered fallback endpoints. AETHER tries the primary provider first,
+# then each fallback only when the previous provider raises a provider error.
+# API keys are read from the named environment variable, never stored here.
+# [[models.fallbacks]]
+# provider = "openai_compatible"
+# base_url = "https://api.example.com/v1"
+# model = "your-model"
+# timeout_seconds = 120
+# api_key_env = "AETHER_CLOUD_KEY"
 
 [storage]
 database = "data/aether.sqlite3"
@@ -42,3 +55,9 @@ enabled = false
 wake_word = "jarvis"
 vosk_model_path = "models/vosk"
 speak_responses = true
+
+[scheduler]
+# Off by default. When enabled, scheduled goals run through read-only tools only.
+enabled = false
+poll_interval_seconds = 30
+max_tasks_per_tick = 1

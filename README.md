@@ -34,7 +34,7 @@ AETHER stores history, memory, research reports, skills, and task receipts in `d
 3. In `config/settings.toml`, set `enabled = true` under `[models]`.
 4. Ensure Ollama is running, then launch AETHER.
 
-AETHER never downloads models automatically. Phi-3 Mini's 4K context and model capacity limit long research synthesis and complex multi-step reasoning. Keep the local prompt small; the architecture is designed to allow a stronger provider to be added later.
+AETHER never downloads models automatically. Phi-3 Mini's 4K context and model capacity limit long research synthesis and complex multi-step reasoning. AETHER also supports an OpenAI-compatible endpoint (cloud or local) and ordered fallbacks; it does not silently download or substitute models.
 
 ## Implemented capabilities
 
@@ -57,6 +57,50 @@ The model can plan only against a fixed tool registry:
 - Run the repository's pytest suite, only when enabled and individually approved.
 
 There is no arbitrary shell, unrestricted filesystem, arbitrary URL fetch, or Python eval tool. The task plan, progress, and action receipts are persisted. The default configuration disables autonomy and workspace writes.
+
+
+### Model providers and failover
+
+The default provider is Ollama. To use an OpenAI-compatible endpoint such as LM Studio, vLLM or a compatible cloud API, edit `[models]`:
+
+```toml
+provider = "openai_compatible"
+enabled = true
+base_url = "http://127.0.0.1:1234/v1"
+model = "your-loaded-model"
+api_key_env = ""
+```
+
+For a service requiring a key, set `api_key_env = "AETHER_API_KEY"` and provide that environment variable to the AETHER process. Keys are not written to TOML. Optional `[[models.fallbacks]]` entries define ordered fallback endpoints; AETHER tries the primary first and falls back only after a provider error.
+
+### Memory and continuity
+
+- Memories are typed and stored locally with source/status metadata.
+- Retrieval uses a local BM25-style lexical ranker; it is **not** embedding-based semantic search.
+- `/memory-search <query>` shows ranked matches.
+- `/correct-memory id | corrected content | reason` preserves the old record and appends a correction.
+- Task state changes and checkpoints have an append-only event history. `/task-events <full-task-id>` inspects it.
+- On startup, tasks left running by a crash are marked interrupted/failed for manual review. AETHER does not blindly replay uncertain side effects.
+
+### Decisions and calibration
+
+- `/decision-log question | probability_true | domain` records a typed prediction.
+- `/decision-resolve id | true/false` records the observed outcome.
+- `/decision-metrics [domain]` computes outcome-based calibration metrics.
+- `/decision-assess probability_true | domain` uses historical outcomes in the same domain/confidence band and a Wilson lower confidence bound to accept or abstain.
+
+This is a conservative runtime decision gate, **not RLCD training**. Manually supplied probabilities are labelled as user-supplied; they are not treated as calibrated model outputs.
+
+### Scheduled read-only autonomy
+
+Schedules can be created with `/schedule add interval_seconds | objective | max_runs(optional)`, inspected with `/schedule list`, paused/resumed with `/schedule pause ID` and `/schedule resume ID`.
+
+To run them in the background, set all of the following:
+- `[models] enabled = true`
+- `[autonomy] enabled = true`
+- `[scheduler] enabled = true`
+
+The scheduler is disabled by default. It only processes scheduled tasks through read-only tools. It never approves workspace writes or test execution. A model-generated plan that requests a side effect is cancelled rather than approved.
 
 ### Desktop control
 
@@ -117,6 +161,7 @@ A candidate is never automatically merged or copied into production. Git for Win
 - `/tasks` — recent task records.
 - `/diagnostics` — redacted report in `logs/diagnostics.json`.
 - `/calibration` — evaluate explicitly logged binary decision outcomes.
+- `/self-model` — inspect identity and capability evidence states.
 - `/remember <fact>` — save a user-provided memory.
 - `/quit` — exit without deleting data.
 
@@ -131,7 +176,7 @@ A candidate is never automatically merged or copied into production. Git for Win
 
 Implemented in this milestone: source-based research, bounded model-planned tool execution, permission checks, persistent task receipts, allowlisted desktop interaction, optional offline push-to-talk voice, draft-to-validated procedural skills, sequential specialist roles, and isolated patch proposal/evaluation.
 
-Not implemented: always-on background autonomy, general web browsing, unrestricted computer use, independent specialist models, true continual model-weight training, LoRA fine-tuning, meta-learning, a secure OS sandbox, automatic production code integration, full multimodal video understanding, or full RLCD training. The RTX 2060 6 GB target is not suitable for reproducing the referenced 48 GB RLCD training setup.
+Not implemented: autonomous goal discovery, unrestricted/background project autonomy, general web browsing, semantic embedding memory, knowledge graph extraction, independent parallel specialist models, true continual model-weight training, LoRA fine-tuning, meta-learning, a secure OS sandbox, automatic production code integration, full multimodal vision/video understanding, the external RLCD training adapter, or full RLCD training. The RTX 2060 6 GB target is not suitable for reproducing the referenced 48 GB RLCD training setup.
 
 ## Safety and data
 

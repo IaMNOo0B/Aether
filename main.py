@@ -1,8 +1,11 @@
 """AETHER Windows-first command interface."""
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
+from threading import Event, Thread
+from uuid import uuid4
 
 from aether.agents import MultiAgentCoordinator
 from aether.autonomy import AutonomyRunner
@@ -13,6 +16,7 @@ from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.learning import SkillLearner
 from aether.research import ResearchError, Researcher
+from aether.scheduler import AutonomyScheduler
 from aether.self_engineering import SelfEngineer
 from aether.storage import Store
 from aether.voice import VoiceInterface, VoiceUnavailable
@@ -34,16 +38,35 @@ def main() -> int:
         configure_logging(settings.app.log_level)
         store = Store(settings.storage.database)
         engine = AetherEngine(settings, store)
+        recovered_tasks = engine.tasks.recover_interrupted()
     except Exception:
         logging.exception("AETHER could not initialize")
         print("AETHER could not start. Check logs/aether.log and config/settings.toml.")
         return 1
 
+    scheduler = None
+    scheduler_stop = Event()
+    scheduler_thread = None
+    if settings.scheduler.enabled:
+        scheduled_runner = AutonomyRunner(
+            engine.provider(), store, settings.autonomy, settings.limits,
+            settings.research, Path.cwd(),
+        )
+        scheduler = AutonomyScheduler(store, scheduled_runner, settings.scheduler)
+        scheduler_thread = Thread(
+            target=scheduler.run_forever, args=(scheduler_stop,),
+            name="AETHER-Scheduler", daemon=True,
+        )
+        scheduler_thread.start()
+
     status = engine.status()
     print(f"{status['name']} v{status['version']} | Windows-first local AI")
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
-    print("Commands: /status /research /agents /autonomy /learn /skills /desktop /voice")
-    print("          /self-improve /self-improve-test /tasks /reports /calibration /quit\n")
+    if recovered_tasks:
+        print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
+    print("Commands: /status /self-model /tasks /task-events ID /research /agents /autonomy /learn /skills /desktop /voice")
+    print("          /remember /memory-search /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
+    print("          /schedule add|list|pause|resume /self-improve /self-improve-test /reports /calibration /quit\n")
 
     while True:
         try:
@@ -65,12 +88,31 @@ def main() -> int:
                     print(f"{key}: {value}")
                 continue
 
+            if lower == "/self-model":
+                print(json.dumps(engine.self_model.snapshot(), indent=2))
+                print("AETHER > Capability states require concrete evidence; module presence is not verification.")
+                continue
+
             if lower == "/tasks":
                 tasks = store.list_tasks(limit=15)
                 if not tasks:
                     print("AETHER > No recorded tasks.")
                 for task in tasks:
-                    print(f"{task['id'][:8]} | {task['status']} | {task['objective']}")
+                    print(f"{task['id']} | {task['status']} | {task['objective']}")
+                continue
+
+            if lower.startswith("/task-events "):
+                task_id = user_text[len("/task-events "):].strip()
+                events = engine.tasks.events(task_id)
+                if not events:
+                    print("AETHER > No audit events recorded for this task.")
+                for event in events:
+                    print(
+                        f"#{event['sequence']} {event['created_at']} | "
+                        f"{event['event_type']} | {event['from_status']} -> {event['to_status']}"
+                    )
+                    if event["payload"]:
+                        print(json.dumps(event["payload"], indent=2))
                 continue
 
             if lower == "/diagnostics":
@@ -88,6 +130,96 @@ def main() -> int:
                 print(f"Brier: {report.brier_score:.4f} | Log loss: {report.log_loss:.4f}")
                 print(f"ECE: {report.expected_calibration_error:.4f} | AURC: {report.aurc:.4f}")
                 print(f"Coverage at 5% risk: {report.coverage_at_risk:.1%}")
+                continue
+
+            if lower.startswith("/decision-log "):
+                parts = user_text[len("/decision-log "):].split("|", 2)
+                if len(parts) != 3:
+                    print("Usage: /decision-log question | probability_true | domain")
+                    continue
+                decision_id = engine.decisions.log_prediction(
+                    parts[0].strip(), float(parts[1].strip()), parts[2].strip()
+                )
+                print(f"AETHER > Decision logged: {decision_id}. Resolve it when the real outcome is known.")
+                continue
+
+            if lower.startswith("/decision-resolve "):
+                parts = user_text[len("/decision-resolve "):].split("|", 1)
+                if len(parts) != 2 or parts[1].strip().casefold() not in {"true", "false"}:
+                    print("Usage: /decision-resolve decision-id | true/false")
+                    continue
+                engine.decisions.resolve(
+                    parts[0].strip(), parts[1].strip().casefold() == "true"
+                )
+                print("AETHER > Outcome recorded.")
+                continue
+
+            if lower.startswith("/decision-assess "):
+                parts = user_text[len("/decision-assess "):].split("|", 1)
+                if len(parts) != 2:
+                    print("Usage: /decision-assess probability_true | domain")
+                    continue
+                assessment = engine.decisions.assess(
+                    float(parts[0].strip()), parts[1].strip()
+                )
+                print(f"AETHER > Policy: {assessment.action.upper()}")
+                print(f"Confidence: {assessment.confidence:.3f} | Samples: {assessment.sample_count}")
+                if assessment.empirical_accuracy is not None:
+                    print(
+                        f"Observed accuracy: {assessment.empirical_accuracy:.3f} | "
+                        f"Wilson lower bound: {assessment.wilson_lower_bound:.3f}"
+                    )
+                print(assessment.reason)
+                continue
+
+            if lower.startswith("/decision-metrics"):
+                domain = user_text[len("/decision-metrics"):].strip() or None
+                report = engine.decisions.metrics(domain)
+                print(f"Resolved decisions: {report.count}")
+                print(
+                    f"Brier: {report.brier_score:.4f} | Log loss: {report.log_loss:.4f} | "
+                    f"ECE: {report.expected_calibration_error:.4f} | AURC: {report.aurc:.4f}"
+                )
+                continue
+
+            if lower.startswith("/schedule "):
+                parts = user_text[len("/schedule "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                if action == "add":
+                    fields = argument.split("|", 2)
+                    if len(fields) not in {2, 3}:
+                        print("Usage: /schedule add interval_seconds | objective | max_runs(optional; 0=unlimited)")
+                        continue
+                    interval = int(fields[0].strip())
+                    objective = fields[1].strip()
+                    max_runs = int(fields[2].strip()) if len(fields) == 3 else 0
+                    schedule_id = uuid4().hex
+                    store.create_schedule(schedule_id, objective, interval, max_runs)
+                    print(f"AETHER > Read-only scheduled goal created: {schedule_id}")
+                    continue
+                if action == "list":
+                    schedules = store.list_schedules()
+                    if not schedules:
+                        print("AETHER > No scheduled goals.")
+                    for item in schedules:
+                        print(
+                            f"{item['id']} | {'enabled' if item['enabled'] else 'paused'} | "
+                            f"every {item['interval_seconds']}s | runs {item['run_count']}/"
+                            f"{item['max_runs'] or 'unlimited'} | {item['objective']}"
+                        )
+                    continue
+                if action in {"pause", "resume"} and argument.strip():
+                    store.set_schedule_enabled(argument.strip(), action == "resume")
+                    print(f"AETHER > Schedule {argument.strip()} {action}d.")
+                    continue
+                if action == "tick":
+                    if scheduler is None:
+                        print("AETHER > Scheduler is disabled. Enable [scheduler], [autonomy] and [models] in config/settings.toml.")
+                    else:
+                        print(json.dumps(scheduler.run_once(), indent=2))
+                    continue
+                print("Usage: /schedule add|list|pause ID|resume ID|tick")
                 continue
 
             if lower.startswith("/research "):
@@ -251,10 +383,38 @@ def main() -> int:
             if lower.startswith("/remember "):
                 memory = user_text[len("/remember "):].strip()
                 if memory:
-                    store.add_memory(memory, source="user", status="user-provided")
-                    print("AETHER > Saved to local memory.")
+                    memory_id = engine.memory.remember(
+                        memory, source="user", kind="semantic", status="user-provided"
+                    )
+                    print(f"AETHER > Saved memory #{memory_id}.")
                 else:
                     print("AETHER > Usage: /remember information to save")
+                continue
+
+            if lower.startswith("/memory-search "):
+                query = user_text[len("/memory-search "):].strip()
+                matches = engine.memory.search(query, limit=10)
+                if not matches:
+                    print("AETHER > No relevant memories found.")
+                for item in matches:
+                    print(
+                        f"#{item['id']} [{item['kind']}; {item['status']}; "
+                        f"relevance={item['relevance']:.3f}] {item['content']}"
+                    )
+                continue
+
+            if lower.startswith("/correct-memory "):
+                parts = user_text[len("/correct-memory "):].split("|", 2)
+                if len(parts) != 3:
+                    print("Usage: /correct-memory memory-id | corrected content | reason")
+                    continue
+                new_id = engine.memory.correct(
+                    int(parts[0].strip()), parts[1].strip(), parts[2].strip()
+                )
+                print(
+                    f"AETHER > Correction saved as memory #{new_id}. "
+                    "The previous record is preserved as superseded."
+                )
                 continue
 
             print(f"AETHER > {engine.respond(user_text)}\n")
@@ -264,6 +424,9 @@ def main() -> int:
             logging.exception("Command failed")
             print("AETHER > The command failed. Check logs/aether.log for details.")
 
+    if scheduler_thread is not None:
+        scheduler_stop.set()
+        scheduler_thread.join(timeout=5)
     return 0
 
 

@@ -232,10 +232,15 @@ class AutonomyRunner:
             raise ValueError("Task was not created by the autonomy queue")
         self.tasks.transition(task_id, "running")
         receipts: list[dict[str, Any]] = []
+        preserved_state = {
+            key: value for key, value in task_data["state"].items()
+            if key not in {"plan", "receipts", "current_step"}
+        }
         try:
             steps = self._make_plan(task_data["objective"])
-            self.store.save_task(task_id, task_data["objective"], "running", {
-                "kind": "autonomy", "plan": steps, "receipts": receipts,
+            self.tasks.checkpoint(task_id, {
+                **preserved_state, "kind": "autonomy",
+                "plan": steps, "receipts": receipts,
             })
             for index, step in enumerate(steps, start=1):
                 result = self.gateway.execute(step["tool"], step.get("args", {}), approval)
@@ -244,15 +249,17 @@ class AutonomyRunner:
                     "human_approved": step["tool"] in {"workspace.write", "tests.run"},
                     "result": result,
                 })
-                self.store.save_task(task_id, task_data["objective"], "running", {
-                    "kind": "autonomy", "plan": steps, "receipts": receipts,
+                self.tasks.checkpoint(task_id, {
+                    **preserved_state, "kind": "autonomy",
+                    "plan": steps, "receipts": receipts,
                     "current_step": index,
                 })
                 if step["tool"] == "tests.run" and not result.get("passed", False):
                     raise RuntimeError("Independent test suite failed; autonomy task rejected")
             test_receipts = [item for item in receipts if item["tool"] == "tests.run"]
             final_state = {
-                "kind": "autonomy", "plan": steps, "receipts": receipts,
+                **preserved_state, "kind": "autonomy",
+                "plan": steps, "receipts": receipts,
                 "verified": bool(test_receipts) and all(
                     item["result"].get("passed", False) for item in test_receipts
                 ),
@@ -261,12 +268,13 @@ class AutonomyRunner:
             return {"task_id": task_id, "status": "completed", **final_state}
         except ActionDeclined as exc:
             self.tasks.transition(task_id, "cancelled", {
-                "kind": "autonomy", "receipts": receipts, "reason": str(exc),
+                **preserved_state, "kind": "autonomy",
+                "receipts": receipts, "reason": str(exc),
             })
             return {"task_id": task_id, "status": "cancelled", "receipts": receipts, "reason": str(exc)}
         except Exception as exc:
             self.tasks.transition(task_id, "failed", {
-                "kind": "autonomy", "receipts": receipts,
+                **preserved_state, "kind": "autonomy", "receipts": receipts,
                 "error_type": type(exc).__name__, "error": str(exc)[:1000],
             })
             raise
