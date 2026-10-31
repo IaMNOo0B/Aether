@@ -182,6 +182,43 @@ class Store:
                 (next_status, json.dumps(next_metadata), memory_id),
             )
 
+
+    def supersede_memory(
+        self, memory_id: int, content: str, reason: str, *,
+        source: str, status: str, metadata: dict[str, Any],
+    ) -> int:
+        """Atomically preserve an old memory and append its corrected successor."""
+        text = content.strip()
+        explanation = reason.strip()
+        if not text or not explanation:
+            raise ValueError("Replacement content and correction reason are required")
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status, metadata_json FROM memories WHERE id=?", (memory_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown memory: {memory_id}")
+            if row["status"] == "superseded":
+                raise ValueError("Memory has already been superseded")
+            successor_metadata = dict(metadata)
+            successor_metadata["supersedes_memory_id"] = memory_id
+            cursor = db.execute(
+                """INSERT INTO memories(content, source, status, metadata_json, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (text, source, status, json.dumps(successor_metadata), now),
+            )
+            successor_id = int(cursor.lastrowid)
+            previous_metadata = json.loads(row["metadata_json"])
+            previous_metadata["superseded_by_id"] = successor_id
+            previous_metadata["superseded_by_reason"] = explanation
+            db.execute(
+                "UPDATE memories SET status='superseded', metadata_json=? WHERE id=?",
+                (json.dumps(previous_metadata), memory_id),
+            )
+        return successor_id
+
     def search_memories(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
         terms = [term.strip() for term in query.split() if len(term.strip()) > 2]
         if not terms or limit < 1:
