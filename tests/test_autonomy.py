@@ -66,3 +66,36 @@ def test_autonomy_rejects_unknown_model_generated_tools(tmp_path):
         pass
     else:
         raise AssertionError("Unknown tool should be denied")
+
+
+def test_autonomy_gateway_blocks_workspace_path_traversal(tmp_path):
+    from aether.autonomy import ToolDenied
+
+    store = Store(tmp_path / "aether.sqlite3")
+    runner = AutonomyRunner(
+        FakeProvider('{"steps":[{"tool":"workspace.list","args":{}}]}'),
+        store, AutonomySettings(enabled=True), LimitSettings(), ResearchSettings(), tmp_path
+    )
+    try:
+        runner.gateway.execute("workspace.read", {"path": "../../outside.txt"})
+    except ToolDenied:
+        pass
+    else:
+        raise AssertionError("Workspace traversal must be blocked")
+
+
+def test_autonomy_gateway_obeys_research_feature_flag(tmp_path):
+    from aether.autonomy import ToolDenied
+
+    store = Store(tmp_path / "aether.sqlite3")
+    runner = AutonomyRunner(
+        FakeProvider('{"steps":[{"tool":"research.search","args":{"query":"test"}}]}'),
+        store, AutonomySettings(enabled=True), LimitSettings(),
+        ResearchSettings(enabled=False), tmp_path
+    )
+    try:
+        runner.gateway.execute("research.search", {"query": "test"})
+    except ToolDenied as exc:
+        assert "Research is disabled" in str(exc)
+    else:
+        raise AssertionError("Research flag must be enforced inside the tool gateway")
