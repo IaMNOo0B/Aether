@@ -137,3 +137,9 @@ def test_memory_correction_indexes_the_new_record_when_available(tmp_path):
     assert store.get_memory_embedding(old_id, "fake-embedding-v1") is not None
     assert store.get_memory_embedding(new_id, "fake-embedding-v1") == [1.0, 0.0]
     assert [item["id"] for item in manager.search("feline")] == [new_id]
+
+def test_store_rejects_invalid_embedding_vectors(tmp_path):
+    store = Store(tmp_path / "memory.sqlite3")
+    memory_id = store.add_memory("test")
+    with pytest.raises(ValueError, match="finite numeric"):
+        store.save_memory_embedding(memory_id, "bad-model", [0.1, float("nan")])
