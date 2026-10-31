@@ -91,6 +91,16 @@ For a service requiring a key, set `api_key_env = "AETHER_API_KEY"` and provide 
 
 This is a conservative runtime decision gate, **not RLCD training**. Manually supplied probabilities are labelled as user-supplied; they are not treated as calibrated model outputs.
 
+### Emergency stop
+
+- `/emergency-stop` immediately records a persistent stop flag in SQLite.
+- It blocks new autonomy tasks, cancels queued tasks before execution, prevents further scheduled tasks, and blocks desktop automation and self-engineering test execution.
+- The runner rechecks the flag between tool calls and around approval prompts.
+- `/resume-autonomy` requires the literal confirmation `RESUME`.
+- Every state change is recorded in the system-control event history.
+
+This cannot undo an external action already in progress. A long-running subprocess or individual OS operation may finish before the next stop check; the stop prevents subsequent actions rather than forcibly terminating the Windows process.
+
 ### Scheduled read-only autonomy
 
 Schedules can be created with `/schedule add interval_seconds | objective | max_runs(optional)`, inspected with `/schedule list`, paused/resumed with `/schedule pause ID` and `/schedule resume ID`.
@@ -157,7 +167,8 @@ A candidate is never automatically merged or copied into production. Git for Win
 
 ## Other commands
 
-- `/status` — runtime and feature flags.
+- `/status` — runtime and feature flags, including emergency-stop state.
+- `/emergency-stop` / `/resume-autonomy` — stop and explicitly resume autonomous execution.
 - `/tasks` — recent task records.
 - `/diagnostics` — redacted report in `logs/diagnostics.json`.
 - `/calibration` — evaluate explicitly logged binary decision outcomes.
