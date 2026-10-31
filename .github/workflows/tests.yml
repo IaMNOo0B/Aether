@@ -14,3 +14,21 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest
+      - name: Run OMEGA acceptance checks
+        shell: pwsh
+        run: |
+          python -m aether.acceptance --json reports/acceptance/latest.json
+          $acceptanceExit = $LASTEXITCODE
+          if ($acceptanceExit -eq 1) { exit 1 }
+          if ($acceptanceExit -eq 2) {
+            Write-Host "Some OMEGA acceptance areas are still partial; inspect the JSON report."
+            exit 0
+          }
+          if ($acceptanceExit -ne 0) { exit $acceptanceExit }
+      - name: Upload OMEGA acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-omega-acceptance-report
+          path: reports/acceptance/latest.json
+          if-no-files-found: ignore
