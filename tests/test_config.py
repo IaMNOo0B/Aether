@@ -84,3 +84,36 @@ tool_timeout_seconds = 60
     assert len(settings.models.fallbacks) == 1
     assert settings.models.fallbacks[0].provider == "openai_compatible"
     assert settings.models.fallbacks[0].model == "cloud-model"
+
+def test_scheduler_defaults_to_disabled(tmp_path):
+    settings = load_settings(Path("config/settings.toml"))
+    assert settings.scheduler.enabled is False
+    assert settings.scheduler.max_tasks_per_tick == 1
+
+
+def test_scheduler_requires_autonomy_and_model_enabled(tmp_path):
+    config = tmp_path / "settings.toml"
+    config.write_text(
+        """
+[app]
+name = "AETHER"
+[models]
+provider = "ollama"
+enabled = false
+base_url = "http://127.0.0.1:11434"
+model = "local-model"
+[storage]
+database = "data/aether.sqlite3"
+[limits]
+max_history_messages = 8
+max_prompt_characters = 12000
+max_autonomy_steps = 5
+max_research_results = 8
+tool_timeout_seconds = 60
+[scheduler]
+enabled = true
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="requires both autonomy.enabled and models.enabled"):
+        load_settings(config)
