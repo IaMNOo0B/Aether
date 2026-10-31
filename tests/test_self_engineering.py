@@ -52,10 +52,10 @@ def test_self_engineer_rejects_drive_qualified_patch_paths(tmp_path):
 def test_self_engineer_rejects_windows_backslash_traversal(tmp_path):
     engineer = SelfEngineer(tmp_path, FakeProvider())
     patch = (
-        "diff --git a/..\\\\outside.py b/..\\\\outside.py\\n"
-        "--- a/..\\\\outside.py\\n"
-        "+++ b/..\\\\outside.py\\n"
-        "@@ -1 +1 @@\\n-a\\n+b\\n"
+        "diff --git a/..\\outside.py b/..\\outside.py\n"
+        "--- a/..\\outside.py\n"
+        "+++ b/..\\outside.py\n"
+        "@@ -1 +1 @@\n-a\n+b\n"
     )
     with pytest.raises(PatchRejected, match="Unsafe"):
         engineer.validate_patch_text(patch)
@@ -64,11 +64,11 @@ def test_self_engineer_rejects_windows_backslash_traversal(tmp_path):
 def test_self_engineer_rejects_symlink_or_file_mode_changes(tmp_path):
     engineer = SelfEngineer(tmp_path, FakeProvider())
     patch = (
-        "diff --git a/payload.py b/payload.py\\n"
-        "new file mode 120000\\n"
-        "--- /dev/null\\n"
-        "+++ b/payload.py\\n"
-        "@@ -0,0 +1 @@\\n+target\\n"
+        "diff --git a/payload.py b/payload.py\n"
+        "new file mode 120000\n"
+        "--- /dev/null\n"
+        "+++ b/payload.py\n"
+        "@@ -0,0 +1 @@\n+target\n"
     )
     with pytest.raises(PatchRejected, match="File mode"):
         engineer.validate_patch_text(patch)
