@@ -1,6 +1,7 @@
 """AETHER Windows-first command interface."""
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -42,7 +43,7 @@ def main() -> int:
     status = engine.status()
     print(f"{status['name']} v{status['version']} | Windows-first local AI")
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
-    print("Commands: /status /research /agents /autonomy /learn /skills /desktop /voice")
+    print("Commands: /status /self-model /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /self-improve /self-improve-test /tasks /reports /calibration /quit\n")
 
     while True:
@@ -63,6 +64,11 @@ def main() -> int:
             if lower == "/status":
                 for key, value in engine.status().items():
                     print(f"{key}: {value}")
+                continue
+
+            if lower == "/self-model":
+                print(json.dumps(engine.self_model.snapshot(), indent=2))
+                print("AETHER > Capability states require concrete evidence; module presence is not verification.")
                 continue
 
             if lower == "/tasks":
