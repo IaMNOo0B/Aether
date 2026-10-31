@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from aether.config import load_settings
+from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.storage import Store
 
@@ -12,15 +12,7 @@ from aether.storage import Store
 def main() -> int:
     try:
         settings = load_settings()
-        Path("logs").mkdir(parents=True, exist_ok=True)
-        logging.basicConfig(
-            level=getattr(logging, settings.app.log_level.upper(), logging.INFO),
-            format="%(asctime)s | %(levelname)s | %(message)s",
-            handlers=[
-                logging.StreamHandler(),
-                logging.FileHandler(Path("logs/aether.log"), encoding="utf-8"),
-            ],
-        )
+        configure_logging(settings.app.log_level)
         store = Store(settings.storage.database)
         engine = AetherEngine(settings, store)
     except Exception:
@@ -31,7 +23,7 @@ def main() -> int:
     status = engine.status()
     print(f"{status['name']} v{status['version']} | Windows-ready foundation")
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
-    print("Type /status, /remember <fact>, /quit, or enter a message.\n")
+    print("Type /status, /tasks, /diagnostics, /remember <fact>, or /quit.\n")
 
     while True:
         try:
@@ -47,6 +39,17 @@ def main() -> int:
             for key, value in engine.status().items():
                 print(f"{key}: {value}")
             continue
+        if user_text.lower() == "/tasks":
+            tasks = store.list_tasks(limit=10)
+            if not tasks:
+                print("AETHER > No recorded tasks.")
+            for task in tasks:
+                print(f"{task['id'][:8]} | {task['status']} | {task['objective']}")
+            continue
+        if user_text.lower() == "/diagnostics":
+            destination = write_diagnostics("logs/diagnostics.json", engine.status())
+            print(f"AETHER > Diagnostics saved to {destination}.")
+            continue
         if user_text.startswith("/remember "):
             memory = user_text[len("/remember "):].strip()
             if memory:
@@ -56,7 +59,11 @@ def main() -> int:
                 print("AETHER > Usage: /remember information to save")
             continue
 
-        print(f"AETHER > {engine.respond(user_text)}\n")
+        try:
+            print(f"AETHER > {engine.respond(user_text)}\n")
+        except Exception:
+            logging.exception("Message handling failed")
+            print("AETHER > The request failed. Check logs/aether.log for details.\n")
 
     return 0
 
