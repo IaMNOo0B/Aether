@@ -47,7 +47,8 @@ def main() -> int:
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
     print("Commands: /status /self-model /tasks /task-events ID /research /agents /autonomy /learn /skills /desktop /voice")
-    print("          /remember /memory-search /correct-memory /self-improve /self-improve-test /tasks /reports /calibration /quit\n")
+    print("          /remember /memory-search /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
+    print("          /self-improve /self-improve-test /tasks /reports /calibration /quit\n")
 
     while True:
         try:
@@ -111,6 +112,56 @@ def main() -> int:
                 print(f"Brier: {report.brier_score:.4f} | Log loss: {report.log_loss:.4f}")
                 print(f"ECE: {report.expected_calibration_error:.4f} | AURC: {report.aurc:.4f}")
                 print(f"Coverage at 5% risk: {report.coverage_at_risk:.1%}")
+                continue
+
+            if lower.startswith("/decision-log "):
+                parts = user_text[len("/decision-log "):].split("|", 2)
+                if len(parts) != 3:
+                    print("Usage: /decision-log question | probability_true | domain")
+                    continue
+                decision_id = engine.decisions.log_prediction(
+                    parts[0].strip(), float(parts[1].strip()), parts[2].strip()
+                )
+                print(f"AETHER > Decision logged: {decision_id}. Resolve it when the real outcome is known.")
+                continue
+
+            if lower.startswith("/decision-resolve "):
+                parts = user_text[len("/decision-resolve "):].split("|", 1)
+                if len(parts) != 2 or parts[1].strip().casefold() not in {"true", "false"}:
+                    print("Usage: /decision-resolve decision-id | true/false")
+                    continue
+                engine.decisions.resolve(
+                    parts[0].strip(), parts[1].strip().casefold() == "true"
+                )
+                print("AETHER > Outcome recorded.")
+                continue
+
+            if lower.startswith("/decision-assess "):
+                parts = user_text[len("/decision-assess "):].split("|", 1)
+                if len(parts) != 2:
+                    print("Usage: /decision-assess probability_true | domain")
+                    continue
+                assessment = engine.decisions.assess(
+                    float(parts[0].strip()), parts[1].strip()
+                )
+                print(f"AETHER > Policy: {assessment.action.upper()}")
+                print(f"Confidence: {assessment.confidence:.3f} | Samples: {assessment.sample_count}")
+                if assessment.empirical_accuracy is not None:
+                    print(
+                        f"Observed accuracy: {assessment.empirical_accuracy:.3f} | "
+                        f"Wilson lower bound: {assessment.wilson_lower_bound:.3f}"
+                    )
+                print(assessment.reason)
+                continue
+
+            if lower.startswith("/decision-metrics"):
+                domain = user_text[len("/decision-metrics"):].strip() or None
+                report = engine.decisions.metrics(domain)
+                print(f"Resolved decisions: {report.count}")
+                print(
+                    f"Brier: {report.brier_score:.4f} | Log loss: {report.log_loss:.4f} | "
+                    f"ECE: {report.expected_calibration_error:.4f} | AURC: {report.aurc:.4f}"
+                )
                 continue
 
             if lower.startswith("/research "):
