@@ -21,6 +21,7 @@ class ModelSettings:
     base_url: str = "http://127.0.0.1:11434"
     model: str = "phi3:mini-4k-q4_0"
     timeout_seconds: int = 120
+    api_key_env: str = "AETHER_API_KEY"
 
 
 @dataclass(frozen=True)
@@ -109,8 +110,12 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         raise ValueError("app.name cannot be empty")
     if app.log_level.upper() not in {"CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"}:
         raise ValueError("app.log_level must be CRITICAL, ERROR, WARNING, INFO, or DEBUG")
-    if models.provider.strip().lower() != "ollama":
+    if models.provider.strip().lower() not in {"ollama", "openai_compatible"}:
         raise ValueError(f"Unsupported model provider: {models.provider}")
+    if not isinstance(models.api_key_env, str):
+        raise ValueError("models.api_key_env must be an environment variable name")
+    if models.api_key_env and not models.api_key_env.replace("_", "").isalnum():
+        raise ValueError("models.api_key_env must contain only letters, numbers and underscores")
     parsed_url = urlparse(models.base_url)
     if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
         raise ValueError("models.base_url must be a valid HTTP or HTTPS URL")
