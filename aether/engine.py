@@ -1,10 +1,16 @@
-"""Conversation engine with persistent history and explicit model availability."""
+"""Conversation engine with provider routing, bounded context, and task receipts."""
 from __future__ import annotations
 
-from aether.config import Settings
-from aether.ollama import ModelUnavailable, OllamaClient
-from aether.storage import Store
+import logging
 
+from aether.config import Settings
+from aether.context import fit_messages
+from aether.ollama import ModelUnavailable
+from aether.providers import build_registry
+from aether.storage import Store
+from aether.tasks import TaskManager
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You are AETHER, a practical AI assistant. Be accurate and direct. "
@@ -18,18 +24,22 @@ class AetherEngine:
     def __init__(self, settings: Settings, store: Store):
         self.settings = settings
         self.store = store
-        self.client = OllamaClient(
+        self.registry = build_registry(
             settings.models.base_url,
             settings.models.model,
             settings.models.timeout_seconds,
         )
+        self.tasks = TaskManager(store)
 
     def status(self) -> dict[str, object]:
-        available = self.client.is_available() if self.settings.models.enabled else False
+        provider = self.registry.get(self.settings.models.provider)
+        available = provider.is_available() if self.settings.models.enabled else False
         return {
             "name": self.settings.app.name,
-            "version": "0.1.0",
+            "version": "0.2.0",
             "provider": self.settings.models.provider,
+            "registered_providers": self.registry.names(),
+            "model": self.settings.models.model,
             "model_enabled": self.settings.models.enabled,
             "model_reachable": available,
             "database": str(self.store.path),
@@ -41,29 +51,52 @@ class AetherEngine:
             return "Please enter a message."
 
         self.store.add_message("user", text)
-        memories = self.store.search_memories(text)
-        memory_context = ""
-        if memories:
-            memory_context = "\n\nRelevant stored memories (unverified unless marked otherwise):\n"
-            memory_context += "\n".join(
-                f"- [{item['source']}; {item['status']}] {item['content']}"
-                for item in memories
-            )
+        task = self.tasks.create("Respond to user message", {"input_length": len(text)})
+        self.tasks.transition(task.id, "running")
+        try:
+            memories = self.store.search_memories(text)
+            memory_context = ""
+            if memories:
+                memory_context = "\n\nRelevant stored memories (unverified unless marked otherwise):\n"
+                memory_context += "\n".join(
+                    f"- [{item['source']}; {item['status']}] {item['content']}"
+                    for item in memories
+                )
 
-        if not self.settings.models.enabled:
+            if not self.settings.models.enabled:
+                answer = (
+                    "AETHER is running, but its language model is disabled. "
+                    "Enable models.enabled in config/settings.toml and make sure Ollama "
+                    f"is running with the configured model ({self.settings.models.model})."
+                )
+            else:
+                history = self.store.recent_messages(
+                    self.settings.limits.max_history_messages
+                )
+                provider = self.registry.get(self.settings.models.provider)
+                messages = fit_messages(
+                    SYSTEM_PROMPT + memory_context,
+                    history,
+                    self.settings.limits.max_prompt_characters,
+                )
+                answer = provider.chat(messages)
+
+            self.store.add_message("assistant", answer)
+            self.tasks.transition(
+                task.id, "completed",
+                {"answer_length": len(answer), "response_persisted": True},
+            )
+            return answer
+        except ModelUnavailable as exc:
+            logger.warning("Model request failed for task %s: %s", task.id, exc)
             answer = (
-                "AETHER is running, but its language model is disabled. "
-                "Enable models.enabled in config/settings.toml and make sure Ollama "
-                f"is running with the configured model ({self.settings.models.model})."
+                "I couldn't reach the configured model. No model answer was generated. "
+                f"Details: {exc}"
             )
-        else:
-            history = self.store.recent_messages(self.settings.limits.max_history_messages)
-            messages = [{"role": "system", "content": SYSTEM_PROMPT + memory_context}]
-            messages.extend(history)
-            try:
-                answer = self.client.chat(messages)
-            except ModelUnavailable as exc:
-                answer = f"I couldn't reach the configured model. No answer was generated. Details: {exc}"
-
-        self.store.add_message("assistant", answer)
-        return answer
+            self.store.add_message("assistant", answer)
+            self.tasks.transition(task.id, "failed", {"error": str(exc)})
+            return answer
+        except Exception as exc:
+            logger.exception("Unexpected failure while handling task %s", task.id)
+            self.tasks.transition(task.id, "failed", {"error_type": type(exc).__name__})
+            raise
