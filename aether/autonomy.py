@@ -13,6 +13,7 @@ from aether.providers import ChatProvider
 from aether.research import Researcher
 from aether.storage import Store
 from aether.world_model import WorldModel
+from aether.resources import ResourceGuard, ResourceLimitExceeded
 from aether.tasks import Task, TaskManager
 
 
@@ -197,11 +198,15 @@ class AutonomyRunner:
         limits: LimitSettings,
         research_settings: ResearchSettings,
         project_root: str | Path = ".",
+        resource_guard: ResourceGuard | None = None,
+        gpu_required: bool = False,
     ):
         self.provider = provider
         self.store = store
         self.policy = policy
         self.limits = limits
+        self.resource_guard = resource_guard
+        self.gpu_required = gpu_required
         self.tasks = TaskManager(store)
         self.researcher = Researcher(
             store, research_settings.timeout_seconds, limits.max_research_results
@@ -220,6 +225,8 @@ class AutonomyRunner:
         return self.tasks.create(objective, {"kind": "autonomy", "receipts": []})
 
     def _make_plan(self, objective: str) -> list[dict[str, Any]]:
+        if self.resource_guard is not None:
+            self.resource_guard.check("autonomy planning", gpu_required=self.gpu_required)
         allowed = {
             "research.search": {"query": "string", "limit": "integer"},
             "workspace.list": {"path": "relative workspace path"},
@@ -315,6 +322,8 @@ class AutonomyRunner:
             for index, step in enumerate(steps, start=1):
                 if self.store.emergency_stop_enabled():
                     raise EmergencyStop("AETHER emergency stop activated during task execution")
+                if self.resource_guard is not None:
+                    self.resource_guard.check(f"autonomy tool {step['tool']}")
                 result = self.gateway.execute(
                     step["tool"], step.get("args", {}), self._guard_approval(approval)
                 )
@@ -340,6 +349,15 @@ class AutonomyRunner:
             }
             self.tasks.transition(task_id, "completed", final_state)
             return {"task_id": task_id, "status": "completed", **final_state}
+        except ResourceLimitExceeded as exc:
+            self.tasks.transition(task_id, "cancelled", {
+                **preserved_state, "kind": "autonomy",
+                "receipts": receipts, "resource_limit": str(exc),
+            })
+            return {
+                "task_id": task_id, "status": "cancelled",
+                "receipts": receipts, "reason": str(exc),
+            }
         except EmergencyStop as exc:
             self.tasks.transition(task_id, "cancelled", {
                 **preserved_state, "kind": "autonomy",
