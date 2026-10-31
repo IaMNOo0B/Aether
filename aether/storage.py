@@ -52,6 +52,18 @@ class Store:
                     updated_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at);
+                CREATE TABLE IF NOT EXISTS task_events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    from_status TEXT,
+                    to_status TEXT,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_task_events_task_sequence
+                    ON task_events(task_id, sequence);
                 CREATE TABLE IF NOT EXISTS decisions (
                     id TEXT PRIMARY KEY,
                     question TEXT NOT NULL,
@@ -176,6 +188,121 @@ class Store:
                     (status, limit),
                 ).fetchall()
         return [task for row in rows if (task := self.get_task(row["id"])) is not None]
+
+
+    def create_task(
+        self, task_id: str, objective: str, state: dict[str, Any] | None = None,
+    ) -> None:
+        """Create a task and its first event in one transaction."""
+        now = utc_now()
+        payload = state or {}
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "INSERT INTO tasks(id, objective, status, state_json, updated_at) VALUES (?, ?, 'queued', ?, ?)",
+                (task_id, objective, json.dumps(payload), now),
+            )
+            db.execute(
+                """INSERT INTO task_events(task_id, event_type, from_status, to_status,
+                   payload_json, created_at) VALUES (?, 'created', NULL, 'queued', ?, ?)""",
+                (task_id, json.dumps(payload), now),
+            )
+
+    def transition_task(
+        self, task_id: str, expected_status: str, new_status: str,
+        state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Atomically compare-and-transition a task and append its audit event."""
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT objective, status FROM tasks WHERE id=?", (task_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown task: {task_id}")
+            if row["status"] != expected_status:
+                raise ValueError(
+                    f"Task status changed concurrently: expected {expected_status}, found {row['status']}"
+                )
+            db.execute(
+                "UPDATE tasks SET status=?, state_json=?, updated_at=? WHERE id=?",
+                (new_status, json.dumps(state), now, task_id),
+            )
+            db.execute(
+                """INSERT INTO task_events(task_id, event_type, from_status, to_status,
+                   payload_json, created_at) VALUES (?, 'transition', ?, ?, ?, ?)""",
+                (task_id, expected_status, new_status, json.dumps(state), now),
+            )
+        return self.get_task(task_id)  # type: ignore[return-value]
+
+    def checkpoint_task(
+        self, task_id: str, state: dict[str, Any], event_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist a running task checkpoint and audit event atomically."""
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown task: {task_id}")
+            if row["status"] != "running":
+                raise ValueError(f"Only running tasks can be checkpointed, found {row['status']}")
+            db.execute(
+                "UPDATE tasks SET state_json=?, updated_at=? WHERE id=?",
+                (json.dumps(state), now, task_id),
+            )
+            db.execute(
+                """INSERT INTO task_events(task_id, event_type, from_status, to_status,
+                   payload_json, created_at) VALUES (?, 'checkpoint', 'running', 'running', ?, ?)""",
+                (task_id, json.dumps(event_data or state), now),
+            )
+        return self.get_task(task_id)  # type: ignore[return-value]
+
+    def task_events(self, task_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        if limit < 1:
+            return []
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT sequence, event_type, from_status, to_status, payload_json, created_at
+                   FROM task_events WHERE task_id=? ORDER BY sequence LIMIT ?""",
+                (task_id, limit),
+            ).fetchall()
+        return [
+            {"sequence": row["sequence"], "event_type": row["event_type"],
+             "from_status": row["from_status"], "to_status": row["to_status"],
+             "payload": json.loads(row["payload_json"]), "created_at": row["created_at"]}
+            for row in rows
+        ]
+
+    def recover_interrupted_tasks(self) -> list[str]:
+        """Mark stale running tasks interrupted; never replay side effects automatically."""
+        recovered: list[str] = []
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute(
+                "SELECT id, state_json FROM tasks WHERE status='running' ORDER BY updated_at"
+            ).fetchall()
+            for row in rows:
+                state = json.loads(row["state_json"])
+                state["recovery"] = {
+                    "status": "interrupted",
+                    "detected_at": now,
+                    "policy": "manual_review_required",
+                    "reason": "Process stopped while task was running; side effects were not replayed.",
+                }
+                db.execute(
+                    "UPDATE tasks SET status='failed', state_json=?, updated_at=? WHERE id=? AND status='running'",
+                    (json.dumps(state), now, row["id"]),
+                )
+                db.execute(
+                    """INSERT INTO task_events(task_id, event_type, from_status, to_status,
+                       payload_json, created_at) VALUES (?, 'interrupted_recovery', 'running', 'failed', ?, ?)""",
+                    (row["id"], json.dumps(state["recovery"]), now),
+                )
+                recovered.append(row["id"])
+        return recovered
 
     def record_decision(
         self, decision_id: str, question: str, probability: float,
