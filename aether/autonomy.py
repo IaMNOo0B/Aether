@@ -84,10 +84,15 @@ class ToolGateway:
 
         if tool == "research.search":
             query = str(args.get("query", "")).strip()
-            results = self.researcher.search(query, limit=min(
-                int(args.get("limit", 5)), self.limits.max_research_results
-            ))
-            return {"query": query, "sources": [item.to_dict() for item in results]}
+            requested = int(args.get("limit", 5))
+            results = self.researcher.search(
+                query, limit=max(1, min(requested, self.limits.max_research_results))
+            )
+            report = self.researcher.create_report(query, results)
+            return {
+                "query": query, "report_id": report["id"],
+                "sources": report["sources"], "report": report["content"][:12000],
+            }
 
         if tool == "workspace.list":
             relative = str(args.get("path", "."))
@@ -234,6 +239,7 @@ class AutonomyRunner:
                 result = self.gateway.execute(step["tool"], step.get("args", {}), approval)
                 receipts.append({
                     "step": index, "tool": step["tool"], "purpose": step.get("purpose"),
+                    "human_approved": step["tool"] in {"workspace.write", "tests.run"},
                     "result": result,
                 })
                 self.store.save_task(task_id, task_data["objective"], "running", {
