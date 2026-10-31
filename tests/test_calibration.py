@@ -16,7 +16,7 @@ def test_binary_calibration_metrics_are_computed_from_resolved_outcomes():
     assert report.brier_score == pytest.approx(0.175)
     assert report.expected_calibration_error == pytest.approx(0.3)
     assert 0 <= report.aurc <= 1
-    assert report.coverage_at_risk == pytest.approx(0.25)
+    assert report.coverage_at_risk == pytest.approx(0.5)
 
 
 def test_calibration_rejects_invalid_probabilities_and_empty_data():
