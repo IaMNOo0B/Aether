@@ -177,7 +177,10 @@ class AetherEngine:
                     self.settings.limits.max_prompt_characters,
                 )
                 self.resources.check(
-                    "chat inference", gpu_required=self.settings.models.provider == "ollama"
+                    "chat inference", gpu_required=(
+                        self.settings.models.provider == "ollama"
+                        and not self.settings.models.fallbacks
+                    )
                 )
                 answer = self.provider().chat(messages)
 
