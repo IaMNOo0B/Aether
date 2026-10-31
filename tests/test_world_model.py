@@ -194,3 +194,36 @@ def test_world_model_updates_empirical_action_risk_from_observed_outcomes(tmp_pa
     assert updated["observed_failures"] == 1
     assert updated["observed_failure_rate"] == 0.5
     assert updated["risk_score"] == 0.35
+
+def test_autonomy_can_consult_world_model_without_executing_actions(tmp_path):
+    import json
+
+    from aether.autonomy import AutonomyRunner
+    from aether.config import AutonomySettings, LimitSettings, ResearchSettings
+
+    class FakeProvider:
+        def chat(self, messages):
+            return json.dumps({"steps": [{
+                "purpose": "Simulate a pump start",
+                "tool": "world.simulate",
+                "args": {"world": "Pump", "action_id": action["id"]},
+            }]})
+
+    store = Store(tmp_path / "world.sqlite3")
+    model = WorldModel(store)
+    model.create_world("Pump", {"running": False})
+    action = model.register_action(
+        "Pump", "Start", preconditions={"running": False},
+        effects={"running": True},
+    )
+    runner = AutonomyRunner(
+        FakeProvider(), store, AutonomySettings(enabled=True, allow_read_only=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+
+    result = runner.run("Check the predicted result of starting the pump")
+
+    assert result["status"] == "completed"
+    assert result["receipts"][0]["tool"] == "world.simulate"
+    assert result["receipts"][0]["result"]["predicted_state"]["running"] is True
+    assert model.get_world("Pump")["state"]["running"] is False
