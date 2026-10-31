@@ -66,7 +66,7 @@ class AetherEngine:
         self.memory = MemoryManager(store)
         self.decisions = DecisionManager(store)
         self.self_model = SelfModel(
-            settings.storage.database, settings.app.name, "0.3.0"
+            store.path, settings.app.name, "0.3.0"
         )
         for capability_id, name, description in BUILTIN_CAPABILITIES:
             self.self_model.register_capability(
