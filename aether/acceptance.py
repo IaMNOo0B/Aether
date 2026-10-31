@@ -37,12 +37,13 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
         "id": "C", "name": "Learning",
         "expected": "A documented workflow is stored as a draft and is only retrievable after held-out evaluation.",
         "nodes": [
-            "tests/test_learning.py::test_skill_requires_held_out_evaluation_before_retrieval",
-            "tests/test_learning.py::test_failed_skill_evaluation_keeps_skill_out_of_validated_memory",
+            "tests/test_learning.py::test_skill_requires_three_distinct_held_out_examples_before_retrieval",
+            "tests/test_learning.py::test_failed_held_out_example_prevents_or_revokes_validation",
+            "tests/test_learning.py::test_manual_evaluation_never_validates_a_skill",
         ],
         "full_scope": False,
         "limitations": [
-            "Skill evaluation evidence is manually supplied; AETHER does not yet independently execute and score arbitrary workflows on held-out examples."
+            "Text-only held-out execution now requires three distinct exact-match examples. Arbitrary multi-tool procedures, environmental side effects and independently generated test oracles are not yet executed or evaluated."
         ],
     },
     {
