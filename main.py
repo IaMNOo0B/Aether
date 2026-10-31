@@ -201,8 +201,12 @@ def main() -> int:
                     approved = input(f"Press {parts[2]} in the focused window? Type APPROVE: ").strip() == "APPROVE"
                     result = controller.press_key(parts[2], approved=approved)
                     print(f"AETHER > {result}")
+                elif action == "screenshot" and len(parts) == 3:
+                    approved = input("Capture the current screen to the specified file? Type APPROVE: ").strip() == "APPROVE"
+                    result = controller.screenshot(parts[2], approved=approved)
+                    print(f"AETHER > Screenshot saved to {result}")
                 else:
-                    print("Usage: /desktop open notepad.exe | click X Y | type TEXT | key enter")
+                    print("Usage: /desktop open APP | click X Y | type TEXT | key enter | screenshot PATH")
                 continue
 
             if lower == "/voice":
