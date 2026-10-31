@@ -715,6 +715,12 @@ class Store:
     ) -> None:
         if not model.strip() or not vector:
             raise ValueError("Embedding model and vector are required")
+        if any(
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            for value in vector
+        ):
+            raise ValueError("Embedding vectors must contain finite numeric values")
         with self._connect() as db:
             db.execute(
                 """INSERT INTO memory_embeddings(memory_id, model, vector_json, dimensions, created_at)
