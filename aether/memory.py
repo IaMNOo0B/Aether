@@ -131,16 +131,15 @@ class MemoryManager:
         if not correction or not explanation:
             raise ValueError("A correction requires replacement content and a reason")
         old_metadata = dict(previous["metadata"])
-        old_metadata["superseded_by_reason"] = explanation
-        self.store.update_memory(memory_id, status="superseded", metadata=old_metadata)
-        return self.remember(
-            correction,
-            source="user-correction",
-            kind=old_metadata.get("kind", "semantic"),
-            status="user-corrected",
-            tags=old_metadata.get("tags", []),
-            metadata={
-                "supersedes_memory_id": memory_id,
-                "correction_reason": explanation,
-            },
+        metadata = {
+            "kind": old_metadata.get("kind", "semantic"),
+            "confidence": None,
+            "tags": old_metadata.get("tags", []),
+            "schema_version": 1,
+            "correction_reason": explanation,
+        }
+        return self.store.supersede_memory(
+            memory_id, correction, explanation,
+            source="user-correction", status="user-corrected",
+            metadata=metadata,
         )
