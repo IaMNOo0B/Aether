@@ -100,6 +100,7 @@ class AetherEngine:
             "model_reachable": available,
             "research_enabled": self.settings.research.enabled,
             "autonomy_enabled": self.settings.autonomy.enabled,
+            "emergency_stop": self.store.emergency_stop_enabled(),
             "desktop_enabled": self.settings.desktop.enabled,
             "voice_enabled": self.settings.voice.enabled,
             "capability_records": len(identity["capabilities"]),
