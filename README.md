@@ -39,14 +39,16 @@ The configured model must already exist in Ollama. AETHER deliberately does not 
 ## Commands
 
 - `/status` — show runtime and model connectivity.
+- `/tasks` — show the latest recorded task receipts.
+- `/diagnostics` — write a redacted runtime diagnostic report to `logs/diagnostics.json`.
 - `/remember <fact>` — save a user-provided memory locally.
 - `/quit` — exit without deleting data.
 
 ## Current implementation status
 
-Implemented: Windows launch/setup scripts, validated TOML configuration, SQLite conversation and memory storage, task checkpoint table, Ollama chat adapter, simple lexical memory retrieval, and Windows CI tests.
+Implemented: Windows setup/launch scripts, validated TOML configuration, SQLite conversation and memory storage, a provider protocol and registry (Ollama only), deterministic context budgeting, durable task lifecycle records, centralized logging, diagnostic reports, and automated tests.
 
-Not implemented yet: vector search, browser/desktop tools, cloud providers, autonomous task execution, RLCD, model training, continual learning, self-modifying code, multimodal systems, and multi-agent orchestration. These are planned research and engineering milestones, not existing capabilities.
+Not implemented yet: provider retries/fallback, task recovery after crashes, vector/hybrid memory, browser/desktop tools, cloud providers, autonomous planning, RLCD, model training, continual learning, self-modifying code, multimodal systems, and multi-agent orchestration. These are planned research and engineering milestones, not existing capabilities.
 
 ## Development tests
 
