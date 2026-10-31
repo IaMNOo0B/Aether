@@ -156,7 +156,7 @@ class AutonomyRunner:
         self.researcher = Researcher(
             store, research_settings.timeout_seconds, limits.max_research_results
         )
-        self.gateway = ToolGateway(project_root, policy, limits, self.researcher)
+        self.gateway = ToolGateway(\n            project_root, policy, limits, self.researcher, research_settings.enabled\n        )
 
     def enqueue(self, objective: str) -> Task:
         if not objective.strip():
