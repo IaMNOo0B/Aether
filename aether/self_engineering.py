@@ -19,7 +19,8 @@ class PatchRejected(ValueError):
 class SelfEngineer:
     PROTECTED_PATHS = {
         ".github/workflows", "config/settings.toml", "aether/autonomy.py",
-        "aether/desktop.py", "aether/voice.py", "aether/self_engineering.py",\n        "aether/config.py", "main.py",
+        "aether/desktop.py", "aether/voice.py", "aether/self_engineering.py",
+        "aether/config.py", "main.py",
         ".gitignore", "INSTALL.bat", "START_AETHER.bat",
     }
 
