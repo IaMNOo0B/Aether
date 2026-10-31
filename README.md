@@ -46,9 +46,9 @@ The configured model must already exist in Ollama. AETHER deliberately does not 
 
 ## Current implementation status
 
-Implemented: Windows setup/launch scripts, validated TOML configuration, SQLite conversation and memory storage, a provider protocol and registry (Ollama only), deterministic context budgeting, durable task lifecycle records, centralized logging, diagnostic reports, and automated tests.
+Implemented: Windows setup/launch scripts, validated TOML configuration, SQLite conversation and memory storage, a provider protocol and registry (Ollama only), deterministic context budgeting, durable task lifecycle records, a dependency-aware planning core, centralized logging, diagnostic reports, and automated tests.
 
-Not implemented yet: provider retries/fallback, task recovery after crashes, vector/hybrid memory, browser/desktop tools, cloud providers, autonomous planning, RLCD, model training, continual learning, self-modifying code, multimodal systems, and multi-agent orchestration. These are planned research and engineering milestones, not existing capabilities.
+Not implemented yet: provider retries/fallback, task recovery after crashes, vector/hybrid memory, browser/desktop tools, cloud providers, LLM-driven plan generation and execution, RLCD training, model training, continual learning, self-modifying code, multimodal systems, and multi-agent orchestration. The RLCD method investigation and hardware feasibility note are documented in `docs/research/RLCD_FEASIBILITY.md`. These are planned research and engineering milestones, not existing capabilities.
 
 ## Development tests
 
