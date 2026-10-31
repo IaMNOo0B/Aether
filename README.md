@@ -82,6 +82,21 @@ For a service requiring a key, set `api_key_env = "AETHER_API_KEY"` and provide 
 - Task state changes and checkpoints have an append-only event history. `/task-events <full-task-id>` inspects it.
 - On startup, tasks left running by a crash are marked interrupted/failed for manual review. AETHER does not blindly replay uncertain side effects.
 
+### Symbolic world-state model
+
+The world model is a transparent simulator over operator-declared state, preconditions, effects, constraints and resource costs. It does not execute the described action.
+
+- `/world create NAME | state_json | constraints_json(optional)`
+- `/world action WORLD | NAME | preconditions_json | effects_json | costs_json | failure_probability | failure_effects_json`
+- `/world simulate WORLD | ACTION_ID`
+- `/world compare WORLD | ACTION_ID, ACTION_ID`
+- `/world observe SIMULATION_ID | actual_state_json | apply/no`
+- `/world state NAME`, `/world actions NAME`, `/world history NAME`
+
+Each simulation records the world version it used. Applying an observation updates the state only if that exact version is still current; stale simulations cannot overwrite newer state. Observed outcomes are classified as success, failure or ambiguous. The action's declared failure probability is a user-supplied prior; AETHER reports observed failure rates and a simple smoothed risk score, not a calibrated learned probability.
+
+This is a symbolic world model, not a learned physics/dynamics model, causal model or autonomous simulator. It is a foundation for later predictive learning and must not be treated as evidence that a real-world action is safe.
+
 ### Provenance-aware knowledge graph
 
 - `/knowledge extract REPORT_ID` asks the configured model to extract atomic claims from a saved research report.
