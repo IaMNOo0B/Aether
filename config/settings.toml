@@ -61,3 +61,13 @@ speak_responses = true
 enabled = false
 poll_interval_seconds = 30
 max_tasks_per_tick = 1
+
+[memory]
+# Semantic retrieval is optional. No embedding model is downloaded automatically.
+semantic_enabled = false
+embedding_provider = "ollama"
+embedding_base_url = "http://127.0.0.1:11434"
+embedding_model = "nomic-embed-text"
+embedding_timeout_seconds = 30
+semantic_weight = 0.45
+index_batch_size = 32
