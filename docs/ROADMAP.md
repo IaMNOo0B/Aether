@@ -9,17 +9,20 @@ This roadmap translates the PROJECT AETHER — OMEGA directive into testable del
 - [x] Add standard-library runtime configuration and SQLite persistence.
 - [x] Add an Ollama adapter that does not download models automatically.
 - [x] Add a Windows CI test workflow.
-- [ ] Confirm first green CI run.
-- [ ] Perform a clean Windows 10/11 install and launch test.
+- [x] Confirm green GitHub Actions runs on the repository's Windows test workflow.
+- [ ] Perform a clean Windows 10/11 install and launch test on the user's PC.
 
 ## Stage 1 — Cognitive foundation
 
-- [ ] Provider protocol and model registry.
-- [ ] Robust provider health checks, timeouts, retries, and fallback policy.
-- [ ] Structured task lifecycle with durable checkpoints.
-- [ ] Context budgeting and deterministic history trimming.
-- [ ] Structured logs and diagnostic report.
-- [ ] Configuration schema validation and migration support.
+- [x] Provider protocol and explicit provider registry (Ollama adapter registered).
+- [x] Structured task lifecycle with durable queued/running/completed/failed/cancelled states.
+- [x] Deterministic character-budgeted context construction and oldest-history trimming.
+- [x] Centralized structured application logging and JSON diagnostics.
+- [x] Runtime configuration validation for supported provider, URL, limits, and log level.
+- [ ] Provider health policy with bounded retries, backoff, and explicit fallback.
+- [ ] Configuration schema versioning and migration support.
+- [ ] Provider/model capability metadata and model selection policy.
+- [ ] End-to-end task recovery after process interruption.
 
 ## Stage 2 — Reliable memory
 
