@@ -79,6 +79,19 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_scheduled_goals_due
                     ON scheduled_goals(enabled, next_run_at);
+                CREATE TABLE IF NOT EXISTS system_controls (
+                    name TEXT PRIMARY KEY,
+                    enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+                    reason TEXT NOT NULL DEFAULT '',
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS system_control_events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    control_name TEXT NOT NULL,
+                    enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+                    reason TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS decisions (
                     id TEXT PRIMARY KEY,
                     question TEXT NOT NULL,
@@ -117,6 +130,11 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at);
             """)
+            db.execute(
+                """INSERT OR IGNORE INTO system_controls(name, enabled, reason, updated_at)
+                   VALUES ('emergency_stop', 0, '', ?)""",
+                (utc_now(),),
+            )
 
     def add_message(self, role: str, content: str) -> int:
         if role not in {"user", "assistant", "system"}:
@@ -404,6 +422,41 @@ class Store:
                 recovered.append(row["id"])
         return recovered
 
+
+
+    def emergency_stop_enabled(self) -> bool:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT enabled FROM system_controls WHERE name='emergency_stop'"
+            ).fetchone()
+        return bool(row["enabled"]) if row else False
+
+    def set_emergency_stop(self, enabled: bool, reason: str = "User activated emergency stop") -> None:
+        now = utc_now()
+        explanation = reason.strip()[:500]
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                """INSERT INTO system_controls(name, enabled, reason, updated_at)
+                   VALUES ('emergency_stop', ?, ?, ?)
+                   ON CONFLICT(name) DO UPDATE SET enabled=excluded.enabled,
+                     reason=excluded.reason, updated_at=excluded.updated_at""",
+                (int(bool(enabled)), explanation, now),
+            )
+            db.execute(
+                """INSERT INTO system_control_events(control_name, enabled, reason, created_at)
+                   VALUES ('emergency_stop', ?, ?, ?)""",
+                (int(bool(enabled)), explanation, now),
+            )
+
+    def system_control_events(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT sequence, control_name, enabled, reason, created_at
+                   FROM system_control_events ORDER BY sequence DESC LIMIT ?""",
+                (max(0, min(limit, 1000)),),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def create_schedule(
         self, schedule_id: str, objective: str, interval_seconds: int,
