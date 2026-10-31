@@ -31,6 +31,8 @@ class AetherEngine:
             settings.models.base_url,
             settings.models.model,
             settings.models.timeout_seconds,
+            settings.models.provider,
+            settings.models.api_key_env,
         )
         self.tasks = TaskManager(store)
         self.memory = MemoryManager(store)
