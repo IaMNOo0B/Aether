@@ -241,11 +241,13 @@ class AutonomyRunner:
                     "kind": "autonomy", "plan": steps, "receipts": receipts,
                     "current_step": index,
                 })
+                if step["tool"] == "tests.run" and not result.get("passed", False):
+                    raise RuntimeError("Independent test suite failed; autonomy task rejected")
+            test_receipts = [item for item in receipts if item["tool"] == "tests.run"]
             final_state = {
                 "kind": "autonomy", "plan": steps, "receipts": receipts,
-                "verified": all(
-                    item["result"].get("passed", True) for item in receipts
-                    if item["tool"] == "tests.run"
+                "verified": bool(test_receipts) and all(
+                    item["result"].get("passed", False) for item in test_receipts
                 ),
             }
             self.tasks.transition(task_id, "completed", final_state)
