@@ -111,3 +111,28 @@ def test_tool_gateway_itself_checks_emergency_stop(tmp_path):
 
     with pytest.raises(EmergencyStop, match="tool execution is blocked"):
         runner.gateway.execute("workspace.list", {"path": "."})
+
+def test_emergency_stop_while_waiting_for_approval_blocks_write(tmp_path):
+    store = Store(tmp_path / "controls.sqlite3")
+    plan = json.dumps({"steps": [
+        {"purpose": "Write file", "tool": "workspace.write",
+         "args": {"path": "must-not-exist.txt", "content": "blocked"}}
+    ]})
+    runner = AutonomyRunner(
+        FakeProvider(plan), store,
+        AutonomySettings(
+            enabled=True, allow_read_only=True, allow_workspace_writes=True
+        ),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+    task = runner.enqueue("Write a test file")
+
+    def approve_then_stop(tool, purpose, args):
+        store.set_emergency_stop(True, "stop pressed during approval")
+        return True
+
+    result = runner.run_task(task.id, approve_then_stop)
+
+    assert result["status"] == "cancelled"
+    assert store.get_task(task.id)["state"]["emergency_stop"] is True
+    assert not (tmp_path / "workspace" / "must-not-exist.txt").exists()
