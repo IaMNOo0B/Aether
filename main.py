@@ -17,6 +17,7 @@ from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.learning import SkillLearner
 from aether.research import ResearchError, Researcher
+from aether.resources import ResourceLimitExceeded
 from aether.scheduler import AutonomyScheduler
 from aether.self_engineering import SelfEngineer
 from aether.storage import Store
@@ -636,7 +637,10 @@ def main() -> int:
                 continue
 
             print(f"AETHER > {engine.respond(user_text)}\n")
-        except (ValueError, PermissionError, FileNotFoundError, ResearchError, VoiceUnavailable) as exc:
+        except (
+            ValueError, PermissionError, FileNotFoundError, ResearchError,
+            VoiceUnavailable, ResourceLimitExceeded,
+        ) as exc:
             print(f"AETHER > {exc}")
         except Exception:
             logging.exception("Command failed")
