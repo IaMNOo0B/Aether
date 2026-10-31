@@ -16,6 +16,24 @@ from aether.tasks import TaskManager
 
 logger = logging.getLogger(__name__)
 
+
+BUILTIN_CAPABILITIES = (
+    ("identity.self_model", "Persistent self-model", "Versioned operational identity and evidence-backed capability records."),
+    ("memory.ranked_lexical", "Ranked local memory", "Typed memory records, BM25-style retrieval and correction lineage."),
+    ("tasks.event_recovery", "Task continuity and recovery", "Atomic task transitions, event history, checkpoints and conservative interruption recovery."),
+    ("providers.openai_compatible", "OpenAI-compatible provider", "Chat Completions adapter with environment-based API key lookup."),
+    ("providers.failover", "Provider failover", "Ordered fallback across explicitly configured model endpoints."),
+    ("research.indexed_sources", "Indexed-source research", "Bounded Crossref, arXiv and Wikipedia research with provenance."),
+    ("autonomy.bounded_tools", "Bounded autonomous tools", "Fixed tool registry with workspace containment and per-action approval."),
+    ("desktop.allowlisted", "Allowlisted desktop control", "Limited Windows application launch and approval-gated input."),
+    ("voice.offline_push_to_talk", "Offline push-to-talk voice", "Optional Vosk speech recognition and local speech output."),
+    ("learning.procedural_skills", "Procedural skill records", "Draft and manually validated reusable procedures."),
+    ("agents.sequential_specialists", "Sequential specialist agents", "Researcher, planner and critic role outputs with persistence."),
+    ("evolution.candidate_patches", "Candidate self-engineering", "Patch proposal and candidate testing without automatic production integration."),
+    ("calibration.outcome_metrics", "Outcome calibration metrics", "Brier, log loss, ECE and selective-risk measurements on resolved outcomes."),
+    ("decisions.empirical_abstention", "Evidence-based abstention gate", "Domain- and confidence-band-specific Wilson lower-bound policy."),
+)
+
 SYSTEM_PROMPT = (
     "You are AETHER, a practical AI assistant. Be accurate and direct. "
     "Never claim a tool ran, a file changed, or a task completed unless verified. "
@@ -50,6 +68,12 @@ class AetherEngine:
         self.self_model = SelfModel(
             settings.storage.database, settings.app.name, "0.3.0"
         )
+        for capability_id, name, description in BUILTIN_CAPABILITIES:
+            self.self_model.register_capability(
+                capability_id, name, description,
+                state="implemented_unverified",
+                limitations=["Capability record is not a substitute for its end-to-end acceptance test."],
+            )
         self.skills = SkillLearner(
             store,
             self.provider() if settings.models.enabled else None,
