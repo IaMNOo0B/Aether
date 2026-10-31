@@ -109,6 +109,7 @@ class Settings:
     voice: VoiceSettings = VoiceSettings()
     scheduler: SchedulerSettings = SchedulerSettings()
     memory: MemorySettings = MemorySettings()
+    memory: MemorySettings = MemorySettings()
 
 
 def load_settings(path: Path | str = "config/settings.toml") -> Settings:
@@ -139,6 +140,7 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         desktop = DesktopSettings(**desktop_raw)
         voice = VoiceSettings(**raw.get("voice", {}))
         scheduler = SchedulerSettings(**raw.get("scheduler", {}))
+        memory = MemorySettings(**raw.get("memory", {}))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Unknown or invalid configuration field: {exc}") from exc
 
@@ -191,5 +193,5 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
     return Settings(
         app=app, models=models, storage=storage, limits=limits,
         research=research, autonomy=autonomy, desktop=desktop, voice=voice,
-        scheduler=scheduler,
+        scheduler=scheduler, memory=memory,
     )
