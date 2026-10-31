@@ -39,6 +39,8 @@ def test_scheduler_runs_persisted_goal_with_read_only_tools(tmp_path):
     assert result["results"][0]["status"] == "completed"
     task = store.get_task(result["enqueued"][0])
     assert task["status"] == "completed"
+    assert task["state"]["scheduled"] is True
+    assert task["state"]["scheduled_goal_id"] == "read-only-goal"
 
 
 def test_scheduler_never_approves_workspace_writes(tmp_path):
