@@ -30,3 +30,24 @@ def test_engine_self_model_does_not_overclaim_capability_verification(tmp_path):
     assert len(capabilities) >= 10
     assert all(item["state"] == "implemented_unverified" for item in capabilities)
     assert all(item["evidence"] == [] for item in capabilities)
+
+def test_engine_cancels_model_call_when_resource_budget_blocks(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from aether.resources import ResourceLimitExceeded
+
+    settings = load_settings(Path("config/settings.toml"))
+    settings = replace(
+        settings,
+        models=replace(settings.models, enabled=True),
+    )
+    store = Store(tmp_path / "aether.sqlite3")
+    engine = AetherEngine(settings, store)
+
+    def blocked(*args, **kwargs):
+        raise ResourceLimitExceeded("RAM budget exceeded")
+
+    monkeypatch.setattr(engine.resources, "check", blocked)
+    answer = engine.respond("hello")
+
+    assert "resource budget blocked it" in answer
+    assert store.list_tasks(limit=1)[0]["status"] == "cancelled"
