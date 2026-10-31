@@ -6,6 +6,7 @@ from pathlib import Path
 import json
 import math
 import sqlite3
+from uuid import uuid4
 from typing import Any
 
 
@@ -64,6 +65,19 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_task_events_task_sequence
                     ON task_events(task_id, sequence);
+                CREATE TABLE IF NOT EXISTS scheduled_goals (
+                    id TEXT PRIMARY KEY,
+                    objective TEXT NOT NULL,
+                    interval_seconds INTEGER NOT NULL CHECK(interval_seconds >= 5),
+                    next_run_at REAL NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+                    run_count INTEGER NOT NULL DEFAULT 0,
+                    max_runs INTEGER NOT NULL DEFAULT 0 CHECK(max_runs >= 0),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_scheduled_goals_due
+                    ON scheduled_goals(enabled, next_run_at);
                 CREATE TABLE IF NOT EXISTS decisions (
                     id TEXT PRIMARY KEY,
                     question TEXT NOT NULL,
@@ -388,6 +402,90 @@ class Store:
                 )
                 recovered.append(row["id"])
         return recovered
+
+
+    def create_schedule(
+        self, schedule_id: str, objective: str, interval_seconds: int,
+        max_runs: int = 0, now_epoch: float | None = None,
+    ) -> None:
+        if not objective.strip() or interval_seconds < 5 or max_runs < 0:
+            raise ValueError("Schedule objective, interval >= 5 and max_runs >= 0 are required")
+        now = utc_now()
+        current = __import__("time").time() if now_epoch is None else float(now_epoch)
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO scheduled_goals
+                   (id, objective, interval_seconds, next_run_at, enabled,
+                    run_count, max_runs, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, 1, 0, ?, ?, ?)""",
+                (schedule_id, objective.strip(), interval_seconds,
+                 current + interval_seconds, max_runs, now, now),
+            )
+
+    def list_schedules(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT id, objective, interval_seconds, next_run_at, enabled,
+                          run_count, max_runs, created_at, updated_at
+                   FROM scheduled_goals ORDER BY next_run_at LIMIT ?""",
+                (max(0, min(limit, 1000)),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def set_schedule_enabled(self, schedule_id: str, enabled: bool) -> None:
+        with self._connect() as db:
+            cursor = db.execute(
+                "UPDATE scheduled_goals SET enabled=?, updated_at=? WHERE id=?",
+                (int(bool(enabled)), utc_now(), schedule_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(f"Unknown schedule: {schedule_id}")
+
+    def enqueue_due_schedules(
+        self, now_epoch: float | None = None, limit: int = 1,
+    ) -> list[str]:
+        """Atomically advance due schedules and enqueue one durable task per due goal."""
+        current = __import__("time").time() if now_epoch is None else float(now_epoch)
+        now = utc_now()
+        created: list[str] = []
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute(
+                """SELECT * FROM scheduled_goals
+                   WHERE enabled=1 AND next_run_at <= ?
+                     AND (max_runs=0 OR run_count < max_runs)
+                   ORDER BY next_run_at LIMIT ?""",
+                (current, max(0, min(limit, 10))),
+            ).fetchall()
+            for row in rows:
+                task_id = uuid4().hex
+                state = {
+                    "kind": "autonomy",
+                    "scheduled": True,
+                    "scheduled_goal_id": row["id"],
+                    "receipts": [],
+                    "execution_policy": "read_only_only",
+                }
+                db.execute(
+                    """INSERT INTO tasks(id, objective, status, state_json, updated_at)
+                       VALUES (?, ?, 'queued', ?, ?)""",
+                    (task_id, row["objective"], json.dumps(state), now),
+                )
+                db.execute(
+                    """INSERT INTO task_events(task_id, event_type, from_status, to_status,
+                       payload_json, created_at)
+                       VALUES (?, 'scheduled_task_created', NULL, 'queued', ?, ?)""",
+                    (task_id, json.dumps({"schedule_id": row["id"]}), now),
+                )
+                next_count = row["run_count"] + 1
+                enabled = 0 if row["max_runs"] and next_count >= row["max_runs"] else 1
+                db.execute(
+                    """UPDATE scheduled_goals SET next_run_at=?, enabled=?,
+                       run_count=?, updated_at=? WHERE id=?""",
+                    (current + row["interval_seconds"], enabled, next_count, now, row["id"]),
+                )
+                created.append(task_id)
+        return created
 
     def record_decision(
         self, decision_id: str, question: str, probability: float,
