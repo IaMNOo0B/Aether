@@ -82,6 +82,18 @@ For a service requiring a key, set `api_key_env = "AETHER_API_KEY"` and provide 
 - Task state changes and checkpoints have an append-only event history. `/task-events <full-task-id>` inspects it.
 - On startup, tasks left running by a crash are marked interrupted/failed for manual review. AETHER does not blindly replay uncertain side effects.
 
+### Provenance-aware knowledge graph
+
+- `/knowledge extract REPORT_ID` asks the configured model to extract atomic claims from a saved research report.
+- Claims are linked to source URLs, titles, evidence classes and report IDs.
+- Claims are stored as `unverified` by default. Review them with `/knowledge review CLAIM_ID | verified/disputed/retracted | evidence`.
+- `/knowledge search QUERY` finds entities; `/knowledge show ENTITY` shows incoming/outgoing claims.
+- `/knowledge conflicts ENTITY` surfaces overlapping claims with different values for the same predicate.
+- Temporal validity dates are stored so claims with disjoint time ranges are not incorrectly flagged as conflicts.
+- Hypotheses, facts, observations and predictions are distinct claim types.
+
+Conflict detection only flags candidates; it does not decide which source is correct. Model-extracted claims remain unverified until reviewed. Semantic clustering, automatic contradiction resolution and a predictive world simulator are not implemented.
+
 ### Decisions and calibration
 
 - `/decision-log question | probability_true | domain` records a typed prediction.
