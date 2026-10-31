@@ -12,6 +12,7 @@ from aether.storage import Store
 def main() -> int:
     try:
         settings = load_settings()
+        Path("logs").mkdir(parents=True, exist_ok=True)
         logging.basicConfig(
             level=getattr(logging, settings.app.log_level.upper(), logging.INFO),
             format="%(asctime)s | %(levelname)s | %(message)s",
@@ -30,7 +31,7 @@ def main() -> int:
     status = engine.status()
     print(f"{status['name']} v{status['version']} | Windows-ready foundation")
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
-    print("Type /status, /quit, or enter a message.\n")
+    print("Type /status, /remember <fact>, /quit, or enter a message.\n")
 
     while True:
         try:
