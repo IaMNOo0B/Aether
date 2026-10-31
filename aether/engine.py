@@ -8,7 +8,7 @@ from aether.context import fit_messages
 from aether.learning import SkillLearner
 from aether.memory import MemoryManager
 from aether.ollama import ModelUnavailable
-from aether.providers import build_registry
+from aether.providers import ProviderChain, build_registry
 from aether.self_model import SelfModel
 from aether.storage import Store
 from aether.tasks import TaskManager
@@ -33,7 +33,16 @@ class AetherEngine:
             settings.models.timeout_seconds,
             settings.models.provider,
             settings.models.api_key_env,
+            settings.models.fallbacks,
         )
+        provider_sequence = [
+            (settings.models.provider, self.registry.get(settings.models.provider))
+        ]
+        provider_sequence.extend(
+            (f"fallback_{index}", self.registry.get(f"fallback_{index}"))
+            for index in range(1, len(settings.models.fallbacks) + 1)
+        )
+        self.provider_chain = ProviderChain(provider_sequence)
         self.tasks = TaskManager(store)
         self.memory = MemoryManager(store)
         self.self_model = SelfModel(
@@ -41,17 +50,16 @@ class AetherEngine:
         )
         self.skills = SkillLearner(
             store,
-            self.registry.get(settings.models.provider) if settings.models.enabled else None,
+            self.provider() if settings.models.enabled else None,
         )
 
     def provider(self):
         if not self.settings.models.enabled:
             raise ModelUnavailable("The configured language model is disabled")
-        return self.registry.get(self.settings.models.provider)
+        return self.provider_chain
 
     def status(self) -> dict[str, object]:
-        provider = self.registry.get(self.settings.models.provider)
-        available = provider.is_available() if self.settings.models.enabled else False
+        available = self.provider_chain.is_available() if self.settings.models.enabled else False
         identity = self.self_model.snapshot()
         return {
             "name": self.settings.app.name,
@@ -59,6 +67,8 @@ class AetherEngine:
             "identity_id": identity["identity_id"],
             "provider": self.settings.models.provider,
             "registered_providers": self.registry.names(),
+            "fallback_count": len(self.settings.models.fallbacks),
+            "last_successful_provider": self.provider_chain.last_provider,
             "model": self.settings.models.model,
             "model_enabled": self.settings.models.enabled,
             "model_reachable": available,
