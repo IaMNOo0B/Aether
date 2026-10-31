@@ -12,6 +12,7 @@ from aether.knowledge import KnowledgeGraph
 from aether.memory import MemoryManager
 from aether.ollama import ModelUnavailable
 from aether.providers import ProviderChain, build_registry
+from aether.resources import ResourceGuard, ResourceLimitExceeded, ResourcePolicy
 from aether.self_model import SelfModel
 from aether.storage import Store
 from aether.world_model import WorldModel
@@ -52,6 +53,7 @@ class AetherEngine:
     def __init__(self, settings: Settings, store: Store):
         self.settings = settings
         self.store = store
+        self.resources = ResourceGuard(ResourcePolicy(**settings.resources.__dict__))
         self.registry = build_registry(
             settings.models.base_url,
             settings.models.model,
@@ -127,6 +129,7 @@ class AetherEngine:
             "capability_records": len(identity["capabilities"]),
             "semantic_memory_enabled": self.settings.memory.semantic_enabled,
             "embedding_model": self.settings.memory.embedding_model,
+            "resource_guard_enabled": self.settings.resources.enabled,
             "database": str(self.store.path),
         }
 
@@ -173,6 +176,9 @@ class AetherEngine:
                     history,
                     self.settings.limits.max_prompt_characters,
                 )
+                self.resources.check(
+                    "chat inference", gpu_required=self.settings.models.provider == "ollama"
+                )
                 answer = self.provider().chat(messages)
 
             self.store.add_message("assistant", answer)
@@ -180,6 +186,12 @@ class AetherEngine:
                 task.id, "completed",
                 {"answer_length": len(answer), "response_persisted": True},
             )
+            return answer
+        except ResourceLimitExceeded as exc:
+            logger.warning("Resource budget blocked task %s: %s", task.id, exc)
+            answer = f"I did not run the model because the resource budget blocked it: {exc}"
+            self.store.add_message("assistant", answer)
+            self.tasks.transition(task.id, "cancelled", {"resource_limit": str(exc)})
             return answer
         except ModelUnavailable as exc:
             logger.warning("Model request failed for task %s: %s", task.id, exc)
