@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from aether.config import Settings
+from aether.decisions import DecisionManager
 from aether.context import fit_messages
 from aether.learning import SkillLearner
 from aether.memory import MemoryManager
@@ -45,6 +46,7 @@ class AetherEngine:
         self.provider_chain = ProviderChain(provider_sequence)
         self.tasks = TaskManager(store)
         self.memory = MemoryManager(store)
+        self.decisions = DecisionManager(store)
         self.self_model = SelfModel(
             settings.storage.database, settings.app.name, "0.3.0"
         )
