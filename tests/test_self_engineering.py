@@ -36,3 +36,15 @@ def test_self_engineer_requires_approval_before_running_generated_code(tmp_path)
     engineer = SelfEngineer(tmp_path, FakeProvider())
     with pytest.raises(PermissionError, match="explicit approval"):
         engineer.evaluate("not-a-real-experiment", approved=False)
+
+
+def test_self_engineer_rejects_drive_qualified_patch_paths(tmp_path):
+    engineer = SelfEngineer(tmp_path, FakeProvider())
+    patch = (
+        "diff --git a/C:/outside.py b/C:/outside.py\\n"
+        "--- a/C:/outside.py\\n"
+        "+++ b/C:/outside.py\\n"
+        "@@ -1 +1 @@\\n-a\\n+b\\n"
+    )
+    with pytest.raises(PatchRejected, match="Absolute"):
+        engineer.validate_patch_text(patch)
