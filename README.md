@@ -2,32 +2,64 @@
 
 A Windows-first, local-first AI orchestration platform.
 
-## Initial engineering target
+## Target machine
 
 - Windows 10/11
-- Python 3.12+
-- RTX 2060 6GB / Ryzen 5 3600 / 16GB RAM
-- Optional Ollama local inference
-- Optional cloud model providers (disabled until explicitly configured)
+- Python 3.12
+- NVIDIA RTX 2060 6GB
+- Ryzen 5 3600
+- 16GB RAM
+- Ollama-compatible quantized local inference
 
-## Status
+The runtime foundation uses Python's standard library. It does not download models, install background services, or require API keys during setup.
 
-The repository is being initialized from an empty baseline. The first milestone focuses on a reliable application shell, persistent SQLite state, model-provider interfaces, honest capability reporting, and Windows launch/setup scripts.
+## Windows setup
 
-Advanced capabilities such as continual learning, RLCD, autonomous self-engineering, multimodal perception, and multi-agent execution are research milestones—not claims about features that already exist.
+1. Install Python 3.12 from https://www.python.org/downloads/windows/ and enable the Python Launcher.
+2. Download this repository using **Code → Download ZIP**, then extract it; or clone it with Git.
+3. Double-click `INSTALL.bat`.
+4. Double-click `START_AETHER.bat`.
 
-## Quick start
+AETHER stores its SQLite database in `data/aether.sqlite3` and logs in `logs/aether.log`. Do not delete `data/` if you want to preserve its memory and conversation history.
 
-1. Install Python 3.12 or newer.
-2. Double-click `INSTALL.bat`.
-3. Double-click `START_AETHER.bat`.
+## Enable local Ollama chat
 
-The initial application runs without a model. Configure Ollama separately to enable local LLM responses.
+1. Install Ollama for Windows from https://ollama.com/download/windows.
+2. In Command Prompt, run:
+
+   ```powershell
+   ollama pull qwen2.5:7b-instruct-q4_K_M
+   ```
+
+3. Open `config/settings.toml` and change `enabled = false` to `enabled = true` under `[models]`.
+4. Ensure Ollama is running, then launch AETHER.
+
+The configured model must already exist in Ollama. AETHER deliberately does not download it automatically. If this model is too large or slow on your hardware, choose a smaller quantized model and update `models.model`.
+
+## Commands
+
+- `/status` — show runtime and model connectivity.
+- `/remember <fact>` — save a user-provided memory locally.
+- `/quit` — exit without deleting data.
+
+## Current implementation status
+
+Implemented: Windows launch/setup scripts, validated TOML configuration, SQLite conversation and memory storage, task checkpoint table, Ollama chat adapter, simple lexical memory retrieval, and Windows CI tests.
+
+Not implemented yet: vector search, browser/desktop tools, cloud providers, autonomous task execution, RLCD, model training, continual learning, self-modifying code, multimodal systems, and multi-agent orchestration. These are planned research and engineering milestones, not existing capabilities.
+
+## Development tests
+
+Install the development extra and run:
+
+```powershell
+python -m pip install -e ".[dev]"
+python -m pytest
+```
 
 ## Safety and data
 
-- User data is stored under `data/`.
-- Configuration is stored under `config/`.
 - Secrets must never be committed to Git.
+- External content is untrusted input.
 - Consequential or destructive actions require explicit approval.
-- Self-modification is not enabled in the initial milestone.
+- Self-modification and unrestricted autonomy are intentionally absent from the foundation.
