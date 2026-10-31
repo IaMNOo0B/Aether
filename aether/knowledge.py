@@ -1,12 +1,11 @@
 """Provenance-aware knowledge graph with temporal claims and conflict surfacing."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 from typing import Any
 from urllib.parse import urlparse
 from uuid import uuid4
 import json
-import re
 import unicodedata
 
 from aether.storage import Store
@@ -227,12 +226,18 @@ class KnowledgeGraph:
             if not 0 <= source_index < len(selected):
                 continue
             source = selected[source_index]
+            subject = item.get("subject")
+            predicate = item.get("predicate")
+            object_value = item.get("object")
+            claim_type = item.get("claim_type", "fact")
+            if (not source.get("url") or not all(
+                    isinstance(value, str) and value.strip()
+                    for value in (subject, predicate, object_value, claim_type))):
+                continue
             try:
                 stored.append(self.add_claim(
-                    str(item.get("subject", "")),
-                    str(item.get("predicate", "")),
-                    str(item.get("object", "")),
-                    claim_type=str(item.get("claim_type", "fact")),
+                    subject, predicate, object_value,
+                    claim_type=claim_type,
                     source_url=source["url"],
                     source_title=source["title"],
                     evidence_class=source["evidence_type"],
