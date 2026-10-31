@@ -99,3 +99,26 @@ def test_autonomy_gateway_obeys_research_feature_flag(tmp_path):
         assert "Research is disabled" in str(exc)
     else:
         raise AssertionError("Research flag must be enforced inside the tool gateway")
+
+
+def test_autonomy_never_overwrites_existing_workspace_files(tmp_path):
+    from aether.autonomy import ToolDenied
+
+    store = Store(tmp_path / "aether.sqlite3")
+    runner = AutonomyRunner(
+        FakeProvider('{"steps":[{"tool":"workspace.list","args":{}}]}'),
+        store, AutonomySettings(enabled=True, allow_workspace_writes=True),
+        LimitSettings(), ResearchSettings(), tmp_path
+    )
+    destination = tmp_path / "workspace" / "keep.txt"
+    destination.write_text("preserve me", encoding="utf-8")
+    try:
+        runner.gateway.execute(
+            "workspace.write", {"path": "keep.txt", "content": "overwrite"},
+            lambda *args: True,
+        )
+    except FileExistsError:
+        pass
+    else:
+        raise AssertionError("Existing workspace file must not be overwritten")
+    assert destination.read_text(encoding="utf-8") == "preserve me"
