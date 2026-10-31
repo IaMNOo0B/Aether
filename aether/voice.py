@@ -1,7 +1,8 @@
-"""Push-to-talk offline voice interface using optional Vosk and pyttsx3 packages."""
+"""Push-to-talk offline voice interface using optional Vosk, PyAudio, and pyttsx3."""
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 
 class VoiceUnavailable(RuntimeError):
@@ -32,37 +33,54 @@ class VoiceInterface:
                 "and set voice.vosk_model_path."
             )
         try:
-            import speech_recognition as sr
-            from vosk import Model
+            import pyaudio
+            from vosk import KaldiRecognizer, Model
         except ImportError as exc:
             raise VoiceUnavailable(
                 "Install the optional voice extra: python -m pip install -e ".[voice]""
             ) from exc
         if self._model is None:
             self._model = Model(str(self.model_path))
-        recognizer = sr.Recognizer()
+
+        audio = pyaudio.PyAudio()
+        stream = None
+        recognizer = KaldiRecognizer(self._model, 16000)
         try:
-            with sr.Microphone() as microphone:
-                recognizer.adjust_for_ambient_noise(microphone, duration=0.5)
-                audio = recognizer.listen(
-                    microphone, timeout=timeout, phrase_time_limit=phrase_time_limit
-                )
-            transcript = recognizer.recognize_vosk(audio, model=self._model)
-        except (OSError, RuntimeError, ImportError) as exc:
+            stream = audio.open(
+                format=pyaudio.paInt16, channels=1, rate=16000,
+                input=True, frames_per_buffer=4000,
+            )
+            stream.start_stream()
+            import time
+            started = time.monotonic()
+            last_voice = started
+            chunks = 0
+            while time.monotonic() - started < timeout + phrase_time_limit:
+                data = stream.read(4000, exception_on_overflow=False)
+                chunks += 1
+                if recognizer.AcceptWaveform(data):
+                    result = json.loads(recognizer.Result())
+                    text = str(result.get("text", "")).strip()
+                    if text:
+                        return self._wake_filter(text)
+                if chunks * 0.25 >= phrase_time_limit:
+                    break
+            final = json.loads(recognizer.FinalResult())
+            return self._wake_filter(str(final.get("text", "")).strip())
+        except (OSError, RuntimeError) as exc:
             raise VoiceUnavailable(f"Microphone or offline speech recognition failed: {exc}") from exc
-        except Exception as exc:
-            if type(exc).__name__ in {"WaitTimeoutError", "UnknownValueError", "RequestError"}:
-                raise VoiceUnavailable(f"Speech was not recognized: {exc}") from exc
-            raise
-        import json
-        try:
-            text = str(json.loads(transcript).get("text", "")).strip()
-        except (json.JSONDecodeError, AttributeError, TypeError):
-            text = transcript.strip()
+        finally:
+            if stream is not None:
+                stream.stop_stream()
+                stream.close()
+            audio.terminate()
+
+    def _wake_filter(self, text: str) -> str:
         if not text:
             return ""
         if self.wake_word:
-            if not text.casefold().startswith(self.wake_word):
+            lowered = text.casefold()
+            if not lowered.startswith(self.wake_word):
                 return ""
             text = text[len(self.wake_word):].lstrip(" ,.:")
         return text
