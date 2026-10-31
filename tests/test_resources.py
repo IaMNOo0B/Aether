@@ -135,3 +135,16 @@ def test_autonomy_resource_preflight_cancels_before_model_planning(tmp_path):
 
     assert result["status"] == "cancelled"
     assert "VRAM budget exceeded" in result["reason"]
+
+def test_windows_resource_monitor_reads_system_cpu_and_ram():
+    import os
+
+    if os.name != "nt":
+        pytest.skip("This integration check is intended for the Windows runner")
+    snapshot = ResourceMonitor().snapshot(0.05)
+
+    assert snapshot["ram"] is not None
+    assert snapshot["ram"]["total_mb"] > 0
+    assert snapshot["ram"]["free_mb"] >= 0
+    assert snapshot["cpu_percent"] is None or 0 <= snapshot["cpu_percent"] <= 100
+    assert snapshot["gpu"] is None or 0 <= snapshot["gpu"]["free_mb"] <= snapshot["gpu"]["total_mb"]
