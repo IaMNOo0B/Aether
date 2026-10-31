@@ -70,7 +70,7 @@ Set `[desktop] enabled = true`. The default application allowlist contains Notep
 - `/desktop open notepad.exe`
 - `/desktop click X Y`
 - `/desktop type TEXT`
-- `/desktop key enter`
+- `/desktop key enter`\n- `/desktop screenshot workspace/screen.png`
 
 To enable mouse/keyboard input, also set `allow_input = true`. Each click or typing action requires an explicit `APPROVE` confirmation. Only a small single-key allowlist is supported. Dangerous shell/admin applications are blocked even if accidentally added to the allowlist.
 
