@@ -9,6 +9,9 @@ enabled = false
 base_url = "http://127.0.0.1:11434"
 model = "phi3:mini-4k-q4_0"
 timeout_seconds = 120
+# For openai_compatible only: read the API key from this environment variable.
+# Leave empty for local OpenAI-compatible servers that do not require a key.
+api_key_env = "AETHER_API_KEY"
 
 [storage]
 database = "data/aether.sqlite3"
