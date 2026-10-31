@@ -25,16 +25,16 @@ AETHER stores its SQLite database in `data/aether.sqlite3` and logs in `logs/aet
 ## Enable local Ollama chat
 
 1. Install Ollama for Windows from https://ollama.com/download/windows.
-2. In Command Prompt, run:
+2. In Command Prompt or PowerShell, run:
 
    ```powershell
-   ollama pull qwen2.5:7b-instruct-q4_K_M
+   ollama pull phi3:mini-4k-q4_0
    ```
 
 3. Open `config/settings.toml` and change `enabled = false` to `enabled = true` under `[models]`.
 4. Ensure Ollama is running, then launch AETHER.
 
-The configured model must already exist in Ollama. AETHER deliberately does not download it automatically. If this model is too large or slow on your hardware, choose a smaller quantized model and update `models.model`.
+The configured model must already exist in Ollama. AETHER deliberately does not download it automatically. The default is Phi-3 Mini 4K Q4_0. Its small size is suitable for constrained local hardware, but its 4K context and smaller model capacity limit long-context work and complex reasoning. Keep prompts and conversation history compact.
 
 ## Commands
 
