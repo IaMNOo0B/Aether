@@ -237,7 +237,7 @@ def main() -> int:
                 ).strip() != "TEST":
                     print("AETHER > Evaluation cancelled.")
                     continue
-                engineer = SelfEngineer(Path.cwd(), engine.provider(), settings.limits.tool_timeout_seconds * 5)
+                engineer = SelfEngineer(Path.cwd(), engine.registry.get(settings.models.provider), settings.limits.tool_timeout_seconds * 5)
                 result = engineer.evaluate(experiment_id, approved=True)
                 print(f"AETHER > Candidate status: {result['status']}")
                 print(f"Integrated: {result.get('integrated', False)}")
