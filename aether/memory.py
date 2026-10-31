@@ -5,7 +5,6 @@ This is a transparent local retrieval baseline, not semantic embedding search.
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime, timezone
 from math import log
 import re
 from typing import Any
