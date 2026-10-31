@@ -169,3 +169,28 @@ def test_world_actions_cannot_be_reused_across_worlds(tmp_path):
     )
     with pytest.raises(KeyError, match="does not belong"):
         model.simulate("World B", action["id"])
+
+def test_world_model_updates_empirical_action_risk_from_observed_outcomes(tmp_path):
+    model = WorldModel(Store(tmp_path / "world.sqlite3"))
+    model.create_world("Pump", {"running": False})
+    action = model.register_action(
+        "Pump", "Start pump",
+        preconditions={"running": False},
+        effects={"running": True},
+        failure_probability=0.2,
+    )
+
+    failed_simulation = model.simulate("Pump", action["id"])
+    model.record_observation(
+        failed_simulation["id"], {"running": False}
+    )
+    successful_simulation = model.simulate("Pump", action["id"])
+    model.record_observation(
+        successful_simulation["id"], {"running": True}
+    )
+
+    updated = model.simulate("Pump", action["id"])
+    assert updated["observed_successes"] == 1
+    assert updated["observed_failures"] == 1
+    assert updated["observed_failure_rate"] == 0.5
+    assert updated["risk_score"] == 0.35
