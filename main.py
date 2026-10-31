@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from threading import Event, Thread
+from uuid import uuid4
 
 from aether.agents import MultiAgentCoordinator
 from aether.autonomy import AutonomyRunner
@@ -14,6 +16,7 @@ from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.learning import SkillLearner
 from aether.research import ResearchError, Researcher
+from aether.scheduler import AutonomyScheduler
 from aether.self_engineering import SelfEngineer
 from aether.storage import Store
 from aether.voice import VoiceInterface, VoiceUnavailable
@@ -41,6 +44,21 @@ def main() -> int:
         print("AETHER could not start. Check logs/aether.log and config/settings.toml.")
         return 1
 
+    scheduler = None
+    scheduler_stop = Event()
+    scheduler_thread = None
+    if settings.scheduler.enabled:
+        scheduled_runner = AutonomyRunner(
+            engine.provider(), store, settings.autonomy, settings.limits,
+            settings.research, Path.cwd(),
+        )
+        scheduler = AutonomyScheduler(store, scheduled_runner, settings.scheduler)
+        scheduler_thread = Thread(
+            target=scheduler.run_forever, args=(scheduler_stop,),
+            name="AETHER-Scheduler", daemon=True,
+        )
+        scheduler_thread.start()
+
     status = engine.status()
     print(f"{status['name']} v{status['version']} | Windows-first local AI")
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
@@ -48,7 +66,7 @@ def main() -> int:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
     print("Commands: /status /self-model /tasks /task-events ID /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /remember /memory-search /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
-    print("          /self-improve /self-improve-test /tasks /reports /calibration /quit\n")
+    print("          /schedule add|list|pause|resume /self-improve /self-improve-test /reports /calibration /quit\n")
 
     while True:
         try:
@@ -162,6 +180,46 @@ def main() -> int:
                     f"Brier: {report.brier_score:.4f} | Log loss: {report.log_loss:.4f} | "
                     f"ECE: {report.expected_calibration_error:.4f} | AURC: {report.aurc:.4f}"
                 )
+                continue
+
+            if lower.startswith("/schedule "):
+                if not settings.scheduler.enabled:
+                    print("AETHER > Scheduler is disabled. Enable [scheduler] and [autonomy] in config/settings.toml.")
+                    continue
+                parts = user_text[len("/schedule "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                if action == "add":
+                    fields = argument.split("|", 2)
+                    if len(fields) not in {2, 3}:
+                        print("Usage: /schedule add interval_seconds | objective | max_runs(optional; 0=unlimited)")
+                        continue
+                    interval = int(fields[0].strip())
+                    objective = fields[1].strip()
+                    max_runs = int(fields[2].strip()) if len(fields) == 3 else 0
+                    schedule_id = uuid4().hex
+                    store.create_schedule(schedule_id, objective, interval, max_runs)
+                    print(f"AETHER > Read-only scheduled goal created: {schedule_id}")
+                    continue
+                if action == "list":
+                    schedules = store.list_schedules()
+                    if not schedules:
+                        print("AETHER > No scheduled goals.")
+                    for item in schedules:
+                        print(
+                            f"{item['id']} | {'enabled' if item['enabled'] else 'paused'} | "
+                            f"every {item['interval_seconds']}s | runs {item['run_count']}/"
+                            f"{item['max_runs'] or 'unlimited'} | {item['objective']}"
+                        )
+                    continue
+                if action in {"pause", "resume"} and argument.strip():
+                    store.set_schedule_enabled(argument.strip(), action == "resume")
+                    print(f"AETHER > Schedule {argument.strip()} {action}d.")
+                    continue
+                if action == "tick" and scheduler is not None:
+                    print(json.dumps(scheduler.run_once(), indent=2))
+                    continue
+                print("Usage: /schedule add|list|pause ID|resume ID|tick")
                 continue
 
             if lower.startswith("/research "):
@@ -366,6 +424,9 @@ def main() -> int:
             logging.exception("Command failed")
             print("AETHER > The command failed. Check logs/aether.log for details.")
 
+    if scheduler_thread is not None:
+        scheduler_stop.set()
+        scheduler_thread.join(timeout=5)
     return 0
 
 
