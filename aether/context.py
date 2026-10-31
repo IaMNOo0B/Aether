@@ -7,17 +7,16 @@ def fit_messages(
     history: list[dict[str, str]],
     max_characters: int,
 ) -> list[dict[str, str]]:
-    """Keep the system instruction and newest conversation turns within a hard budget.
+    """Keep system instructions and newest history within a conservative hard budget.
 
-    Oldest history is discarded first. A single oversized latest message is clipped
-    from the left so its most recent content survives. The system instruction is
-    never silently discarded.
+    Oldest history is discarded first. The system instruction is never discarded.
     """
-    if max_characters < len(system_message):
+    system_cost = len(system_message) + len("system") + 16
+    if max_characters < system_cost:
         raise ValueError("Prompt budget is smaller than the system instruction")
 
     result = [{"role": "system", "content": system_message}]
-    remaining = max_characters - len(system_message)
+    remaining = max_characters - system_cost
     selected: list[dict[str, str]] = []
 
     for message in reversed(history):
