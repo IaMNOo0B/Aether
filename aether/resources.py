@@ -162,9 +162,9 @@ class ResourceGuard:
         return self.monitor.snapshot(self.policy.cpu_sample_seconds)
 
     def check(self, operation: str, *, gpu_required: bool = False) -> dict[str, Any]:
-        snapshot = self.snapshot()
         if not self.policy.enabled:
-            return snapshot
+            return {"disabled": True}
+        snapshot = self.snapshot()
         cpu = snapshot.get("cpu_percent")
         if cpu is not None and cpu > self.policy.max_cpu_percent:
             raise ResourceLimitExceeded(
