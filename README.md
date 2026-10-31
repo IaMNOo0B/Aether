@@ -108,7 +108,7 @@ To fit one 6 GB GPU, these roles run sequentially through the same configured mo
 - `/self-improve-test <experiment-id>` asks for explicit approval, runs baseline tests, applies the patch to a copied candidate tree, then compiles and tests that candidate.
 - Candidate patches and receipts are stored in `.aether/experiments/`.
 
-A candidate is never automatically merged or copied into production. The copied worktree is **not** a secure OS sandbox: tests execute code with the current user's permissions. Review the patch before approving evaluation. Protected policy, startup, and safety-control files cannot be patched through this workflow.
+A candidate is never automatically merged or copied into production. Git for Windows must be installed for patch application. The copied worktree is **not** a secure OS sandbox: tests execute code with the current user's permissions. Review the patch before approving evaluation. Protected policy, startup, and safety-control files cannot be patched through this workflow.
 
 ## Other commands
 
