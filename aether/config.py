@@ -80,6 +80,17 @@ class VoiceSettings:
 
 
 @dataclass(frozen=True)
+@dataclass(frozen=True)
+class MemorySettings:
+    semantic_enabled: bool = False
+    embedding_provider: str = "ollama"
+    embedding_base_url: str = "http://127.0.0.1:11434"
+    embedding_model: str = "nomic-embed-text"
+    embedding_timeout_seconds: int = 30
+    semantic_weight: float = 0.45
+    index_batch_size: int = 32
+
+
 class SchedulerSettings:
     enabled: bool = False
     poll_interval_seconds: int = 30
@@ -97,6 +108,7 @@ class Settings:
     desktop: DesktopSettings = DesktopSettings()
     voice: VoiceSettings = VoiceSettings()
     scheduler: SchedulerSettings = SchedulerSettings()
+    memory: MemorySettings = MemorySettings()
 
 
 def load_settings(path: Path | str = "config/settings.toml") -> Settings:
