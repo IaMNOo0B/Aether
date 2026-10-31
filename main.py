@@ -66,7 +66,7 @@ def main() -> int:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
     print("Commands: /status /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /remember /memory-search /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
-    print("          /schedule add|list|pause|resume /self-improve /self-improve-test /reports /calibration /quit\n")
+    print("          /schedule add|list|pause|resume /knowledge /self-improve /self-improve-test /reports /calibration /quit\n")
 
     while True:
         try:
@@ -236,6 +236,69 @@ def main() -> int:
                         print(json.dumps(scheduler.run_once(), indent=2))
                     continue
                 print("Usage: /schedule add|list|pause ID|resume ID|tick")
+                continue
+
+            if lower.startswith("/knowledge "):
+                parts = user_text[len("/knowledge "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                if action == "extract" and argument:
+                    claims = engine.knowledge.extract_from_report(argument)
+                    print(f"AETHER > Extracted {len(claims)} unverified claim(s) from report {argument}.")
+                    for claim in claims:
+                        print(
+                            f"{claim['id']} | {claim['claim_type']} | "
+                            f"{claim['subject_name']} --{claim['predicate']}--> {claim['object_value']}"
+                        )
+                    continue
+                if action == "search" and argument:
+                    entities = engine.knowledge.search_entities(argument)
+                    if not entities:
+                        print("AETHER > No matching knowledge entities.")
+                    for entity in entities:
+                        print(f"{entity['id']} | {entity['entity_type']} | {entity['name']}")
+                    continue
+                if action == "show" and argument:
+                    view = engine.knowledge.entity_view(argument)
+                    if view is None:
+                        print("AETHER > Entity not found.")
+                    else:
+                        print(json.dumps(view, indent=2))
+                    continue
+                if action == "conflicts" and argument:
+                    conflicts = engine.knowledge.find_conflicts(argument)
+                    if not conflicts:
+                        print("AETHER > No overlapping contradictory claims found.")
+                    else:
+                        print(json.dumps(conflicts, indent=2))
+                    continue
+                if action == "claim":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /knowledge claim subject | predicate | object | fact/hypothesis/observation/prediction | source_url")
+                        continue
+                    claim = engine.knowledge.add_claim(
+                        fields[0].strip(), fields[1].strip(), fields[2].strip(),
+                        claim_type=fields[3].strip().casefold(),
+                        source_url=fields[4].strip(),
+                    )
+                    print(f"AETHER > Unverified claim saved: {claim['id']}")
+                    continue
+                if action == "review":
+                    fields = argument.split("|", 2)
+                    if len(fields) != 3:
+                        print("Usage: /knowledge review claim-id | verified/disputed/retracted | evidence")
+                        continue
+                    claim = engine.knowledge.review_claim(
+                        fields[0].strip(), fields[1].strip().casefold(), fields[2].strip()
+                    )
+                    print(f"AETHER > Claim {claim['id']} status: {claim['status']}")
+                    continue
+                if action == "history" and argument:
+                    events = store.list_knowledge_claim_events(argument)
+                    print(json.dumps(events, indent=2))
+                    continue
+                print("Usage: /knowledge extract REPORT_ID | search QUERY | show ENTITY | conflicts ENTITY | claim ... | review ... | history CLAIM_ID")
                 continue
 
             if lower.startswith("/research "):
