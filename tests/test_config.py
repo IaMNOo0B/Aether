@@ -52,3 +52,35 @@ def test_load_settings_rejects_invalid_api_key_environment_name(tmp_path):
 
     with pytest.raises(ValueError, match="contain only letters"):
         load_settings(config)
+
+def test_load_settings_parses_provider_fallbacks(tmp_path):
+    config = tmp_path / "settings.toml"
+    config.write_text(
+        """
+[app]
+name = "AETHER"
+[models]
+provider = "ollama"
+enabled = true
+base_url = "http://127.0.0.1:11434"
+model = "local-model"
+[[models.fallbacks]]
+provider = "openai_compatible"
+base_url = "https://api.example.invalid/v1"
+model = "cloud-model"
+api_key_env = "AETHER_CLOUD_KEY"
+[storage]
+database = "data/aether.sqlite3"
+[limits]
+max_history_messages = 8
+max_prompt_characters = 12000
+max_autonomy_steps = 5
+max_research_results = 8
+tool_timeout_seconds = 60
+""",
+        encoding="utf-8",
+    )
+    settings = load_settings(config)
+    assert len(settings.models.fallbacks) == 1
+    assert settings.models.fallbacks[0].provider == "openai_compatible"
+    assert settings.models.fallbacks[0].model == "cloud-model"
