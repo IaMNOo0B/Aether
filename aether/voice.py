@@ -80,9 +80,13 @@ class VoiceInterface:
             return ""
         if self.wake_word:
             lowered = text.casefold()
-            if not lowered.startswith(self.wake_word):
+            if lowered.startswith("hey " + self.wake_word):
+                text = text[4 + len(self.wake_word):]
+            elif lowered.startswith(self.wake_word):
+                text = text[len(self.wake_word):]
+            else:
                 return ""
-            text = text[len(self.wake_word):].lstrip(" ,.:")
+            text = text.lstrip(" ,.:")
         return text
 
     def speak(self, text: str) -> None:
