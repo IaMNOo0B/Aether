@@ -50,5 +50,5 @@ def test_load_settings_rejects_invalid_api_key_environment_name(tmp_path):
         'api_key_env = "NOT VALID"',
     ), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="environment variable name"):
+    with pytest.raises(ValueError, match="contain only letters"):
         load_settings(config)
