@@ -177,6 +177,72 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_knowledge_claim_events_claim
                     ON knowledge_claim_events(claim_id, sequence);
+                CREATE TABLE IF NOT EXISTS worlds (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    normalized_name TEXT NOT NULL UNIQUE,
+                    description TEXT NOT NULL DEFAULT '',
+                    state_json TEXT NOT NULL,
+                    constraints_json TEXT NOT NULL DEFAULT '{}',
+                    version INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS world_state_history (
+                    world_id TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    state_json TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(world_id, version),
+                    FOREIGN KEY(world_id) REFERENCES worlds(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS world_actions (
+                    id TEXT PRIMARY KEY,
+                    world_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    normalized_name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    preconditions_json TEXT NOT NULL,
+                    effects_json TEXT NOT NULL,
+                    failure_effects_json TEXT NOT NULL DEFAULT '{}',
+                    resource_costs_json TEXT NOT NULL DEFAULT '{}',
+                    failure_probability REAL NOT NULL DEFAULT 0
+                        CHECK(failure_probability >= 0 AND failure_probability <= 1),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(world_id, normalized_name),
+                    FOREIGN KEY(world_id) REFERENCES worlds(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_world_actions_world
+                    ON world_actions(world_id, normalized_name);
+                CREATE TABLE IF NOT EXISTS world_simulations (
+                    id TEXT PRIMARY KEY,
+                    world_id TEXT NOT NULL,
+                    action_id TEXT NOT NULL,
+                    world_version INTEGER NOT NULL,
+                    initial_state_json TEXT NOT NULL,
+                    predicted_state_json TEXT NOT NULL,
+                    failure_state_json TEXT NOT NULL,
+                    preconditions_met INTEGER NOT NULL CHECK(preconditions_met IN (0, 1)),
+                    constraints_met INTEGER NOT NULL CHECK(constraints_met IN (0, 1)),
+                    failure_probability REAL NOT NULL,
+                    resource_costs_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(world_id) REFERENCES worlds(id),
+                    FOREIGN KEY(action_id) REFERENCES world_actions(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_world_simulations_world
+                    ON world_simulations(world_id, created_at);
+                CREATE TABLE IF NOT EXISTS world_observations (
+                    id TEXT PRIMARY KEY,
+                    simulation_id TEXT NOT NULL,
+                    actual_state_json TEXT NOT NULL,
+                    prediction_error_json TEXT NOT NULL,
+                    applied_to_world INTEGER NOT NULL CHECK(applied_to_world IN (0, 1)),
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(simulation_id) REFERENCES world_simulations(id)
+                );
             """)
             db.execute(
                 """INSERT OR IGNORE INTO system_controls(name, enabled, reason, updated_at)
@@ -341,6 +407,183 @@ class Store:
                 (claim_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+
+    def create_world(
+        self, world_id: str, name: str, normalized_name: str,
+        description: str, state: dict[str, Any], constraints: dict[str, Any],
+    ) -> None:
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                """INSERT INTO worlds
+                   (id, name, normalized_name, description, state_json,
+                    constraints_json, version, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+                (world_id, name, normalized_name, description, json.dumps(state),
+                 json.dumps(constraints), now, now),
+            )
+            db.execute(
+                """INSERT INTO world_state_history(world_id, version, state_json, source, created_at)
+                   VALUES (?, 1, ?, 'initial_state', ?)""",
+                (world_id, json.dumps(state), now),
+            )
+
+    def get_world(self, world_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM worlds WHERE id=?", (world_id,)).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["state"] = json.loads(item.pop("state_json"))
+        item["constraints"] = json.loads(item.pop("constraints_json"))
+        return item
+
+    def find_world(self, normalized_name: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT id FROM worlds WHERE normalized_name=?", (normalized_name,)
+            ).fetchone()
+        return self.get_world(row["id"]) if row else None
+
+    def list_worlds(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT id FROM worlds ORDER BY name LIMIT ?", (max(0, min(limit, 500)),)
+            ).fetchall()
+        return [world for row in rows if (world := self.get_world(row["id"])) is not None]
+
+    def update_world_state(
+        self, world_id: str, state: dict[str, Any], source: str,
+    ) -> int:
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT version FROM worlds WHERE id=?", (world_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown world: {world_id}")
+            version = int(row["version"]) + 1
+            db.execute(
+                "UPDATE worlds SET state_json=?, version=?, updated_at=? WHERE id=?",
+                (json.dumps(state), version, now, world_id),
+            )
+            db.execute(
+                """INSERT INTO world_state_history(world_id, version, state_json, source, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (world_id, version, json.dumps(state), source, now),
+            )
+        return version
+
+    def list_world_state_history(self, world_id: str) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT version, state_json, source, created_at
+                   FROM world_state_history WHERE world_id=? ORDER BY version""",
+                (world_id,),
+            ).fetchall()
+        return [
+            {"version": row["version"], "state": json.loads(row["state_json"]),
+             "source": row["source"], "created_at": row["created_at"]}
+            for row in rows
+        ]
+
+    def insert_world_action(self, action: dict[str, Any]) -> None:
+        now = utc_now()
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO world_actions
+                   (id, world_id, name, normalized_name, description, preconditions_json,
+                    effects_json, failure_effects_json, resource_costs_json,
+                    failure_probability, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    action["id"], action["world_id"], action["name"], action["normalized_name"],
+                    action.get("description", ""), json.dumps(action["preconditions"]),
+                    json.dumps(action["effects"]), json.dumps(action.get("failure_effects", {})),
+                    json.dumps(action.get("resource_costs", {})),
+                    action.get("failure_probability", 0.0), now, now,
+                ),
+            )
+
+    def get_world_action(self, action_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM world_actions WHERE id=?", (action_id,)).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        for key in ("preconditions_json", "effects_json", "failure_effects_json", "resource_costs_json"):
+            item[key.removesuffix("_json")] = json.loads(item.pop(key))
+        return item
+
+    def list_world_actions(self, world_id: str) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT id FROM world_actions WHERE world_id=? ORDER BY name", (world_id,)
+            ).fetchall()
+        return [action for row in rows if (action := self.get_world_action(row["id"])) is not None]
+
+    def insert_world_simulation(self, simulation: dict[str, Any]) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO world_simulations
+                   (id, world_id, action_id, world_version, initial_state_json,
+                    predicted_state_json, failure_state_json, preconditions_met,
+                    constraints_met, failure_probability, resource_costs_json, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    simulation["id"], simulation["world_id"], simulation["action_id"],
+                    simulation["world_version"], json.dumps(simulation["initial_state"]),
+                    json.dumps(simulation["predicted_state"]), json.dumps(simulation["failure_state"]),
+                    int(simulation["preconditions_met"]), int(simulation["constraints_met"]),
+                    simulation["failure_probability"], json.dumps(simulation["resource_costs"]),
+                    utc_now(),
+                ),
+            )
+
+    def get_world_simulation(self, simulation_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM world_simulations WHERE id=?", (simulation_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        for key in ("initial_state_json", "predicted_state_json", "failure_state_json", "resource_costs_json"):
+            item[key.removesuffix("_json")] = json.loads(item.pop(key))
+        item["preconditions_met"] = bool(item["preconditions_met"])
+        item["constraints_met"] = bool(item["constraints_met"])
+        return item
+
+    def insert_world_observation(self, observation: dict[str, Any]) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO world_observations
+                   (id, simulation_id, actual_state_json, prediction_error_json,
+                    applied_to_world, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (
+                    observation["id"], observation["simulation_id"],
+                    json.dumps(observation["actual_state"]),
+                    json.dumps(observation["prediction_error"]),
+                    int(observation["applied_to_world"]), utc_now(),
+                ),
+            )
+
+    def list_world_observations(self, simulation_id: str) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT id, actual_state_json, prediction_error_json,
+                          applied_to_world, created_at
+                   FROM world_observations WHERE simulation_id=? ORDER BY created_at""",
+                (simulation_id,),
+            ).fetchall()
+        return [
+            {"id": row["id"], "actual_state": json.loads(row["actual_state_json"]),
+             "prediction_error": json.loads(row["prediction_error_json"]),
+             "applied_to_world": bool(row["applied_to_world"]), "created_at": row["created_at"]}
+            for row in rows
+        ]
 
     def add_message(self, role: str, content: str) -> int:
         if role not in {"user", "assistant", "system"}:
