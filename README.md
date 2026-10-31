@@ -142,6 +142,16 @@ To run them in the background, set all of the following:
 
 The scheduler is disabled by default. It only processes scheduled tasks through read-only tools. It never approves workspace writes or test execution. A model-generated plan that requests a side effect is cancelled rather than approved.
 
+### OMEGA acceptance suite
+
+Run the 12 acceptance groups from the project root:
+
+```powershell
+.venv\Scripts\python -m aether.acceptance --json reports/acceptance/latest.json
+```
+
+The report records expected results, actual test output, test execution status and overall acceptance status for A–L. A passing subset test is marked `PARTIAL` when the full requirement is not implemented. The command exits with code 2 while any requirement remains partial, code 1 for failed/blocked tests, and code 0 only when all 12 are fully accepted.
+
 ### Desktop control
 
 Install the optional package:
