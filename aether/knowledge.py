@@ -78,6 +78,13 @@ class KnowledgeGraph:
         parsed = urlparse(source_url) if source_url else None
         if parsed and (parsed.scheme not in {"http", "https"} or not parsed.netloc):
             raise ValueError("Source URL must be an absolute HTTP or HTTPS URL")
+        if source_report_id is not None:
+            report = self.store.get_research_report(source_report_id)
+            if report is None:
+                raise ValueError("source_report_id must identify an existing research report")
+            report_urls = {item.get("url", "") for item in report["sources"]}
+            if not source_url or source_url not in report_urls:
+                raise ValueError("Claim source URL must belong to the linked research report")
         start = _validate_date(valid_from, "valid_from")
         end = _validate_date(valid_to, "valid_to")
         if start and end and end[:10] < start[:10]:
