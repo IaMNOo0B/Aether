@@ -47,7 +47,7 @@ def main() -> int:
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
     print("Commands: /status /self-model /tasks /task-events ID /research /agents /autonomy /learn /skills /desktop /voice")
-    print("          /self-improve /self-improve-test /tasks /reports /calibration /quit\n")
+    print("          /remember /memory-search /correct-memory /self-improve /self-improve-test /tasks /reports /calibration /quit\n")
 
     while True:
         try:
@@ -274,10 +274,38 @@ def main() -> int:
             if lower.startswith("/remember "):
                 memory = user_text[len("/remember "):].strip()
                 if memory:
-                    store.add_memory(memory, source="user", status="user-provided")
-                    print("AETHER > Saved to local memory.")
+                    memory_id = engine.memory.remember(
+                        memory, source="user", kind="semantic", status="user-provided"
+                    )
+                    print(f"AETHER > Saved memory #{memory_id}.")
                 else:
                     print("AETHER > Usage: /remember information to save")
+                continue
+
+            if lower.startswith("/memory-search "):
+                query = user_text[len("/memory-search "):].strip()
+                matches = engine.memory.search(query, limit=10)
+                if not matches:
+                    print("AETHER > No relevant memories found.")
+                for item in matches:
+                    print(
+                        f"#{item['id']} [{item['kind']}; {item['status']}; "
+                        f"relevance={item['relevance']:.3f}] {item['content']}"
+                    )
+                continue
+
+            if lower.startswith("/correct-memory "):
+                parts = user_text[len("/correct-memory "):].split("|", 2)
+                if len(parts) != 3:
+                    print("Usage: /correct-memory memory-id | corrected content | reason")
+                    continue
+                new_id = engine.memory.correct(
+                    int(parts[0].strip()), parts[1].strip(), parts[2].strip()
+                )
+                print(
+                    f"AETHER > Correction saved as memory #{new_id}. "
+                    "The previous record is preserved as superseded."
+                )
                 continue
 
             print(f"AETHER > {engine.respond(user_text)}\n")
