@@ -497,6 +497,31 @@ def main() -> int:
                     print(f"{skill['id']} | {skill['status']} | {skill['title']}")
                 continue
 
+            if lower.startswith("/skill-test "):
+                parts = user_text[len("/skill-test "):].split("|", 2)
+                if len(parts) != 3:
+                    print("Usage: /skill-test skill-id | held-out input | expected output")
+                    continue
+                engine.resources.check(
+                    "held-out skill execution",
+                    gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
+                )
+                learner = SkillLearner(
+                    store, engine.provider() if settings.models.enabled else None
+                )
+                skill = learner.evaluate_held_out(
+                    parts[0].strip(), parts[1].strip(), parts[2].strip()
+                )
+                result = skill["last_held_out_result"]
+                print(
+                    f"AETHER > Held-out test: {'PASS' if result['passed'] else 'FAIL'} | "
+                    f"skill status: {skill['status']}"
+                )
+                print(f"Expected: {result['expected_output']}")
+                print(f"Actual:   {result['actual_output']}")
+                print("AETHER > Three distinct passing held-out inputs are required for validation.")
+                continue
+
             if lower.startswith("/skill-eval "):
                 parts = user_text[len("/skill-eval "):].split("|", 2)
                 if len(parts) != 3 or parts[1].strip().casefold() not in {"pass", "fail"}:
@@ -506,6 +531,7 @@ def main() -> int:
                     parts[0].strip(), parts[1].strip().casefold() == "pass", parts[2].strip()
                 )
                 print(f"AETHER > {skill['title']} status: {skill['status']}")
+                print("AETHER > Manual review is recorded as evidence but cannot validate a skill.")
                 continue
 
             if lower.startswith("/desktop "):
