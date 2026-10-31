@@ -103,3 +103,11 @@ def test_scheduler_does_not_enqueue_when_emergency_stop_is_active(tmp_path):
     assert result["status"] == "emergency_stop"
     assert result["enqueued"] == []
     assert store.list_tasks(status="queued") == []
+
+def test_tool_gateway_itself_checks_emergency_stop(tmp_path):
+    store = Store(tmp_path / "controls.sqlite3")
+    runner = make_runner(tmp_path, store)
+    store.set_emergency_stop(True, "block direct gateway access")
+
+    with pytest.raises(EmergencyStop, match="tool execution is blocked"):
+        runner.gateway.execute("workspace.list", {"path": "."})
