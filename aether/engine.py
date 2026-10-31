@@ -8,6 +8,7 @@ from aether.context import fit_messages
 from aether.learning import SkillLearner
 from aether.ollama import ModelUnavailable
 from aether.providers import build_registry
+from aether.self_model import SelfModel
 from aether.storage import Store
 from aether.tasks import TaskManager
 
@@ -31,6 +32,9 @@ class AetherEngine:
             settings.models.timeout_seconds,
         )
         self.tasks = TaskManager(store)
+        self.self_model = SelfModel(
+            settings.storage.database, settings.app.name, "0.3.0"
+        )
         self.skills = SkillLearner(
             store,
             self.registry.get(settings.models.provider) if settings.models.enabled else None,
@@ -44,9 +48,11 @@ class AetherEngine:
     def status(self) -> dict[str, object]:
         provider = self.registry.get(self.settings.models.provider)
         available = provider.is_available() if self.settings.models.enabled else False
+        identity = self.self_model.snapshot()
         return {
             "name": self.settings.app.name,
-            "version": "0.3.0",
+            "version": identity["version"],
+            "identity_id": identity["identity_id"],
             "provider": self.settings.models.provider,
             "registered_providers": self.registry.names(),
             "model": self.settings.models.model,
@@ -56,6 +62,7 @@ class AetherEngine:
             "autonomy_enabled": self.settings.autonomy.enabled,
             "desktop_enabled": self.settings.desktop.enabled,
             "voice_enabled": self.settings.voice.enabled,
+            "capability_records": len(identity["capabilities"]),
             "database": str(self.store.path),
         }
 
