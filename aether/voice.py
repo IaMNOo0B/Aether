@@ -37,7 +37,7 @@ class VoiceInterface:
             from vosk import KaldiRecognizer, Model
         except ImportError as exc:
             raise VoiceUnavailable(
-                "Install the optional voice extra: python -m pip install -e ".[voice]""
+                'Install the optional voice extra: python -m pip install -e ".[voice]"'
             ) from exc
         if self._model is None:
             self._model = Model(str(self.model_path))
@@ -93,7 +93,7 @@ class VoiceInterface:
             import pyttsx3
         except ImportError as exc:
             raise VoiceUnavailable(
-                "Install the optional voice extra: python -m pip install -e ".[voice]""
+                'Install the optional voice extra: python -m pip install -e ".[voice]"'
             ) from exc
         if self._speaker is None:
             self._speaker = pyttsx3.init()
