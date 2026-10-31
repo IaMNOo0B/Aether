@@ -3,6 +3,7 @@ import pytest
 from aether.resources import (
     ResourceGuard, ResourceLimitExceeded, ResourceMonitor, ResourcePolicy,
 )
+from aether.storage import Store
 
 
 class FakeMonitor:
@@ -111,8 +112,6 @@ def test_gpu_telemetry_returns_unknown_when_nvidia_smi_is_unavailable(monkeypatc
     assert ResourceMonitor.gpu() is None
 
 def test_autonomy_resource_preflight_cancels_before_model_planning(tmp_path):
-    import json
-
     from aether.autonomy import AutonomyRunner
     from aether.config import AutonomySettings, LimitSettings, ResearchSettings
 
@@ -124,9 +123,7 @@ def test_autonomy_resource_preflight_cancels_before_model_planning(tmp_path):
         def check(self, operation, **kwargs):
             raise ResourceLimitExceeded("VRAM budget exceeded")
 
-    store = __import__("aether.storage", fromlist=["Store"]).Store(
-        tmp_path / "resource.sqlite3"
-    )
+    store = Store(tmp_path / "resource.sqlite3")
     runner = AutonomyRunner(
         NeverCalledProvider(), store,
         AutonomySettings(enabled=True, allow_read_only=True),
