@@ -55,3 +55,9 @@ enabled = false
 wake_word = "jarvis"
 vosk_model_path = "models/vosk"
 speak_responses = true
+
+[scheduler]
+# Off by default. When enabled, scheduled goals run through read-only tools only.
+enabled = false
+poll_interval_seconds = 30
+max_tasks_per_tick = 1
