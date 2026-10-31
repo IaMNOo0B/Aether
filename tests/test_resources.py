@@ -109,3 +109,32 @@ def test_gpu_telemetry_returns_unknown_when_nvidia_smi_is_unavailable(monkeypatc
 
     monkeypatch.setattr("aether.resources.subprocess.run", unavailable)
     assert ResourceMonitor.gpu() is None
+
+def test_autonomy_resource_preflight_cancels_before_model_planning(tmp_path):
+    import json
+
+    from aether.autonomy import AutonomyRunner
+    from aether.config import AutonomySettings, LimitSettings, ResearchSettings
+
+    class NeverCalledProvider:
+        def chat(self, messages):
+            raise AssertionError("Model must not be called after resource preflight fails")
+
+    class BlockedGuard:
+        def check(self, operation, **kwargs):
+            raise ResourceLimitExceeded("VRAM budget exceeded")
+
+    store = __import__("aether.storage", fromlist=["Store"]).Store(
+        tmp_path / "resource.sqlite3"
+    )
+    runner = AutonomyRunner(
+        NeverCalledProvider(), store,
+        AutonomySettings(enabled=True, allow_read_only=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+        resource_guard=BlockedGuard(), gpu_required=True,
+    )
+
+    result = runner.run("Plan a bounded task")
+
+    assert result["status"] == "cancelled"
+    assert "VRAM budget exceeded" in result["reason"]
