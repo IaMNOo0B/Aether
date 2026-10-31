@@ -64,7 +64,7 @@ def main() -> int:
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
-    print("Commands: /status /self-model /tasks /task-events ID /research /agents /autonomy /learn /skills /desktop /voice")
+    print("Commands: /status /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /remember /memory-search /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /self-improve /self-improve-test /reports /calibration /quit\n")
 
@@ -83,6 +83,22 @@ def main() -> int:
             break
 
         try:
+            if lower == "/emergency-stop":
+                store.set_emergency_stop(True, "Activated from the AETHER console")
+                print("AETHER > EMERGENCY STOP ACTIVE. Scheduled and autonomous execution is blocked.")
+                continue
+
+            if lower == "/resume-autonomy":
+                if not store.emergency_stop_enabled():
+                    print("AETHER > Emergency stop is not active.")
+                    continue
+                if input("This re-enables autonomous execution. Type RESUME to confirm: ").strip() != "RESUME":
+                    print("AETHER > Resume cancelled.")
+                    continue
+                store.set_emergency_stop(False, "User explicitly resumed autonomy")
+                print("AETHER > Emergency stop cleared. Autonomy remains subject to its configured permissions.")
+                continue
+
             if lower == "/status":
                 for key, value in engine.status().items():
                     print(f"{key}: {value}")
@@ -307,6 +323,9 @@ def main() -> int:
                 continue
 
             if lower.startswith("/desktop "):
+                if store.emergency_stop_enabled():
+                    print("AETHER > Emergency stop is active; desktop automation is blocked.")
+                    continue
                 parts = user_text.split(maxsplit=3)
                 if len(parts) < 3:
                     print("Usage: /desktop open notepad.exe | click X Y | type TEXT | key enter")
@@ -366,6 +385,9 @@ def main() -> int:
                 continue
 
             if lower.startswith("/self-improve-test "):
+                if store.emergency_stop_enabled():
+                    print("AETHER > Emergency stop is active; code evaluation is blocked.")
+                    continue
                 experiment_id = user_text[len("/self-improve-test "):].strip()
                 if input(
                     "Generated code will execute in a copied project folder, not a secure OS sandbox. "
