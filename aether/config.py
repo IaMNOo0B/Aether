@@ -98,6 +98,18 @@ class SchedulerSettings:
 
 
 @dataclass(frozen=True)
+@dataclass(frozen=True)
+class ResourceSettings:
+    enabled: bool = True
+    max_cpu_percent: float = 95.0
+    max_ram_percent: float = 92.0
+    min_free_ram_mb: int = 512
+    max_gpu_utilization_percent: float = 98.0
+    min_free_vram_mb: int = 512
+    require_gpu_telemetry: bool = False
+    cpu_sample_seconds: float = 0.1
+
+
 class Settings:
     app: AppSettings
     models: ModelSettings
@@ -109,6 +121,7 @@ class Settings:
     voice: VoiceSettings = VoiceSettings()
     scheduler: SchedulerSettings = SchedulerSettings()
     memory: MemorySettings = MemorySettings()
+    resources: ResourceSettings = ResourceSettings()
 
 
 def load_settings(path: Path | str = "config/settings.toml") -> Settings:
@@ -140,6 +153,7 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         voice = VoiceSettings(**raw.get("voice", {}))
         scheduler = SchedulerSettings(**raw.get("scheduler", {}))
         memory = MemorySettings(**raw.get("memory", {}))
+        resources = ResourceSettings(**raw.get("resources", {}))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Unknown or invalid configuration field: {exc}") from exc
 
@@ -182,6 +196,16 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         raise ValueError("autonomy.workspace cannot be empty")
     if not desktop.allowed_apps:
         raise ValueError("desktop.allowed_apps must contain at least one application")
+    if not 0 <= resources.max_cpu_percent <= 100:
+        raise ValueError("Resource max_cpu_percent must be between zero and 100")
+    if not 0 <= resources.max_ram_percent <= 100:
+        raise ValueError("Resource max_ram_percent must be between zero and 100")
+    if resources.min_free_ram_mb < 0 or resources.min_free_vram_mb < 0:
+        raise ValueError("Resource free-memory limits cannot be negative")
+    if not 0 <= resources.max_gpu_utilization_percent <= 100:
+        raise ValueError("Resource max_gpu_utilization_percent must be between zero and 100")
+    if not 0.05 <= resources.cpu_sample_seconds <= 1.0:
+        raise ValueError("Resource cpu_sample_seconds must be between 0.05 and 1.0")
     if memory.embedding_provider.strip().lower() != "ollama":
         raise ValueError(f"Unsupported embedding provider: {memory.embedding_provider}")
     embedding_url = urlparse(memory.embedding_base_url)
@@ -203,5 +227,5 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
     return Settings(
         app=app, models=models, storage=storage, limits=limits,
         research=research, autonomy=autonomy, desktop=desktop, voice=voice,
-        scheduler=scheduler, memory=memory,
+        scheduler=scheduler, memory=memory, resources=resources,
     )
