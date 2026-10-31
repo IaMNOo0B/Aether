@@ -8,6 +8,7 @@ from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from aether.config import ProviderEndpointSettings
 from aether.ollama import ModelUnavailable, OllamaClient
 
 
@@ -150,19 +151,68 @@ class OpenAICompatibleProvider:
         return response_content.strip()
 
 
+class ProviderChain:
+    """Ordered provider failover; only transport/provider failures trigger fallback."""
+
+    name = "provider_chain"
+
+    def __init__(self, providers: list[tuple[str, ChatProvider]]):
+        if not providers:
+            raise ValueError("Provider chain requires at least one configured provider")
+        self.providers = tuple(providers)
+        self.last_provider: str | None = None
+
+    def is_available(self) -> bool:
+        for _, provider in self.providers:
+            try:
+                if provider.is_available():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def chat(self, messages: list[dict[str, str]]) -> str:
+        failures = []
+        for label, provider in self.providers:
+            try:
+                answer = provider.chat(messages)
+                self.last_provider = label
+                return answer
+            except ModelUnavailable as exc:
+                failures.append(f"{label}: {str(exc)[:400]}")
+        self.last_provider = None
+        raise ModelUnavailable(
+            "All configured model providers failed. " + " | ".join(failures)
+        )
+
+
+def _make_provider(
+    provider: str, base_url: str, model: str, timeout_seconds: int, api_key_env: str,
+) -> ChatProvider:
+    selected = provider.strip().lower()
+    if selected == "ollama":
+        return OllamaProvider(base_url, model, timeout_seconds)
+    if selected == "openai_compatible":
+        return OpenAICompatibleProvider(base_url, model, timeout_seconds, api_key_env)
+    raise ModelUnavailable(f"Unsupported model provider: {selected}")
+
+
 def build_registry(
     base_url: str, model: str, timeout_seconds: int,
     provider: str = "ollama", api_key_env: str = "AETHER_API_KEY",
+    fallbacks: tuple[ProviderEndpointSettings, ...] = (),
 ) -> ProviderRegistry:
     registry = ProviderRegistry()
     selected = provider.strip().lower()
-    if selected == "ollama":
-        registry.register("ollama", OllamaProvider(base_url, model, timeout_seconds))
-    elif selected == "openai_compatible":
+    registry.register(
+        selected, _make_provider(selected, base_url, model, timeout_seconds, api_key_env)
+    )
+    for index, fallback in enumerate(fallbacks, start=1):
         registry.register(
-            "openai_compatible",
-            OpenAICompatibleProvider(base_url, model, timeout_seconds, api_key_env),
+            f"fallback_{index}",
+            _make_provider(
+                fallback.provider, fallback.base_url, fallback.model,
+                fallback.timeout_seconds, fallback.api_key_env,
+            ),
         )
-    else:
-        raise ModelUnavailable(f"Unsupported model provider: {selected}")
     return registry
