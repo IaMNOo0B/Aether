@@ -134,3 +134,20 @@ def test_semantic_memory_configuration_validates_weight_and_batch_size(tmp_path)
     )
     with pytest.raises(ValueError, match="semantic_weight"):
         load_settings(config)
+
+def test_resource_budget_defaults_and_limits_are_loaded():
+    settings = load_settings(Path("config/settings.toml"))
+    assert settings.resources.enabled is True
+    assert settings.resources.max_cpu_percent == 95.0
+    assert settings.resources.min_free_vram_mb == 512
+
+
+def test_resource_budget_rejects_invalid_percentages(tmp_path):
+    source = Path("config/settings.toml").read_text(encoding="utf-8")
+    config = tmp_path / "settings.toml"
+    config.write_text(
+        source.replace("max_cpu_percent = 95.0", "max_cpu_percent = 150.0"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="max_cpu_percent"):
+        load_settings(config)
