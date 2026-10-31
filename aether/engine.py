@@ -7,6 +7,7 @@ from aether.config import Settings
 from aether.decisions import DecisionManager
 from aether.context import fit_messages
 from aether.learning import SkillLearner
+from aether.knowledge import KnowledgeGraph
 from aether.memory import MemoryManager
 from aether.ollama import ModelUnavailable
 from aether.providers import ProviderChain, build_registry
@@ -32,6 +33,8 @@ BUILTIN_CAPABILITIES = (
     ("evolution.candidate_patches", "Candidate self-engineering", "Patch proposal and candidate testing without automatic production integration."),
     ("calibration.outcome_metrics", "Outcome calibration metrics", "Brier, log loss, ECE and selective-risk measurements on resolved outcomes."),
     ("decisions.empirical_abstention", "Evidence-based abstention gate", "Domain- and confidence-band-specific Wilson lower-bound policy."),
+    ("knowledge.provenance_graph", "Provenance-aware knowledge graph", "Typed entities and temporal claims linked to source reports and URLs."),
+    ("knowledge.conflict_detection", "Temporal claim conflict detection", "Surfaces overlapping incompatible claims without automatically resolving them."),
 )
 
 SYSTEM_PROMPT = (
@@ -65,6 +68,9 @@ class AetherEngine:
         self.tasks = TaskManager(store)
         self.memory = MemoryManager(store)
         self.decisions = DecisionManager(store)
+        self.knowledge = KnowledgeGraph(
+            store, self.provider() if settings.models.enabled else None
+        )
         self.self_model = SelfModel(
             store.path, settings.app.name, "0.3.0"
         )
