@@ -98,7 +98,6 @@ class SchedulerSettings:
 
 
 @dataclass(frozen=True)
-@dataclass(frozen=True)
 class ResourceSettings:
     enabled: bool = True
     max_cpu_percent: float = 95.0
@@ -110,6 +109,7 @@ class ResourceSettings:
     cpu_sample_seconds: float = 0.1
 
 
+@dataclass(frozen=True)
 class Settings:
     app: AppSettings
     models: ModelSettings
