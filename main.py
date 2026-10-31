@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import Event, Thread
 from uuid import uuid4
 
+from aether.acceptance import run_acceptance_suite
 from aether.agents import MultiAgentCoordinator
 from aether.autonomy import AutonomyRunner
 from aether.calibration import evaluate_binary_decisions
@@ -66,7 +67,7 @@ def main() -> int:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
     print("Commands: /status /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /remember /memory-search /memory-index /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
-    print("          /schedule add|list|pause|resume /knowledge /world /self-improve /self-improve-test /reports /calibration /quit\n")
+    print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
 
     while True:
         try:
@@ -97,6 +98,15 @@ def main() -> int:
                     continue
                 store.set_emergency_stop(False, "User explicitly resumed autonomy")
                 print("AETHER > Emergency stop cleared. Autonomy remains subject to its configured permissions.")
+                continue
+
+            if lower == "/acceptance":
+                report = run_acceptance_suite(
+                    Path.cwd(), output_path="reports/acceptance/latest.json"
+                )
+                print(json.dumps(report["counts"], indent=2))
+                print(f"AETHER > Acceptance complete: {report['complete']}")
+                print(f"AETHER > Report: {report.get('output_path', 'not saved')}")
                 continue
 
             if lower == "/status":
