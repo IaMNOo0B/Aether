@@ -15,6 +15,15 @@ class AppSettings:
 
 
 @dataclass(frozen=True)
+class ProviderEndpointSettings:
+    provider: str
+    base_url: str
+    model: str
+    timeout_seconds: int = 120
+    api_key_env: str = "AETHER_API_KEY"
+
+
+@dataclass(frozen=True)
 class ModelSettings:
     provider: str = "ollama"
     enabled: bool = False
@@ -22,6 +31,7 @@ class ModelSettings:
     model: str = "phi3:mini-4k-q4_0"
     timeout_seconds: int = 120
     api_key_env: str = "AETHER_API_KEY"
+    fallbacks: tuple[ProviderEndpointSettings, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -93,7 +103,12 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
 
     try:
         app = AppSettings(**raw.get("app", {}))
-        models = ModelSettings(**raw.get("models", {}))
+        model_raw = dict(raw.get("models", {}))
+        fallback_raw = model_raw.pop("fallbacks", [])
+        if not isinstance(fallback_raw, list):
+            raise ValueError("models.fallbacks must be an array of provider tables")
+        fallbacks = tuple(ProviderEndpointSettings(**item) for item in fallback_raw)
+        models = ModelSettings(**model_raw, fallbacks=fallbacks)
         storage = StorageSettings(**raw.get("storage", {}))
         limits = LimitSettings(**raw.get("limits", {}))
         research = ResearchSettings(**raw.get("research", {}))
@@ -121,6 +136,18 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         raise ValueError("models.base_url must be a valid HTTP or HTTPS URL")
     if not models.model.strip() or models.timeout_seconds < 1:
         raise ValueError("Model name and timeout must be valid")
+
+    for index, fallback in enumerate(models.fallbacks, start=1):
+        if fallback.provider.strip().lower() not in {"ollama", "openai_compatible"}:
+            raise ValueError(f"Unsupported fallback provider #{index}: {fallback.provider}")
+        fallback_url = urlparse(fallback.base_url)
+        if fallback_url.scheme not in {"http", "https"} or not fallback_url.netloc:
+            raise ValueError(f"Fallback provider #{index} has an invalid base_url")
+        if not fallback.model.strip() or fallback.timeout_seconds < 1:
+            raise ValueError(f"Fallback provider #{index} model and timeout must be valid")
+        if (not isinstance(fallback.api_key_env, str)
+                or (fallback.api_key_env and not fallback.api_key_env.replace("_", "").isalnum())):
+            raise ValueError(f"Fallback provider #{index} has an invalid api_key_env")
     if (limits.max_history_messages < 1 or limits.max_prompt_characters < 256
             or limits.max_autonomy_steps < 1 or limits.max_research_results < 1
             or limits.tool_timeout_seconds < 1):
