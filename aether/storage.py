@@ -129,12 +129,218 @@ class Store:
                     created_at TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at);
+                CREATE TABLE IF NOT EXISTS knowledge_entities (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    normalized_name TEXT NOT NULL UNIQUE,
+                    entity_type TEXT NOT NULL DEFAULT 'concept',
+                    description TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_entities_name
+                    ON knowledge_entities(normalized_name);
+                CREATE TABLE IF NOT EXISTS knowledge_claims (
+                    id TEXT PRIMARY KEY,
+                    subject_id TEXT NOT NULL,
+                    predicate TEXT NOT NULL,
+                    object_value TEXT NOT NULL,
+                    object_entity_id TEXT,
+                    claim_type TEXT NOT NULL CHECK(claim_type IN ('fact', 'hypothesis', 'observation', 'prediction')),
+                    confidence REAL CHECK(confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
+                    status TEXT NOT NULL DEFAULT 'unverified'
+                        CHECK(status IN ('unverified', 'verified', 'disputed', 'retracted')),
+                    valid_from TEXT,
+                    valid_to TEXT,
+                    source_url TEXT NOT NULL DEFAULT '',
+                    source_title TEXT NOT NULL DEFAULT '',
+                    evidence_class TEXT NOT NULL DEFAULT 'unspecified',
+                    source_report_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(subject_id) REFERENCES knowledge_entities(id),
+                    FOREIGN KEY(object_entity_id) REFERENCES knowledge_entities(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_claims_subject
+                    ON knowledge_claims(subject_id, predicate, status);
+                CREATE INDEX IF NOT EXISTS idx_knowledge_claims_report
+                    ON knowledge_claims(source_report_id);
+                CREATE TABLE IF NOT EXISTS knowledge_claim_events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    claim_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    from_status TEXT,
+                    to_status TEXT,
+                    evidence TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(claim_id) REFERENCES knowledge_claims(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_knowledge_claim_events_claim
+                    ON knowledge_claim_events(claim_id, sequence);
             """)
             db.execute(
                 """INSERT OR IGNORE INTO system_controls(name, enabled, reason, updated_at)
                    VALUES ('emergency_stop', 0, '', ?)""",
                 (utc_now(),),
             )
+
+
+    def upsert_knowledge_entity(
+        self, entity_id: str, name: str, normalized_name: str,
+        entity_type: str, description: str = "",
+    ) -> str:
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT id FROM knowledge_entities WHERE normalized_name=?",
+                (normalized_name,),
+            ).fetchone()
+            if row:
+                db.execute(
+                    """UPDATE knowledge_entities SET name=?, entity_type=?,
+                       description=CASE WHEN ? != '' THEN ? ELSE description END,
+                       updated_at=? WHERE id=?""",
+                    (name, entity_type, description, description, now, row["id"]),
+                )
+                return str(row["id"])
+            db.execute(
+                """INSERT INTO knowledge_entities
+                   (id, name, normalized_name, entity_type, description, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (entity_id, name, normalized_name, entity_type, description, now, now),
+            )
+        return entity_id
+
+    def get_knowledge_entity(self, entity_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM knowledge_entities WHERE id=?", (entity_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def find_knowledge_entity(self, normalized_name: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM knowledge_entities WHERE normalized_name=?",
+                (normalized_name,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def search_knowledge_entities(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
+        text = query.strip().casefold()
+        if not text or limit < 1:
+            return []
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT * FROM knowledge_entities
+                   WHERE normalized_name LIKE ? OR description LIKE ?
+                   ORDER BY name LIMIT ?""",
+                (f"%{text}%", f"%{text}%", min(limit, 100)),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def insert_knowledge_claim(self, claim: dict[str, Any]) -> None:
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                """INSERT INTO knowledge_claims
+                   (id, subject_id, predicate, object_value, object_entity_id, claim_type,
+                    confidence, status, valid_from, valid_to, source_url, source_title,
+                    evidence_class, source_report_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    claim["id"], claim["subject_id"], claim["predicate"],
+                    claim["object_value"], claim.get("object_entity_id"),
+                    claim["claim_type"], claim.get("confidence"), claim.get("status", "unverified"),
+                    claim.get("valid_from"), claim.get("valid_to"),
+                    claim.get("source_url", ""), claim.get("source_title", ""),
+                    claim.get("evidence_class", "unspecified"), claim.get("source_report_id"),
+                    now, now,
+                ),
+            )
+            db.execute(
+                """INSERT INTO knowledge_claim_events
+                   (claim_id, event_type, from_status, to_status, evidence, created_at)
+                   VALUES (?, 'created', NULL, 'unverified', ?, ?)""",
+                (claim["id"], claim.get("creation_note", "Claim captured; not yet verified."), now),
+            )
+
+    def get_knowledge_claim(self, claim_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                """SELECT c.*, s.name AS subject_name, o.name AS object_entity_name
+                   FROM knowledge_claims c
+                   JOIN knowledge_entities s ON s.id=c.subject_id
+                   LEFT JOIN knowledge_entities o ON o.id=c.object_entity_id
+                   WHERE c.id=?""",
+                (claim_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def list_knowledge_claims(
+        self, subject_id: str | None = None, predicate: str | None = None,
+        source_report_id: str | None = None, limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        clauses = []
+        parameters: list[Any] = []
+        if subject_id is not None:
+            clauses.append("c.subject_id=?")
+            parameters.append(subject_id)
+        if predicate is not None:
+            clauses.append("c.predicate=?")
+            parameters.append(predicate)
+        if source_report_id is not None:
+            clauses.append("c.source_report_id=?")
+            parameters.append(source_report_id)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        parameters.append(max(0, min(limit, 5000)))
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT c.*, s.name AS subject_name, o.name AS object_entity_name
+                   FROM knowledge_claims c
+                   JOIN knowledge_entities s ON s.id=c.subject_id
+                   LEFT JOIN knowledge_entities o ON o.id=c.object_entity_id"""
+                + where + " ORDER BY c.created_at DESC LIMIT ?",
+                tuple(parameters),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_knowledge_claim_status(
+        self, claim_id: str, status: str, evidence: str,
+    ) -> None:
+        now = utc_now()
+        if status not in {"verified", "disputed", "retracted"}:
+            raise ValueError("Claim status must be verified, disputed or retracted")
+        if not evidence.strip():
+            raise ValueError("Claim review requires evidence")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status FROM knowledge_claims WHERE id=?", (claim_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown knowledge claim: {claim_id}")
+            db.execute(
+                "UPDATE knowledge_claims SET status=?, updated_at=? WHERE id=?",
+                (status, now, claim_id),
+            )
+            db.execute(
+                """INSERT INTO knowledge_claim_events
+                   (claim_id, event_type, from_status, to_status, evidence, created_at)
+                   VALUES (?, 'reviewed', ?, ?, ?, ?)""",
+                (claim_id, row["status"], status, evidence, now),
+            )
+
+    def list_knowledge_claim_events(self, claim_id: str) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT sequence, event_type, from_status, to_status, evidence, created_at
+                   FROM knowledge_claim_events WHERE claim_id=? ORDER BY sequence""",
+                (claim_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def add_message(self, role: str, content: str) -> int:
         if role not in {"user", "assistant", "system"}:
