@@ -284,6 +284,17 @@ def main() -> int:
                     )
                     print(f"AETHER > Unverified claim saved: {claim['id']}")
                     continue
+                if action == "relation":
+                    fields = argument.split("|", 3)
+                    if len(fields) != 4:
+                        print("Usage: /knowledge relation subject | predicate | object_entity | source_url")
+                        continue
+                    claim = engine.knowledge.add_claim(
+                        fields[0].strip(), fields[1].strip(), fields[2].strip(),
+                        source_url=fields[3].strip(), object_is_entity=True,
+                    )
+                    print(f"AETHER > Unverified relationship saved: {claim['id']}")
+                    continue
                 if action == "review":
                     fields = argument.split("|", 2)
                     if len(fields) != 3:
@@ -298,7 +309,7 @@ def main() -> int:
                     events = store.list_knowledge_claim_events(argument)
                     print(json.dumps(events, indent=2))
                     continue
-                print("Usage: /knowledge extract REPORT_ID | search QUERY | show ENTITY | conflicts ENTITY | claim ... | review ... | history CLAIM_ID")
+                print("Usage: /knowledge extract REPORT_ID | search QUERY | show ENTITY | conflicts ENTITY | claim ... | review ... | relation subject | predicate | object_entity | source_url | history CLAIM_ID")
                 continue
 
             if lower.startswith("/research "):
