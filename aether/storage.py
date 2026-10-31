@@ -6,6 +6,7 @@ from pathlib import Path
 import json
 import math
 import sqlite3
+import time
 from uuid import uuid4
 from typing import Any
 
@@ -411,7 +412,7 @@ class Store:
         if not objective.strip() or interval_seconds < 5 or max_runs < 0:
             raise ValueError("Schedule objective, interval >= 5 and max_runs >= 0 are required")
         now = utc_now()
-        current = __import__("time").time() if now_epoch is None else float(now_epoch)
+        current = time.time() if now_epoch is None else float(now_epoch)
         with self._connect() as db:
             db.execute(
                 """INSERT INTO scheduled_goals
