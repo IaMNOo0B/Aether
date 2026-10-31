@@ -71,3 +71,13 @@ embedding_model = "nomic-embed-text"
 embedding_timeout_seconds = 30
 semantic_weight = 0.45
 index_batch_size = 32
+
+[resources]
+enabled = true
+max_cpu_percent = 95.0
+max_ram_percent = 92.0
+min_free_ram_mb = 512
+max_gpu_utilization_percent = 98.0
+min_free_vram_mb = 512
+require_gpu_telemetry = false
+cpu_sample_seconds = 0.1
