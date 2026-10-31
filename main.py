@@ -175,17 +175,34 @@ def main() -> int:
                 continue
 
             if lower.startswith("/desktop "):
-                parts = user_text.split(maxsplit=2)
-                if len(parts) < 3 or parts[1].casefold() != "open":
-                    print("Usage: /desktop open notepad.exe")
-                    print("Mouse/keyboard automation is available only through the approved desktop API.")
+                parts = user_text.split(maxsplit=3)
+                if len(parts) < 3:
+                    print("Usage: /desktop open notepad.exe | click X Y | type TEXT | key enter")
                     continue
                 controller = DesktopController(
                     settings.desktop.enabled, settings.desktop.allowed_apps,
                     settings.desktop.allow_input,
                 )
-                result = controller.open_app(parts[2])
-                print(f"AETHER > Started {result['application']} (PID {result['pid']}).")
+                action = parts[1].casefold()
+                if action == "open":
+                    result = controller.open_app(" ".join(parts[2:]))
+                    print(f"AETHER > Started {result['application']} (PID {result['pid']}).")
+                elif action == "click" and len(parts) == 4:
+                    coordinates = parts[2:]
+                    x, y = int(coordinates[0]), int(coordinates[1])
+                    approved = input(f"Move mouse and click screen coordinate ({x}, {y})? Type APPROVE: ").strip() == "APPROVE"
+                    result = controller.click(x, y, approved=approved)
+                    print(f"AETHER > {result}")
+                elif action == "type" and len(parts) >= 3:
+                    approved = input("Type text into the currently focused window? Type APPROVE: ").strip() == "APPROVE"
+                    result = controller.type_text(" ".join(parts[2:]), approved=approved)
+                    print(f"AETHER > {result}")
+                elif action == "key" and len(parts) == 3:
+                    approved = input(f"Press {parts[2]} in the focused window? Type APPROVE: ").strip() == "APPROVE"
+                    result = controller.press_key(parts[2], approved=approved)
+                    print(f"AETHER > {result}")
+                else:
+                    print("Usage: /desktop open notepad.exe | click X Y | type TEXT | key enter")
                 continue
 
             if lower == "/voice":
