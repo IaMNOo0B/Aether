@@ -33,6 +33,8 @@ BUILTIN_CAPABILITIES = (
     ("evolution.candidate_patches", "Candidate self-engineering", "Patch proposal and candidate testing without automatic production integration."),
     ("calibration.outcome_metrics", "Outcome calibration metrics", "Brier, log loss, ECE and selective-risk measurements on resolved outcomes."),
     ("decisions.empirical_abstention", "Evidence-based abstention gate", "Domain- and confidence-band-specific Wilson lower-bound policy."),
+    ("knowledge.provenance_graph", "Provenance-aware knowledge graph", "Typed entities and temporal claims linked to source reports and URLs."),
+    ("knowledge.conflict_detection", "Temporal claim conflict detection", "Surfaces overlapping incompatible claims without automatically resolving them."),
 )
 
 SYSTEM_PROMPT = (
