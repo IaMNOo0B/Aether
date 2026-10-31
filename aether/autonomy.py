@@ -35,13 +35,14 @@ class ToolGateway:
         project_root: str | Path,
         policy: AutonomySettings,
         limits: LimitSettings,
-        researcher: Researcher,
+        researcher: Researcher, research_enabled: bool = True,
     ):
         self.project_root = Path(project_root).resolve()
         self.workspace = (self.project_root / policy.workspace).resolve()
         self.policy = policy
         self.limits = limits
         self.researcher = researcher
+        self.research_enabled = research_enabled
         self.workspace.mkdir(parents=True, exist_ok=True)
 
     def _workspace_path(self, relative: str) -> Path:
@@ -55,6 +56,8 @@ class ToolGateway:
     ) -> None:
         if not self.policy.enabled:
             raise ToolDenied("Autonomous execution is disabled in config/settings.toml")
+        if tool == "research.search" and not self.research_enabled:
+            raise ToolDenied("Research is disabled in config/settings.toml")
         if tool in {"research.search", "workspace.list", "workspace.read"}:
             if not self.policy.allow_read_only:
                 raise ToolDenied("Read-only autonomous tools are disabled")
@@ -156,7 +159,9 @@ class AutonomyRunner:
         self.researcher = Researcher(
             store, research_settings.timeout_seconds, limits.max_research_results
         )
-        self.gateway = ToolGateway(\n            project_root, policy, limits, self.researcher, research_settings.enabled\n        )
+        self.gateway = ToolGateway(
+            project_root, policy, limits, self.researcher, research_settings.enabled
+        )
 
     def enqueue(self, objective: str) -> Task:
         if not objective.strip():
