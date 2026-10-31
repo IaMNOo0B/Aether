@@ -110,7 +110,8 @@ class SelfEngineer:
             raw_path = line[4:].split("\t", 1)[0]
             if raw_path == "/dev/null":
                 continue
-            if raw_path.startswith(("/", "\\")) or ".." in Path(raw_path).parts:
+            if (raw_path.startswith(("/", "\\")) or ".." in Path(raw_path).parts
+                    or ".." in PureWindowsPath(raw_path).parts):
                 raise PatchRejected(f"Unsafe patch path: {raw_path}")
             normalized = raw_path[2:] if raw_path.startswith(("a/", "b/")) else raw_path
             normalized_path = Path(normalized)
