@@ -46,7 +46,7 @@ class DecisionManager:
 
     def log_prediction(
         self, question: str, probability_true: float, domain: str,
-        probability_source: str = "external-calibrated-scorer",
+        probability_source: str = "user-supplied",
     ) -> str:
         text = question.strip()
         category = domain.strip().casefold()
