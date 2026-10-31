@@ -38,15 +38,17 @@ def test_interrupted_task_is_marked_failed_without_automatic_replay(tmp_path):
         "receipts": [],
     })
 
-    recovered = manager.recover_interrupted()
+    # Simulate a process restart by constructing a new Store/TaskManager instance.
+    restarted = TaskManager(Store(tmp_path / "recovery.sqlite3"))
+    recovered = restarted.recover_interrupted()
     assert recovered == [task.id]
-    saved = manager.store.get_task(task.id)
+    saved = restarted.store.get_task(task.id)
     assert saved["status"] == "failed"
     assert saved["state"]["recovery"]["status"] == "interrupted"
     assert saved["state"]["recovery"]["policy"] == "manual_review_required"
     assert "not replayed" in saved["state"]["recovery"]["reason"]
-    assert manager.recover_interrupted() == []
-    assert manager.events(task.id)[-1]["event_type"] == "interrupted_recovery"
+    assert restarted.recover_interrupted() == []
+    assert restarted.events(task.id)[-1]["event_type"] == "interrupted_recovery"
 
 
 def test_checkpoint_only_allowed_while_running(tmp_path):
