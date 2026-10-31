@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import logging
 
-from aether.calibration import evaluate_binary_decisions\nfrom aether.config import load_settings
+from aether.calibration import evaluate_binary_decisions
+from aether.config import load_settings
 from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.storage import Store
@@ -23,7 +24,7 @@ def main() -> int:
     status = engine.status()
     print(f"{status['name']} v{status['version']} | Windows-ready foundation")
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
-    print("Type /status, /tasks, /diagnostics, /remember <fact>, or /quit.\n")
+    print("Type /status, /tasks, /diagnostics, /calibration, /remember <fact>, or /quit.\n")
 
     while True:
         try:
@@ -49,6 +50,17 @@ def main() -> int:
         if user_text.lower() == "/diagnostics":
             destination = write_diagnostics("logs/diagnostics.json", engine.status())
             print(f"AETHER > Diagnostics saved to {destination}.")
+            continue
+        if user_text.lower() == "/calibration":
+            decisions = store.list_decisions(resolved_only=True)
+            if not decisions:
+                print("AETHER > No resolved decision outcomes have been logged yet.")
+                continue
+            report = evaluate_binary_decisions(decisions)
+            print(f"Resolved decisions: {report.count}")
+            print(f"Brier: {report.brier_score:.4f} | Log loss: {report.log_loss:.4f}")
+            print(f"ECE: {report.expected_calibration_error:.4f} | AURC: {report.aurc:.4f}")
+            print(f"Coverage at 5% risk: {report.coverage_at_risk:.1%}")
             continue
         if user_text.startswith("/remember "):
             memory = user_text[len("/remember "):].strip()
