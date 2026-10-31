@@ -12,6 +12,7 @@ from aether.config import AutonomySettings, LimitSettings, ResearchSettings
 from aether.providers import ChatProvider
 from aether.research import Researcher
 from aether.storage import Store
+from aether.world_model import WorldModel
 from aether.tasks import Task, TaskManager
 
 
@@ -40,6 +41,7 @@ class ToolGateway:
         limits: LimitSettings,
         researcher: Researcher, research_enabled: bool = True,
         emergency_stop_check: Callable[[], bool] | None = None,
+        world_model: WorldModel | None = None,
     ):
         self.project_root = Path(project_root).resolve()
         self.workspace = (self.project_root / policy.workspace).resolve()
@@ -48,6 +50,7 @@ class ToolGateway:
         self.researcher = researcher
         self.research_enabled = research_enabled
         self.emergency_stop_check = emergency_stop_check
+        self.world_model = world_model
         self.workspace.mkdir(parents=True, exist_ok=True)
 
     def _workspace_path(self, relative: str) -> Path:
@@ -65,7 +68,10 @@ class ToolGateway:
             raise ToolDenied("Autonomous execution is disabled in config/settings.toml")
         if tool == "research.search" and not self.research_enabled:
             raise ToolDenied("Research is disabled in config/settings.toml")
-        if tool in {"research.search", "workspace.list", "workspace.read"}:
+        if tool in {
+            "research.search", "workspace.list", "workspace.read",
+            "world.state", "world.actions", "world.simulate", "world.compare",
+        }:
             if not self.policy.allow_read_only:
                 raise ToolDenied("Read-only autonomous tools are disabled")
             return
@@ -94,6 +100,28 @@ class ToolGateway:
         if not isinstance(args, dict):
             raise ValueError("Tool arguments must be a JSON object")
         self._authorize(tool, args, approval)
+
+        if tool.startswith("world."):
+            if self.world_model is None:
+                raise ToolDenied("World-model tools are not configured")
+            world_name = str(args.get("world", "")).strip()
+            if tool == "world.state":
+                world = self.world_model.get_world(world_name)
+                if world is None:
+                    raise KeyError(f"Unknown world: {world_name}")
+                return world
+            if tool == "world.actions":
+                return {"world": world_name, "actions": self.world_model.list_actions(world_name)}
+            if tool == "world.simulate":
+                action_id = str(args.get("action_id", "")).strip()
+                return self.world_model.simulate(world_name, action_id)
+            if tool == "world.compare":
+                action_ids = args.get("action_ids")
+                if not isinstance(action_ids, list) or not all(
+                    isinstance(item, str) for item in action_ids
+                ):
+                    raise ValueError("world.compare requires an array of action IDs")
+                return {"world": world_name, "simulations": self.world_model.compare_actions(world_name, action_ids)}
 
         if tool == "research.search":
             query = str(args.get("query", "")).strip()
@@ -181,6 +209,7 @@ class AutonomyRunner:
         self.gateway = ToolGateway(
             project_root, policy, limits, self.researcher, research_settings.enabled,
             emergency_stop_check=store.emergency_stop_enabled,
+            world_model=WorldModel(store),
         )
 
     def enqueue(self, objective: str) -> Task:
@@ -197,6 +226,10 @@ class AutonomyRunner:
             "workspace.read": {"path": "relative workspace path"},
             "workspace.write": {"path": "relative path", "content": "text"},
             "tests.run": {},
+            "world.state": {"world": "world name"},
+            "world.actions": {"world": "world name"},
+            "world.simulate": {"world": "world name", "action_id": "registered action ID"},
+            "world.compare": {"world": "world name", "action_ids": ["action ID", "..."]},
         }
         response = self.provider.chat([
             {
@@ -208,7 +241,8 @@ class AutonomyRunner:
                     "Never invent tool names, shell commands, URLs to fetch, or code execution. "
                     "Prefer research.search and workspace.read/list. Only request workspace.write "
                     "or tests.run when necessary. Limit steps to the requested task. "
-                    "Do not claim steps have run."
+                    "World-model tools may inspect and simulate declared rules only; they never execute "
+                    "real-world actions. Do not claim steps have run."
                 ),
             },
             {"role": "user", "content": f"Create a bounded plan for this objective: {objective}"},

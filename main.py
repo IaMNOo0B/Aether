@@ -66,7 +66,7 @@ def main() -> int:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
     print("Commands: /status /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /remember /memory-search /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
-    print("          /schedule add|list|pause|resume /knowledge /self-improve /self-improve-test /reports /calibration /quit\n")
+    print("          /schedule add|list|pause|resume /knowledge /world /self-improve /self-improve-test /reports /calibration /quit\n")
 
     while True:
         try:
@@ -236,6 +236,91 @@ def main() -> int:
                         print(json.dumps(scheduler.run_once(), indent=2))
                     continue
                 print("Usage: /schedule add|list|pause ID|resume ID|tick")
+                continue
+
+            if lower.startswith("/world "):
+                parts = user_text[len("/world "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                if action == "create":
+                    fields = argument.split("|", 2)
+                    if len(fields) not in {2, 3}:
+                        print("Usage: /world create name | initial_state_json | constraints_json(optional)")
+                        continue
+                    state = json.loads(fields[1].strip())
+                    constraints = json.loads(fields[2].strip()) if len(fields) == 3 else {}
+                    world = engine.world.create_world(
+                        fields[0].strip(), state, constraints=constraints
+                    )
+                    print(f"AETHER > World created: {world['name']} | version {world['version']}")
+                    continue
+                if action == "list":
+                    worlds = engine.world.list_worlds()
+                    if not worlds:
+                        print("AETHER > No world models.")
+                    for world in worlds:
+                        print(f"{world['id']} | {world['name']} | version {world['version']}")
+                    continue
+                if action == "state" and argument:
+                    world = engine.world.get_world(argument)
+                    if world is None:
+                        print("AETHER > World not found.")
+                    else:
+                        print(json.dumps(world, indent=2))
+                    continue
+                if action == "action":
+                    fields = argument.split("|", 6)
+                    if len(fields) < 4:
+                        print("Usage: /world action world | name | preconditions_json | effects_json | costs_json(optional) | failure_probability(optional) | failure_effects_json(optional)")
+                        continue
+                    costs = json.loads(fields[4].strip()) if len(fields) >= 5 and fields[4].strip() else {}
+                    failure_probability = float(fields[5].strip()) if len(fields) >= 6 and fields[5].strip() else 0.0
+                    failure_effects = json.loads(fields[6].strip()) if len(fields) >= 7 and fields[6].strip() else {}
+                    registered = engine.world.register_action(
+                        fields[0].strip(), fields[1].strip(),
+                        preconditions=json.loads(fields[2].strip()),
+                        effects=json.loads(fields[3].strip()),
+                        resource_costs=costs,
+                        failure_probability=failure_probability,
+                        failure_effects=failure_effects,
+                    )
+                    print(f"AETHER > Symbolic action registered: {registered['id']}")
+                    continue
+                if action == "actions" and argument:
+                    print(json.dumps(engine.world.list_actions(argument), indent=2))
+                    continue
+                if action == "simulate":
+                    fields = argument.split("|", 1)
+                    if len(fields) != 2:
+                        print("Usage: /world simulate world_name | action_id")
+                        continue
+                    result = engine.world.simulate(fields[0].strip(), fields[1].strip())
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "compare":
+                    fields = argument.split("|", 1)
+                    if len(fields) != 2:
+                        print("Usage: /world compare world_name | action_id, action_id")
+                        continue
+                    action_ids = [item.strip() for item in fields[1].split(",") if item.strip()]
+                    print(json.dumps(engine.world.compare_actions(fields[0].strip(), action_ids), indent=2))
+                    continue
+                if action == "observe":
+                    fields = argument.split("|", 2)
+                    if len(fields) not in {2, 3}:
+                        print("Usage: /world observe simulation_id | actual_state_json | apply/no(optional)")
+                        continue
+                    apply_state = len(fields) == 3 and fields[2].strip().casefold() == "apply"
+                    observation = engine.world.record_observation(
+                        fields[0].strip(), json.loads(fields[1].strip()),
+                        apply_to_world=apply_state,
+                    )
+                    print(json.dumps(observation, indent=2))
+                    continue
+                if action == "history" and argument:
+                    print(json.dumps(engine.world.history(argument), indent=2))
+                    continue
+                print("Usage: /world create|list|state|action|actions|simulate|compare|observe|history")
                 continue
 
             if lower.startswith("/knowledge "):
