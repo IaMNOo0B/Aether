@@ -167,6 +167,11 @@ class WorldModel:
             predicted.update(action["effects"])
             failure_state.update(action["failure_effects"])
         constraints_met = self._satisfies_constraints(predicted, world["constraints"])
+        outcome_counts = self.store.world_action_outcome_counts(action_id)
+        observed_total = outcome_counts["success"] + outcome_counts["failure"]
+        observed_failure_rate = (
+            outcome_counts["failure"] / observed_total if observed_total else None
+        )
         simulation = {
             "id": uuid4().hex,
             "world_id": world["id"],
@@ -179,6 +184,15 @@ class WorldModel:
             "constraints_met": constraints_met,
             "executable": preconditions_met and constraints_met,
             "failure_probability": action["failure_probability"],
+            "observed_failure_rate": observed_failure_rate,
+            "observed_successes": outcome_counts["success"],
+            "observed_failures": outcome_counts["failure"],
+            "ambiguous_observations": outcome_counts["ambiguous"],
+            "risk_score": (
+                observed_failure_rate
+                if observed_failure_rate is not None
+                else action["failure_probability"]
+            ),
             "resource_costs": action["resource_costs"],
             "expected_resource_cost": sum(action["resource_costs"].values()),
         }
@@ -193,7 +207,7 @@ class WorldModel:
             results,
             key=lambda item: (
                 not item["executable"],
-                item["failure_probability"],
+                item["risk_score"],
                 item["expected_resource_cost"],
                 item["id"],
             ),
@@ -215,20 +229,30 @@ class WorldModel:
                     "predicted": predicted.get(key, "<missing>"),
                     "actual": actual.get(key, "<missing>"),
                 }
+        if actual == predicted:
+            outcome_class = "success"
+        elif actual == simulation["failure_state"]:
+            outcome_class = "failure"
+        else:
+            outcome_class = "ambiguous"
         observation = {
             "id": uuid4().hex,
             "simulation_id": simulation_id,
             "actual_state": actual,
             "prediction_error": differences,
             "applied_to_world": apply_to_world,
+            "outcome_class": outcome_class,
         }
         if apply_to_world:
             self.store.apply_world_observation(
                 observation, simulation["world_id"],
                 simulation["world_version"], actual,
+                simulation["action_id"], outcome_class,
             )
         else:
-            self.store.insert_world_observation(observation)
+            self.store.insert_world_observation(
+                observation, simulation["action_id"], outcome_class
+            )
         return observation
 
     def history(self, world_name: str) -> list[dict[str, Any]]:
