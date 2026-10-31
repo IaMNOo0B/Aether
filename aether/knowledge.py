@@ -181,10 +181,10 @@ class KnowledgeGraph:
         if isinstance(max_claims, bool) or not isinstance(max_claims, int) or max_claims < 1:
             raise ValueError("max_claims must be a positive integer")
         if self.provider is None:
-            raise RuntimeError("Knowledge extraction requires an enabled model provider")
+            raise ValueError("Knowledge extraction requires an enabled model provider")
         report = self.store.get_research_report(report_id)
         if report is None:
-            raise KeyError(f"Unknown research report: {report_id}")
+            raise ValueError(f"Unknown research report: {report_id}")
         sources = report["sources"]
         if not sources:
             return []
