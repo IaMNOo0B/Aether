@@ -140,7 +140,7 @@ class KnowledgeGraph:
         active = [
             claim for claim in claims
             if claim["status"] != "retracted"
-            and (predicate is None or claim["predicate"] == predicate.casefold())
+            and (predicate is None or claim["predicate"] == " ".join(predicate.split()).casefold())
         ]
         conflicts = []
         for index, left in enumerate(active):
