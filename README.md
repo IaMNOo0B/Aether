@@ -88,6 +88,7 @@ For a service requiring a key, set `api_key_env = "AETHER_API_KEY"` and provide 
 - Claims are linked to source URLs, titles, evidence classes and report IDs.
 - Claims are stored as `unverified` by default. Review them with `/knowledge review CLAIM_ID | verified/disputed/retracted | evidence`.
 - `/knowledge search QUERY` finds entities; `/knowledge show ENTITY` shows incoming/outgoing claims.
+- `/knowledge relation subject | predicate | object_entity | source_url` stores a source-linked entity relationship.
 - `/knowledge conflicts ENTITY` surfaces overlapping claims with different values for the same predicate.
 - Temporal validity dates are stored so claims with disjoint time ranges are not incorrectly flagged as conflicts.
 - Hypotheses, facts, observations and predictions are distinct claim types.
