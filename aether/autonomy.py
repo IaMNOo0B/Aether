@@ -234,7 +234,7 @@ class AutonomyRunner:
         receipts: list[dict[str, Any]] = []
         try:
             steps = self._make_plan(task_data["objective"])
-            self.store.save_task(task_id, task_data["objective"], "running", {
+            self.tasks.checkpoint(task_id, {
                 "kind": "autonomy", "plan": steps, "receipts": receipts,
             })
             for index, step in enumerate(steps, start=1):
@@ -244,7 +244,7 @@ class AutonomyRunner:
                     "human_approved": step["tool"] in {"workspace.write", "tests.run"},
                     "result": result,
                 })
-                self.store.save_task(task_id, task_data["objective"], "running", {
+                self.tasks.checkpoint(task_id, {
                     "kind": "autonomy", "plan": steps, "receipts": receipts,
                     "current_step": index,
                 })
