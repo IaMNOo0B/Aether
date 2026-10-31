@@ -47,7 +47,7 @@ class DesktopController:
             import pyautogui
         except ImportError as exc:
             raise RuntimeError(
-                "Install the optional desktop extra: python -m pip install -e ".[desktop]""
+                'Install the optional desktop extra: python -m pip install -e ".[desktop]"'
             ) from exc
         pyautogui.FAILSAFE = True
         pyautogui.PAUSE = 0.15
