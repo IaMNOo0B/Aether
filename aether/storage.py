@@ -1,9 +1,10 @@
-"""Persistent SQLite storage for conversations, memories, and task checkpoints."""
+"""Persistent SQLite storage for conversations, memories, tasks, and decisions."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
 import json
+import math
 import sqlite3
 from typing import Any
 
@@ -53,6 +54,18 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_tasks_status_updated
                     ON tasks(status, updated_at);
+                CREATE TABLE IF NOT EXISTS decisions (
+                    id TEXT PRIMARY KEY,
+                    question TEXT NOT NULL,
+                    probability REAL NOT NULL CHECK(probability >= 0 AND probability <= 1),
+                    predicted_label INTEGER NOT NULL CHECK(predicted_label IN (0, 1)),
+                    outcome INTEGER CHECK(outcome IN (0, 1) OR outcome IS NULL),
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    resolved_at TEXT
+                );
+                CREATE INDEX IF NOT EXISTS idx_decisions_resolved
+                    ON decisions(resolved_at);
             """)
 
     def add_message(self, role: str, content: str) -> int:
@@ -147,6 +160,68 @@ class Store:
                     (status, limit),
                 ).fetchall()
         return [task for row in rows if (task := self.get_task(row["id"])) is not None]
+
+    def record_decision(
+        self,
+        decision_id: str,
+        question: str,
+        probability: float,
+        predicted_label: bool | int,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        if not math.isfinite(probability) or not 0 <= probability <= 1:
+            raise ValueError("Decision probability must be finite and between zero and one")
+        if predicted_label not in (False, True, 0, 1):
+            raise ValueError("Predicted label must be boolean or binary")
+        if not question.strip() or not decision_id.strip():
+            raise ValueError("Decision ID and question cannot be empty")
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO decisions(
+                    id, question, probability, predicted_label, metadata_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)""",
+                (decision_id, question, probability, int(bool(predicted_label)),
+                 json.dumps(metadata or {}), utc_now()),
+            )
+
+    def resolve_decision(self, decision_id: str, outcome: bool | int) -> None:
+        if outcome not in (False, True, 0, 1):
+            raise ValueError("Decision outcome must be boolean or binary")
+        with self._connect() as db:
+            cursor = db.execute(
+                """UPDATE decisions SET outcome = ?, resolved_at = ?
+                   WHERE id = ? AND outcome IS NULL""",
+                (int(bool(outcome)), utc_now(), decision_id),
+            )
+            if cursor.rowcount == 1:
+                return
+            exists = db.execute(
+                "SELECT outcome FROM decisions WHERE id = ?", (decision_id,)
+            ).fetchone()
+        if exists is None:
+            raise KeyError(f"Unknown decision: {decision_id}")
+        raise ValueError(f"Decision already resolved: {decision_id}")
+
+    def list_decisions(
+        self, resolved_only: bool = True, limit: int = 1000
+    ) -> list[dict[str, Any]]:
+        if limit < 1:
+            return []
+        condition = "WHERE outcome IS NOT NULL" if resolved_only else ""
+        with self._connect() as db:
+            rows = db.execute(
+                f"""SELECT id, question, probability, predicted_label, outcome,
+                           metadata_json, created_at, resolved_at
+                    FROM decisions {condition}
+                    ORDER BY created_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = json.loads(item.pop("metadata_json"))
+            results.append(item)
+        return results
 
     def close(self) -> None:
         """Reserved for interface symmetry; SQLite connections are short-lived."""
