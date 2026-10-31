@@ -123,6 +123,8 @@ class ToolGateway:
             if not relative or not isinstance(content, str) or len(content) > 50_000:
                 raise ValueError("Workspace write requires a path and <= 50 KB text content")
             path = self._workspace_path(relative)
+            if path.exists():
+                raise FileExistsError("Autonomous workspace writes never overwrite existing files")
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(content, encoding="utf-8")
             return {"path": str(path.relative_to(self.project_root)), "bytes": path.stat().st_size}
