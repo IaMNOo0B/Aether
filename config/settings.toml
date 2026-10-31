@@ -16,3 +16,29 @@ database = "data/aether.sqlite3"
 [limits]
 max_history_messages = 8
 max_prompt_characters = 12000
+max_autonomy_steps = 5
+max_research_results = 8
+tool_timeout_seconds = 60
+
+[research]
+enabled = true
+timeout_seconds = 15
+max_pages = 5
+
+[autonomy]
+enabled = false
+allow_read_only = true
+allow_workspace_writes = false
+allow_code_execution = false
+workspace = "workspace"
+
+[desktop]
+enabled = false
+allow_input = false
+allowed_apps = ["notepad.exe", "calc.exe"]
+
+[voice]
+enabled = false
+wake_word = "jarvis"
+vosk_model_path = "models/vosk"
+speak_responses = true
