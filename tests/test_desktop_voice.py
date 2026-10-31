@@ -29,3 +29,9 @@ def test_voice_wake_filter_accepts_hey_jarvis_but_rejects_other_speech():
     assert voice._wake_filter("Hey Jarvis open notepad") == "open notepad"
     assert voice._wake_filter("Jarvis what time is it") == "what time is it"
     assert voice._wake_filter("open notepad") == ""
+
+
+def test_screenshot_requires_explicit_approval(tmp_path):
+    desktop = DesktopController(True, ("notepad.exe",), allow_input=False)
+    with pytest.raises(DesktopPermissionError):
+        desktop.screenshot(tmp_path / "screen.png", approved=False)
