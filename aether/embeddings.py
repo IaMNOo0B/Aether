@@ -36,7 +36,10 @@ class OllamaEmbeddingProvider:
             method="POST",
         )
         with urlopen(request, timeout=self.timeout_seconds) as response:
-            return json.loads(response.read().decode("utf-8"))
+            result = json.loads(response.read().decode("utf-8"))
+        if not isinstance(result, dict):
+            raise EmbeddingUnavailable("Ollama embedding response must be a JSON object")
+        return result
 
     def embed(self, text: str) -> list[float]:
         value = text.strip()
@@ -44,16 +47,14 @@ class OllamaEmbeddingProvider:
             raise ValueError("Cannot embed empty text")
         try:
             try:
-                result = self._post("/api/embed", {"model": self.model, "input": value})
-                if not isinstance(result, dict):
-                    raise EmbeddingUnavailable("Ollama embedding response must be a JSON object")
+                result = self._post(
+                    "/api/embed", {"model": self.model, "input": value}
+                )
                 vectors = result.get("embeddings")
                 if isinstance(vectors, list) and vectors:
                     vector = vectors[0] if isinstance(vectors[0], list) else vectors
                 else:
-                    if not isinstance(result, dict):
-                    raise EmbeddingUnavailable("Ollama embedding response must be a JSON object")
-                vector = result.get("embedding")
+                    vector = result.get("embedding")
             except HTTPError as exc:
                 if exc.code != 404:
                     raise
