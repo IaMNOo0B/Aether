@@ -17,6 +17,7 @@ from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.learning import SkillLearner
 from aether.research import ResearchError, Researcher
+from aether.resources import ResourceLimitExceeded
 from aether.scheduler import AutonomyScheduler
 from aether.self_engineering import SelfEngineer
 from aether.storage import Store
@@ -52,6 +53,8 @@ def main() -> int:
         scheduled_runner = AutonomyRunner(
             engine.provider(), store, settings.autonomy, settings.limits,
             settings.research, Path.cwd(),
+            resource_guard=engine.resources,
+            gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
         )
         scheduler = AutonomyScheduler(store, scheduled_runner, settings.scheduler)
         scheduler_thread = Thread(
@@ -65,7 +68,7 @@ def main() -> int:
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
-    print("Commands: /status /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
+    print("Commands: /status /resources /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /remember /memory-search /memory-index /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
 
@@ -107,6 +110,10 @@ def main() -> int:
                 print(json.dumps(report["counts"], indent=2))
                 print(f"AETHER > Acceptance complete: {report['complete']}")
                 print(f"AETHER > Report: {report.get('output_path', 'not saved')}")
+                continue
+
+            if lower == "/resources":
+                print(json.dumps(engine.resources.snapshot(), indent=2))
                 continue
 
             if lower == "/status":
@@ -338,6 +345,10 @@ def main() -> int:
                 action = parts[0].casefold()
                 argument = parts[1] if len(parts) == 2 else ""
                 if action == "extract" and argument:
+                    engine.resources.check(
+                        "knowledge extraction",
+                        gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
+                    )
                     claims = engine.knowledge.extract_from_report(argument)
                     print(f"AETHER > Extracted {len(claims)} unverified claim(s) from report {argument}.")
                     for claim in claims:
@@ -431,6 +442,10 @@ def main() -> int:
                 continue
 
             if lower.startswith("/agents "):
+                engine.resources.check(
+                    "multi-agent task",
+                    gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
+                )
                 coordinator = MultiAgentCoordinator(engine.provider(), store)
                 objective = user_text[len("/agents "):].strip()
                 deliverables = coordinator.run(objective)
@@ -447,6 +462,8 @@ def main() -> int:
                 runner = AutonomyRunner(
                     engine.provider(), store, settings.autonomy, settings.limits,
                     settings.research, Path.cwd(),
+                    resource_guard=engine.resources,
+                    gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
                 )
                 if objective.casefold() == "queue":
                     results = runner.run_pending(ask_approval, max_tasks=3)
@@ -530,6 +547,7 @@ def main() -> int:
                 continue
 
             if lower == "/voice":
+                engine.resources.check("voice recognition")
                 voice = VoiceInterface(
                     settings.voice.enabled, settings.voice.vosk_model_path,
                     settings.voice.wake_word, settings.voice.speak_responses,
@@ -546,6 +564,10 @@ def main() -> int:
                 continue
 
             if lower.startswith("/self-improve "):
+                engine.resources.check(
+                    "self-engineering proposal",
+                    gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
+                )
                 engineer = SelfEngineer(Path.cwd(), engine.provider(), settings.limits.tool_timeout_seconds * 5)
                 proposal = engineer.propose(user_text[len("/self-improve "):].strip())
                 print(f"AETHER > Patch proposal saved: {proposal['id']}")
@@ -564,6 +586,7 @@ def main() -> int:
                 ).strip() != "TEST":
                     print("AETHER > Evaluation cancelled.")
                     continue
+                engine.resources.check("candidate code tests")
                 engineer = SelfEngineer(Path.cwd(), engine.registry.get(settings.models.provider), settings.limits.tool_timeout_seconds * 5)
                 result = engineer.evaluate(experiment_id, approved=True)
                 print(f"AETHER > Candidate status: {result['status']}")
@@ -574,6 +597,8 @@ def main() -> int:
             if lower.startswith("/remember "):
                 memory = user_text[len("/remember "):].strip()
                 if memory:
+                    if settings.memory.semantic_enabled:
+                        engine.resources.check("memory embedding", gpu_required=True)
                     memory_id = engine.memory.remember(
                         memory, source="user", kind="semantic", status="user-provided"
                     )
@@ -583,11 +608,16 @@ def main() -> int:
                 continue
 
             if lower == "/memory-index":
+                engine.resources.check(
+                    "memory embedding index", gpu_required=settings.memory.semantic_enabled
+                )
                 result = engine.memory.index_pending(settings.memory.index_batch_size)
                 print(json.dumps(result, indent=2))
                 continue
 
             if lower.startswith("/memory-search "):
+                if settings.memory.semantic_enabled:
+                    engine.resources.check("semantic memory search", gpu_required=True)
                 query = user_text[len("/memory-search "):].strip()
                 matches = engine.memory.search(query, limit=10)
                 if not matches:
@@ -615,7 +645,10 @@ def main() -> int:
                 continue
 
             print(f"AETHER > {engine.respond(user_text)}\n")
-        except (ValueError, PermissionError, FileNotFoundError, ResearchError, VoiceUnavailable) as exc:
+        except (
+            ValueError, PermissionError, FileNotFoundError, ResearchError,
+            VoiceUnavailable, ResourceLimitExceeded,
+        ) as exc:
             print(f"AETHER > {exc}")
         except Exception:
             logging.exception("Command failed")

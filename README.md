@@ -142,6 +142,16 @@ To run them in the background, set all of the following:
 
 The scheduler is disabled by default. It only processes scheduled tasks through read-only tools. It never approves workspace writes or test execution. A model-generated plan that requests a side effect is cancelled rather than approved.
 
+### Resource telemetry and execution budgets
+
+- `/resources` reports CPU, system RAM and NVIDIA GPU/VRAM telemetry when available.
+- Resource checks run before model inference, autonomy planning/tool steps, memory embedding work, voice recognition and candidate test execution.
+- Configure thresholds in `[resources]`: `max_cpu_percent`, `max_ram_percent`, `min_free_ram_mb`, `max_gpu_utilization_percent`, `min_free_vram_mb`, and `require_gpu_telemetry`.
+- Windows CPU/RAM telemetry uses operating-system APIs; NVIDIA VRAM uses `nvidia-smi`.
+- If GPU telemetry is optional and unavailable, CPU/RAM checks still run. Set `require_gpu_telemetry = true` to block GPU-required work when telemetry cannot be read.
+
+These are preflight budgets, not hard OS resource quotas. They do not reserve VRAM, cap per-process memory at the kernel level, or forcibly terminate an already-running operation.
+
 ### OMEGA acceptance suite
 
 Run the 12 acceptance groups from the project root:
