@@ -45,8 +45,15 @@ class OllamaEmbeddingProvider:
         try:
             try:
                 result = self._post("/api/embed", {"model": self.model, "input": value})
+                if not isinstance(result, dict):
+                    raise EmbeddingUnavailable("Ollama embedding response must be a JSON object")
                 vectors = result.get("embeddings")
-                vector = vectors[0] if isinstance(vectors, list) and vectors else result.get("embedding")
+                if isinstance(vectors, list) and vectors:
+                    vector = vectors[0] if isinstance(vectors[0], list) else vectors
+                else:
+                    if not isinstance(result, dict):
+                    raise EmbeddingUnavailable("Ollama embedding response must be a JSON object")
+                vector = result.get("embedding")
             except HTTPError as exc:
                 if exc.code != 404:
                     raise
