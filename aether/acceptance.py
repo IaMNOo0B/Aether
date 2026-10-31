@@ -179,7 +179,7 @@ def run_acceptance_suite(
             if completed.returncode == 0:
                 execution = "PASS"
                 acceptance = "PASS" if case["full_scope"] else "PARTIAL"
-            elif "No module named pytest" in output or isinstance(completed, FileNotFoundError):
+            elif "No module named pytest" in output:
                 execution = "BLOCKED"
                 acceptance = "BLOCKED"
             else:
@@ -247,7 +247,11 @@ def main(argv: list[str] | None = None) -> int:
     print("Complete:", report["complete"])
     if report.get("output_path"):
         print("Report:", report["output_path"])
-    return 1 if report["counts"]["FAIL"] or report["counts"]["BLOCKED"] else 0
+    if report["counts"]["FAIL"] or report["counts"]["BLOCKED"]:
+        return 1
+    if report["counts"]["PARTIAL"]:
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
