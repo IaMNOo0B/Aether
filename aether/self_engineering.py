@@ -116,6 +116,8 @@ class SelfEngineer:
                 for protected in self.PROTECTED_PATHS
             ):
                 raise PatchRejected(f"Patch touches protected path: {normalized}")
+            if Path(normalized).suffix.casefold() not in {".py", ".md", ".txt"}:
+                raise PatchRejected(f"File type is not allowed in a patch: {normalized}")
 
     def evaluate(self, experiment_id: str, approved: bool = False) -> dict[str, Any]:
         if not approved:
