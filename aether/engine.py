@@ -13,6 +13,7 @@ from aether.ollama import ModelUnavailable
 from aether.providers import ProviderChain, build_registry
 from aether.self_model import SelfModel
 from aether.storage import Store
+from aether.world_model import WorldModel
 from aether.tasks import TaskManager
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ BUILTIN_CAPABILITIES = (
     ("decisions.empirical_abstention", "Evidence-based abstention gate", "Domain- and confidence-band-specific Wilson lower-bound policy."),
     ("knowledge.provenance_graph", "Provenance-aware knowledge graph", "Typed entities and temporal claims linked to source reports and URLs."),
     ("knowledge.conflict_detection", "Temporal claim conflict detection", "Surfaces overlapping incompatible claims without automatically resolving them."),
+    ("world.symbolic_simulation", "Symbolic world-state simulation", "Versioned state snapshots, declared action effects, preconditions, constraints and observed outcomes."),
 )
 
 SYSTEM_PROMPT = (
@@ -71,6 +73,7 @@ class AetherEngine:
         self.knowledge = KnowledgeGraph(
             store, self.provider() if settings.models.enabled else None
         )
+        self.world = WorldModel(store)
         self.self_model = SelfModel(
             store.path, settings.app.name, "0.3.0"
         )
