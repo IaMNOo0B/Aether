@@ -65,7 +65,7 @@ def main() -> int:
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
     print("Commands: /status /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
-    print("          /remember /memory-search /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
+    print("          /remember /memory-search /memory-index /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /self-improve /self-improve-test /reports /calibration /quit\n")
 
     while True:
@@ -572,6 +572,11 @@ def main() -> int:
                     print("AETHER > Usage: /remember information to save")
                 continue
 
+            if lower == "/memory-index":
+                result = engine.memory.index_pending(settings.memory.index_batch_size)
+                print(json.dumps(result, indent=2))
+                continue
+
             if lower.startswith("/memory-search "):
                 query = user_text[len("/memory-search "):].strip()
                 matches = engine.memory.search(query, limit=10)
@@ -580,7 +585,8 @@ def main() -> int:
                 for item in matches:
                     print(
                         f"#{item['id']} [{item['kind']}; {item['status']}; "
-                        f"relevance={item['relevance']:.3f}] {item['content']}"
+                        f"relevance={item['relevance']:.3f}; lexical={item['lexical_score']:.3f}; "
+                        f"semantic={item['semantic_similarity']}] {item['content']}"
                     )
                 continue
 
