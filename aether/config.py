@@ -80,7 +80,6 @@ class VoiceSettings:
 
 
 @dataclass(frozen=True)
-@dataclass(frozen=True)
 class MemorySettings:
     semantic_enabled: bool = False
     embedding_provider: str = "ollama"
@@ -91,6 +90,7 @@ class MemorySettings:
     index_batch_size: int = 32
 
 
+@dataclass(frozen=True)
 class SchedulerSettings:
     enabled: bool = False
     poll_interval_seconds: int = 30
@@ -108,7 +108,6 @@ class Settings:
     desktop: DesktopSettings = DesktopSettings()
     voice: VoiceSettings = VoiceSettings()
     scheduler: SchedulerSettings = SchedulerSettings()
-    memory: MemorySettings = MemorySettings()
     memory: MemorySettings = MemorySettings()
 
 
