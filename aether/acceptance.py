@@ -125,10 +125,13 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
         "nodes": [
             "tests/test_config.py::test_load_settings_from_project_config",
             "tests/test_scheduler.py::test_disabled_scheduler_does_not_enqueue_or_execute",
+            "tests/test_resources.py::test_resource_guard_blocks_cpu_over_budget",
+            "tests/test_resources.py::test_resource_guard_blocks_ram_pressure_and_low_free_memory",
+            "tests/test_resources.py::test_resource_guard_checks_vram_only_for_gpu_required_operations",
         ],
         "full_scope": False,
         "limitations": [
-            "CPU, RAM and VRAM telemetry and hard resource budgets are not implemented; current limits cover prompt size, step count, timeouts and bounded batches."
+            "CPU, RAM and NVIDIA VRAM telemetry and configurable preflight budgets now exist. Hard OS quotas, per-process CPU/RAM enforcement, guaranteed VRAM reservation, model-call accounting and dynamic concurrency scheduling remain unimplemented."
         ],
     },
     {
