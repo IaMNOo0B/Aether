@@ -7,12 +7,12 @@ log_level = "INFO"
 provider = "ollama"
 enabled = false
 base_url = "http://127.0.0.1:11434"
-model = "qwen2.5:7b-instruct-q4_K_M"
+model = "phi3:mini-4k-q4_0"
 timeout_seconds = 120
 
 [storage]
 database = "data/aether.sqlite3"
 
 [limits]
-max_history_messages = 12
-max_prompt_characters = 24000
+max_history_messages = 8
+max_prompt_characters = 12000
