@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 BUILTIN_CAPABILITIES = (
     ("identity.self_model", "Persistent self-model", "Versioned operational identity and evidence-backed capability records."),
-    ("memory.ranked_lexical", "Ranked local memory", "Typed memory records, BM25-style retrieval and correction lineage."),
+    ("memory.ranked_hybrid", "Hybrid local memory", "Typed memories, BM25 lexical retrieval, optional Ollama cosine embeddings and correction lineage."),
     ("tasks.event_recovery", "Task continuity and recovery", "Atomic task transitions, event history, checkpoints and conservative interruption recovery."),
     ("providers.openai_compatible", "OpenAI-compatible provider", "Chat Completions adapter with environment-based API key lookup."),
     ("providers.failover", "Provider failover", "Ordered fallback across explicitly configured model endpoints."),
