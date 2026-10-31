@@ -52,8 +52,8 @@ class MultiAgentCoordinator:
                     ),
                 },
                 {"role": "user", "content": (
-                    f"Objective: {objective}\nContext:\n{context[:10000]}\n"
-                    f"Prior specialist outputs:\n{prior[:12000]}"
+                    f"Objective: {objective}\nContext:\n{context[:2000]}\n"
+                    f"Prior specialist outputs:\n{prior[:3000]}"
                 )},
             ]
             output = self.provider.chat(messages)
