@@ -25,6 +25,7 @@ def test_engine_self_model_does_not_overclaim_capability_verification(tmp_path):
     store = Store(tmp_path / "aether.sqlite3")
     engine = AetherEngine(settings, store)
 
+    assert engine.self_model.path == store.path
     capabilities = engine.self_model.snapshot()["capabilities"]
     assert len(capabilities) >= 10
     assert all(item["state"] == "implemented_unverified" for item in capabilities)
