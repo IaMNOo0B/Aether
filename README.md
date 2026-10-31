@@ -40,15 +40,15 @@ The configured model must already exist in Ollama. AETHER deliberately does not 
 
 - `/status` — show runtime and model connectivity.
 - `/tasks` — show the latest recorded task receipts.
-- `/diagnostics` — write a redacted runtime diagnostic report to `logs/diagnostics.json`.
+- `/diagnostics` — write a redacted runtime diagnostic report to `logs/diagnostics.json`.\n- `/calibration` — evaluate logged, resolved binary decisions (Brier, log loss, ECE, AURC, and coverage at a 5% risk limit).
 - `/remember <fact>` — save a user-provided memory locally.
 - `/quit` — exit without deleting data.
 
 ## Current implementation status
 
-Implemented: Windows setup/launch scripts, validated TOML configuration, SQLite conversation and memory storage, a provider protocol and registry (Ollama only), deterministic context budgeting, durable task lifecycle records, a dependency-aware planning core, centralized logging, diagnostic reports, and automated tests.
+Implemented: Windows setup/launch scripts, validated TOML configuration, SQLite conversation and memory storage, a provider protocol and registry (Ollama only), deterministic context budgeting, durable task lifecycle records, a dependency-aware planning core, persistent decision-outcome ledger, calibration metrics, centralized logging, diagnostic reports, and automated tests.
 
-Not implemented yet: provider retries/fallback, task recovery after crashes, vector/hybrid memory, browser/desktop tools, cloud providers, LLM-driven plan generation and execution, RLCD training, model training, continual learning, self-modifying code, multimodal systems, and multi-agent orchestration. The RLCD method investigation and hardware feasibility note are documented in `docs/research/RLCD_FEASIBILITY.md`. These are planned research and engineering milestones, not existing capabilities.
+Not implemented yet: provider retries/fallback, task recovery after crashes, vector/hybrid memory, browser/desktop tools, cloud providers, LLM-driven plan generation and execution, RLCD training, model training, continual learning, self-modifying code, multimodal systems, and multi-agent orchestration. Calibration metrics currently evaluate explicitly logged decisions; AETHER's chat model does not yet produce calibrated probabilities. The RLCD method investigation and hardware feasibility note are documented in `docs/research/RLCD_FEASIBILITY.md`. These are planned research and engineering milestones, not existing capabilities.
 
 ## Development tests
 
