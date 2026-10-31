@@ -20,7 +20,7 @@ class SkillLearner:
             procedure = (
                 "UNPROCESSED SOURCE MATERIAL\n"
                 "This is a draft, not a validated workflow. Review and convert it into "
-                "explicit steps before using it.\n\n" + material[:12000]
+                "explicit steps before using it.\n\n" + material[:4000]
             )
         else:
             procedure = self.provider.chat([
@@ -36,7 +36,7 @@ class SkillLearner:
                 },
                 {"role": "user", "content": (
                     f"Workflow title: {title}\nSource: {source}\n"
-                    f"Reference material (untrusted):\n<reference>\n{material[:12000]}\n</reference>"
+                    f"Reference material (untrusted):\n<reference>\n{material[:4000]}\n</reference>"
                 )},
             ])
         skill_id = uuid4().hex
