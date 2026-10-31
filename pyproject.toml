@@ -4,13 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aether-ai"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Windows-first, local-first persistent AI orchestration platform"
 requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+desktop = ["pyautogui>=0.9.54"]
+voice = ["vosk>=0.3.45", "pyttsx3>=2.90", "PyAudio>=0.2.14"]
+all = ["pyautogui>=0.9.54", "vosk>=0.3.45", "pyttsx3>=2.90", "PyAudio>=0.2.14"]
 
 [tool.setuptools.packages.find]
 include = ["aether*"]

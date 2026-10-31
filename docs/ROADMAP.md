@@ -1,84 +1,112 @@
 # AETHER Engineering Roadmap
 
-This roadmap translates the PROJECT AETHER — OMEGA directive into testable delivery stages. A folder or interface is not evidence that a capability works.
+A capability is marked complete only when its implementation and tests exist. Optional hardware integrations still require a clean local test.
 
 ## Stage 0 — Repository and environment baseline
 
-- [x] Initialize an empty repository with a Windows-first Python 3.12 foundation.
-- [x] Add double-click setup and launch scripts.
-- [x] Add standard-library runtime configuration and SQLite persistence.
-- [x] Add an Ollama adapter that does not download models automatically.
-- [x] Add a Windows CI test workflow.
-- [x] Confirm green GitHub Actions runs on the repository's Windows test workflow.
-- [ ] Perform a clean Windows 10/11 install and launch test on the user's PC.
+- [x] Windows-first Python 3.12 foundation and double-click setup/launch scripts.
+- [x] Standard-library configuration, SQLite persistence, and Ollama adapter.
+- [x] Windows CI workflow.
+- [ ] Clean install and launch test on the user's Windows PC.
 
 ## Stage 1 — Cognitive foundation
 
-- [x] Provider protocol and explicit provider registry (Ollama adapter registered).
-- [x] Structured task lifecycle with durable queued/running/completed/failed/cancelled states.
-- [x] Deterministic character-budgeted context construction and oldest-history trimming.
-- [x] Centralized structured application logging and JSON diagnostics.
-- [x] Runtime configuration validation for supported provider, URL, limits, and log level.
-- [ ] Provider health policy with bounded retries, backoff, and explicit fallback.
-- [ ] Configuration schema versioning and migration support.
-- [ ] Provider/model capability metadata and model selection policy.
-- [ ] End-to-end task recovery after process interruption.
+- [x] Provider protocol and explicit registry (Ollama only).
+- [x] Durable task lifecycle states and task receipts.
+- [x] Character-budgeted context construction.
+- [x] Structured logging and redacted diagnostics.
+- [x] Runtime configuration validation.
+- [ ] Provider retry/backoff/fallback policy.
+- [ ] Task recovery after process interruption.
+- [ ] Configuration schema migrations and model capability metadata.
 
 ## Stage 2 — Reliable memory
 
-- [x] Persistent conversation history.
-- [x] Persistent user memory records with source and verification status.
-- [x] Basic lexical retrieval.
-- [ ] Hybrid keyword/vector retrieval with an offline-capable embedding option.
-- [ ] Memory correction, contradiction tracking, and version history.
-- [ ] Explicit memory export, backup, restore, and retention controls.
-- [ ] Retrieval relevance benchmark.
+- [x] Persistent conversations and user memories.
+- [x] Basic lexical memory retrieval.
+- [x] Persistent research reports, skills, and specialist-agent records.
+- [x] Only validated procedural skills are retrieved into conversation context.
+- [ ] Hybrid keyword/vector retrieval.
+- [ ] Memory correction, contradiction tracking, version history, backup/restore.
+- [ ] Retrieval and skill-retention benchmarks.
 
 ## Stage 3 — Planning and verification
 
-- [x] Deterministic dependency graph, cycle detection, ready-step frontier, and persisted plan progress.\n- [ ] LLM-assisted task decomposition with user-reviewable plans.
-- [ ] Plan/action/observation/verification state machine.
-- [ ] Independent validators for tool results.
-- [ ] Failure taxonomy and resumable task recovery.
+- [x] Deterministic dependency graph, cycle detection, and persisted plan progress.
+- [x] Model-generated bounded tool plans with a fixed tool registry.
+- [x] Persisted per-step action receipts.
+- [x] Test failures cause autonomous tasks to fail rather than report success.
+- [ ] Full pause/resume and crash recovery.
+- [ ] Independent deterministic verification for all tool types.
 - [ ] Held-out multi-step task benchmark.
 
 ## Stage 4 — Research and knowledge
 
-- [ ] Source ingestion with provenance.
-- [ ] Citation-aware research reports.
-- [ ] Entity and relationship store.
-- [ ] Hypothesis and experiment records.
-- [ ] Reproducibility metadata and evidence grading.
+- [x] Public source adapters for Crossref, arXiv, and Wikipedia.
+- [x] Provenance-aware reports with source URL, publisher, date, evidence class, and limitations.
+- [x] Persistent research report history.
+- [ ] Full-text ingestion, broader web search, source-quality scoring, and citation verification.
+- [ ] Entity graph, hypothesis/experiment store, and systematic review workflow.
+
+Research scope is intentionally bounded; index ranking is not evidence quality and this is not a systematic literature review.
 
 ## Stage 5 — RLCD investigation
 
-- [x] Identify the public method and primary paper: OpenJev-RLCD, arXiv:2609.38850.
-- [x] Review its two-stage calibrate-then-reinforce recipe, proper scoring rules, KL anchor, and documented failure modes.
-- [x] Record reproduction constraints and licensing considerations in [RLCD feasibility](research/RLCD_FEASIBILITY.md).
-- [x] Add a persistent typed binary decision-outcome ledger and calibration metrics (Brier, log loss, ECE, risk-coverage/AURC, coverage at a risk limit).\n- [ ] Add held-out benchmark datasets and a decision-producer integration that emits typed probabilities.
-- [ ] Reproduce training only on suitable GPU hardware, after dataset/model license review.
+- [x] Identify OpenJev-RLCD and review its two-stage method.
+- [x] Document GPU, benchmark, and licensing constraints in [RLCD feasibility](research/RLCD_FEASIBILITY.md).
+- [x] Persistent binary decision ledger and Brier/log-loss/ECE/AURC metrics.
+- [ ] Held-out calibration benchmarks and typed decision-producer integration.
+- [ ] Training reproduction on suitable GPU resources.
 
-The paper's experimental runs use a 48 GB GPU. The target RTX 2060 has 6 GB VRAM, so full reproduction is deferred. Do not claim AETHER is RLCD-trained or substitute an unrelated confidence heuristic.
+AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX 2060 has 6 GB VRAM, while the paper reports 48 GB GPU runs.
 
 ## Stage 6 — Bounded autonomy
 
-- [ ] Permission tiers and a policy-enforced action gateway.
-- [ ] Read-only tools first.
-- [ ] Explicit approval for destructive, external, financial, or irreversible operations.
-- [ ] Resource budgets, deadlines, cancellation, and emergency stop.
-- [ ] Auditable action receipts.
+- [x] Permission-enforced fixed tool gateway.
+- [x] Read-only research and workspace tools.
+- [x] Workspace writes require feature flag and per-action human approval.
+- [x] Test execution requires feature flag and per-action human approval.
+- [x] Workspace path containment, file-size caps, step limits, and execution timeout.
+- [x] Persisted plans, progress, and action receipts.
+- [ ] Background scheduler, bounded goal discovery, pause/resume, and crash recovery.
+- [ ] OS-level sandbox for arbitrary code (not provided by the current copy-based candidate workflow).
 
-## Stage 7 — Self-engineering
+No arbitrary shell, unrestricted filesystem, or unrestricted URL-fetch tool is exposed.
 
-- [ ] Read-only architecture inspection.
-- [ ] Isolated patch proposals.
-- [ ] Test, security scan, benchmark, and rollback pipeline.
-- [ ] Human approval before production integration.
-- [ ] Immutable audit trail for all accepted changes.
+## Stage 7 — Controlled self-engineering
 
-## Stage 8 — Learning and multimodal expansion
+- [x] Read-only Python source inspection.
+- [x] Unified patch proposal saved as a reviewable experiment.
+- [x] Protected safety/configuration/startup paths and patch path/type validation.
+- [x] Explicit approval before running baseline and candidate tests.
+- [x] Candidate copy, compilation, test result recording, and rollback of candidate worktree.
+- [ ] OS-level isolation, security scanning, performance benchmarking, and signed immutable audit history.
+- [ ] Human-reviewed integration/merge workflow.
 
-Investigate continual learning, transfer, meta-learning, vision, audio, and specialist agents independently. Integrate only where a reproducible evaluation demonstrates a benefit on the target hardware or an explicitly approved cloud budget.
+The candidate copy is not an OS security sandbox. Generated tests execute with the current user's permissions. Production integration is never automatic.
+
+## Stage 8 — Continual learning
+
+- [x] Extract procedural workflows from supplied reference material using the configured model.
+- [x] Store drafts separately from validated skills.
+- [x] Require held-out evaluation evidence before retrieval into assistant context.
+- [ ] Automated benchmark harness for transfer, retention, and regression.
+- [ ] Continual model-weight adaptation/LoRA and catastrophic-forgetting evaluation.
+- [ ] Meta-learning experiments.
+
+Current learning is knowledge/procedure-level. No model weights are updated.
+
+## Stage 9 — Desktop, voice, and collective intelligence
+
+- [x] Optional allowlisted Windows application launch.
+- [x] Optional mouse/keyboard input with explicit per-action approval and small key allowlist.
+- [x] Optional offline Vosk push-to-talk recognition and local speech output.
+- [x] Three persisted specialist roles: researcher, planner, critic.
+- [ ] Independent specialist models, parallel execution, and stronger evidence-based arbitration.
+- [ ] Vision/OCR/screenshot understanding, audio event understanding, and video processing.
+- [ ] Local Windows hardware and microphone validation.
+
+Specialist roles currently share one local model and run sequentially to fit constrained VRAM. Voice is push-to-talk, not an always-on wake-word service.
 
 ## Engineering rules
 
@@ -86,5 +114,5 @@ Investigate continual learning, transfer, meta-learning, vision, audio, and spec
 2. Prefer root-cause fixes over symptom patches.
 3. Never report an unexecuted test as passing.
 4. Separate retrieval, procedural learning, policy adaptation, and model-weight updates.
-5. Do not claim consciousness or general intelligence based on architecture labels.
-6. Keep Windows 10/11 as the primary supported platform.
+5. Do not claim consciousness or general intelligence from architecture labels.
+6. Keep Windows 10/11 as the primary platform.
