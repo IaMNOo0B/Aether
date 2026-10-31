@@ -128,6 +128,7 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_resources.py::test_resource_guard_blocks_cpu_over_budget",
             "tests/test_resources.py::test_resource_guard_blocks_ram_pressure_and_low_free_memory",
             "tests/test_resources.py::test_resource_guard_checks_vram_only_for_gpu_required_operations",
+            "tests/test_resources.py::test_windows_resource_monitor_reads_system_cpu_and_ram",
         ],
         "full_scope": False,
         "limitations": [
