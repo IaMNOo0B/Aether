@@ -1,4 +1,4 @@
-"""Persistent SQLite storage for conversations, memories, tasks, and decisions."""
+"""Persistent SQLite storage for AETHER's operational and learning records."""
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -35,8 +35,7 @@ class Store:
                     content TEXT NOT NULL,
                     created_at TEXT NOT NULL
                 );
-                CREATE INDEX IF NOT EXISTS idx_messages_created
-                    ON messages(created_at);
+                CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at);
                 CREATE TABLE IF NOT EXISTS memories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     content TEXT NOT NULL,
@@ -52,8 +51,7 @@ class Store:
                     state_json TEXT NOT NULL DEFAULT '{}',
                     updated_at TEXT NOT NULL
                 );
-                CREATE INDEX IF NOT EXISTS idx_tasks_status_updated
-                    ON tasks(status, updated_at);
+                CREATE INDEX IF NOT EXISTS idx_tasks_status_updated ON tasks(status, updated_at);
                 CREATE TABLE IF NOT EXISTS decisions (
                     id TEXT PRIMARY KEY,
                     question TEXT NOT NULL,
@@ -64,8 +62,33 @@ class Store:
                     created_at TEXT NOT NULL,
                     resolved_at TEXT
                 );
-                CREATE INDEX IF NOT EXISTS idx_decisions_resolved
-                    ON decisions(resolved_at);
+                CREATE INDEX IF NOT EXISTS idx_decisions_resolved ON decisions(resolved_at);
+                CREATE TABLE IF NOT EXISTS research_reports (
+                    id TEXT PRIMARY KEY,
+                    query TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    sources_json TEXT NOT NULL DEFAULT '[]',
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS skills (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    procedure TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'draft',
+                    evaluation_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS agent_runs (
+                    id TEXT PRIMARY KEY,
+                    objective TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    output TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_agent_runs_created ON agent_runs(created_at);
             """)
 
     def add_message(self, role: str, content: str) -> int:
@@ -83,16 +106,12 @@ class Store:
             return []
         with self._connect() as db:
             rows = db.execute(
-                "SELECT role, content FROM messages ORDER BY id DESC LIMIT ?",
-                (limit,),
+                "SELECT role, content FROM messages ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
     def add_memory(
-        self,
-        content: str,
-        source: str = "user",
-        status: str = "unverified",
+        self, content: str, source: str = "user", status: str = "unverified",
         metadata: dict[str, Any] | None = None,
     ) -> int:
         with self._connect() as db:
@@ -112,8 +131,7 @@ class Store:
         with self._connect() as db:
             rows = db.execute(
                 f"""SELECT id, content, source, status, created_at
-                    FROM memories WHERE {clauses}
-                    ORDER BY id DESC LIMIT ?""",
+                    FROM memories WHERE {clauses} ORDER BY id DESC LIMIT ?""",
                 (*parameters, limit),
             ).fetchall()
         return [dict(row) for row in rows]
@@ -126,10 +144,8 @@ class Store:
             db.execute(
                 """INSERT INTO tasks(id, objective, status, state_json, updated_at)
                    VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(id) DO UPDATE SET
-                     objective=excluded.objective,
-                     status=excluded.status,
-                     state_json=excluded.state_json,
+                   ON CONFLICT(id) DO UPDATE SET objective=excluded.objective,
+                     status=excluded.status, state_json=excluded.state_json,
                      updated_at=excluded.updated_at""",
                 (task_id, objective, status, json.dumps(state or {}), utc_now()),
             )
@@ -162,12 +178,8 @@ class Store:
         return [task for row in rows if (task := self.get_task(row["id"])) is not None]
 
     def record_decision(
-        self,
-        decision_id: str,
-        question: str,
-        probability: float,
-        predicted_label: bool | int,
-        metadata: dict[str, Any] | None = None,
+        self, decision_id: str, question: str, probability: float,
+        predicted_label: bool | int, metadata: dict[str, Any] | None = None,
     ) -> None:
         if not math.isfinite(probability) or not 0 <= probability <= 1:
             raise ValueError("Decision probability must be finite and between zero and one")
@@ -202,9 +214,7 @@ class Store:
             raise KeyError(f"Unknown decision: {decision_id}")
         raise ValueError(f"Decision already resolved: {decision_id}")
 
-    def list_decisions(
-        self, resolved_only: bool = True, limit: int = 1000
-    ) -> list[dict[str, Any]]:
+    def list_decisions(self, resolved_only: bool = True, limit: int = 1000) -> list[dict[str, Any]]:
         if limit < 1:
             return []
         condition = "WHERE outcome IS NOT NULL" if resolved_only else ""
@@ -212,8 +222,7 @@ class Store:
             rows = db.execute(
                 f"""SELECT id, question, probability, predicted_label, outcome,
                            metadata_json, created_at, resolved_at
-                    FROM decisions {condition}
-                    ORDER BY created_at DESC LIMIT ?""",
+                    FROM decisions {condition} ORDER BY created_at DESC LIMIT ?""",
                 (limit,),
             ).fetchall()
         results = []
@@ -222,6 +231,107 @@ class Store:
             item["metadata"] = json.loads(item.pop("metadata_json"))
             results.append(item)
         return results
+
+    def save_research_report(
+        self, report_id: str, query: str, content: str, sources: list[dict[str, Any]]
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO research_reports(id, query, content, sources_json, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (report_id, query, content, json.dumps(sources), utc_now()),
+            )
+
+    def get_research_report(self, report_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM research_reports WHERE id = ?", (report_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["sources"] = json.loads(item.pop("sources_json"))
+        return item
+
+    def list_research_reports(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT id, query, created_at FROM research_reports ORDER BY created_at DESC LIMIT ?",
+                (max(0, limit),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_skill(
+        self, skill_id: str, title: str, procedure: str, source: str,
+        status: str = "draft", evaluation: dict[str, Any] | None = None,
+    ) -> None:
+        now = utc_now()
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO skills(id, title, procedure, source, status,
+                    evaluation_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (skill_id, title, procedure, source, status,
+                 json.dumps(evaluation or {}), now, now),
+            )
+
+    def get_skill(self, skill_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["evaluation"] = json.loads(item.pop("evaluation_json"))
+        return item
+
+    def list_skills(self, status: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            if status is None:
+                rows = db.execute(
+                    "SELECT id FROM skills ORDER BY updated_at DESC LIMIT ?", (limit,)
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT id FROM skills WHERE status = ? ORDER BY updated_at DESC LIMIT ?",
+                    (status, limit),
+                ).fetchall()
+        return [skill for row in rows if (skill := self.get_skill(row["id"])) is not None]
+
+    def evaluate_skill(self, skill_id: str, passed: bool, evidence: str) -> None:
+        if not evidence.strip():
+            raise ValueError("Skill evaluation requires evidence")
+        skill = self.get_skill(skill_id)
+        if skill is None:
+            raise KeyError(f"Unknown skill: {skill_id}")
+        evaluation = dict(skill["evaluation"])
+        history = evaluation.setdefault("runs", [])
+        history.append({"passed": bool(passed), "evidence": evidence, "at": utc_now()})
+        status = "validated" if passed else "draft"
+        with self._connect() as db:
+            db.execute(
+                """UPDATE skills SET status = ?, evaluation_json = ?, updated_at = ?
+                   WHERE id = ?""",
+                (status, json.dumps(evaluation), utc_now(), skill_id),
+            )
+
+    def save_agent_run(
+        self, run_id: str, objective: str, role: str, output: str, status: str = "completed"
+    ) -> None:
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO agent_runs(id, objective, role, output, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (run_id, objective, role, output, status, utc_now()),
+            )
+
+    def list_agent_runs(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT id, objective, role, output, status, created_at
+                   FROM agent_runs ORDER BY created_at DESC LIMIT ?""",
+                (max(0, limit),),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def close(self) -> None:
         """Reserved for interface symmetry; SQLite connections are short-lived."""
