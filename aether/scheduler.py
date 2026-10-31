@@ -27,6 +27,8 @@ class AutonomyScheduler:
         return False
 
     def run_once(self) -> dict[str, Any]:
+        if self.store.emergency_stop_enabled():
+            return {"status": "emergency_stop", "enqueued": [], "results": []}
         if not self.settings.enabled:
             return {"status": "disabled", "enqueued": [], "results": []}
         enqueued = self.store.enqueue_due_schedules(
