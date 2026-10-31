@@ -76,8 +76,10 @@ For a service requiring a key, set `api_key_env = "AETHER_API_KEY"` and provide 
 ### Memory and continuity
 
 - Memories are typed and stored locally with source/status metadata.
-- Retrieval uses a local BM25-style lexical ranker; it is **not** embedding-based semantic search.
-- `/memory-search <query>` shows ranked matches.
+- Retrieval always has a local BM25-style lexical ranker. Optional semantic retrieval adds cosine similarity from a local Ollama embedding model.
+- `/memory-search <query>` shows ranked matches and lexical/semantic scores.
+- Semantic indexing is off by default. To enable it, run `ollama pull nomic-embed-text`, set `[memory] semantic_enabled = true`, then run `/memory-index` to backfill existing memories. New memories are embedded automatically when the endpoint is available.
+- If the embedding model is unavailable, AETHER keeps the memory and falls back to lexical retrieval. It never downloads the embedding model automatically.
 - `/correct-memory id | corrected content | reason` preserves the old record and appends a correction.
 - Task state changes and checkpoints have an append-only event history. `/task-events <full-task-id>` inspects it.
 - On startup, tasks left running by a crash are marked interrupted/failed for manual review. AETHER does not blindly replay uncertain side effects.

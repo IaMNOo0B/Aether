@@ -117,3 +117,20 @@ enabled = true
     )
     with pytest.raises(ValueError, match="requires both autonomy.enabled and models.enabled"):
         load_settings(config)
+
+def test_semantic_memory_configuration_defaults_to_disabled():
+    settings = load_settings(Path("config/settings.toml"))
+    assert settings.memory.semantic_enabled is False
+    assert settings.memory.embedding_provider == "ollama"
+    assert settings.memory.embedding_model == "nomic-embed-text"
+
+
+def test_semantic_memory_configuration_validates_weight_and_batch_size(tmp_path):
+    source = Path("config/settings.toml").read_text(encoding="utf-8")
+    config = tmp_path / "settings.toml"
+    config.write_text(
+        source.replace("semantic_weight = 0.45", "semantic_weight = 1.5"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="semantic_weight"):
+        load_settings(config)

@@ -80,6 +80,17 @@ class VoiceSettings:
 
 
 @dataclass(frozen=True)
+class MemorySettings:
+    semantic_enabled: bool = False
+    embedding_provider: str = "ollama"
+    embedding_base_url: str = "http://127.0.0.1:11434"
+    embedding_model: str = "nomic-embed-text"
+    embedding_timeout_seconds: int = 30
+    semantic_weight: float = 0.45
+    index_batch_size: int = 32
+
+
+@dataclass(frozen=True)
 class SchedulerSettings:
     enabled: bool = False
     poll_interval_seconds: int = 30
@@ -97,6 +108,7 @@ class Settings:
     desktop: DesktopSettings = DesktopSettings()
     voice: VoiceSettings = VoiceSettings()
     scheduler: SchedulerSettings = SchedulerSettings()
+    memory: MemorySettings = MemorySettings()
 
 
 def load_settings(path: Path | str = "config/settings.toml") -> Settings:
@@ -127,6 +139,7 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         desktop = DesktopSettings(**desktop_raw)
         voice = VoiceSettings(**raw.get("voice", {}))
         scheduler = SchedulerSettings(**raw.get("scheduler", {}))
+        memory = MemorySettings(**raw.get("memory", {}))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Unknown or invalid configuration field: {exc}") from exc
 
@@ -169,6 +182,17 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         raise ValueError("autonomy.workspace cannot be empty")
     if not desktop.allowed_apps:
         raise ValueError("desktop.allowed_apps must contain at least one application")
+    if memory.embedding_provider.strip().lower() != "ollama":
+        raise ValueError(f"Unsupported embedding provider: {memory.embedding_provider}")
+    embedding_url = urlparse(memory.embedding_base_url)
+    if embedding_url.scheme not in {"http", "https"} or not embedding_url.netloc:
+        raise ValueError("Memory embedding_base_url must be an absolute HTTP or HTTPS URL")
+    if not memory.embedding_model.strip() or memory.embedding_timeout_seconds < 1:
+        raise ValueError("Memory embedding model and timeout must be valid")
+    if not 0 <= memory.semantic_weight <= 1:
+        raise ValueError("Memory semantic_weight must be between zero and one")
+    if not 1 <= memory.index_batch_size <= 1000:
+        raise ValueError("Memory index_batch_size must be between 1 and 1000")
     if scheduler.poll_interval_seconds < 5 or not 1 <= scheduler.max_tasks_per_tick <= 10:
         raise ValueError("Scheduler poll interval must be >= 5 seconds and max_tasks_per_tick 1..10")
     if scheduler.enabled and (not autonomy.enabled or not models.enabled):
@@ -179,5 +203,5 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
     return Settings(
         app=app, models=models, storage=storage, limits=limits,
         research=research, autonomy=autonomy, desktop=desktop, voice=voice,
-        scheduler=scheduler,
+        scheduler=scheduler, memory=memory,
     )

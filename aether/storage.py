@@ -46,6 +46,17 @@ class Store:
                     metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS memory_embeddings (
+                    memory_id INTEGER NOT NULL,
+                    model TEXT NOT NULL,
+                    vector_json TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL CHECK(dimensions > 0),
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY(memory_id, model),
+                    FOREIGN KEY(memory_id) REFERENCES memories(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model
+                    ON memory_embeddings(model, memory_id);
                 CREATE TABLE IF NOT EXISTS tasks (
                     id TEXT PRIMARY KEY,
                     objective TEXT NOT NULL,
@@ -697,6 +708,76 @@ class Store:
             )
             return int(cursor.lastrowid)
 
+
+
+    def save_memory_embedding(
+        self, memory_id: int, model: str, vector: list[float],
+    ) -> None:
+        if not model.strip() or not vector:
+            raise ValueError("Embedding model and vector are required")
+        if any(
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            for value in vector
+        ):
+            raise ValueError("Embedding vectors must contain finite numeric values")
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO memory_embeddings(memory_id, model, vector_json, dimensions, created_at)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(memory_id, model) DO UPDATE SET
+                     vector_json=excluded.vector_json,
+                     dimensions=excluded.dimensions,
+                     created_at=excluded.created_at""",
+                (memory_id, model, json.dumps(vector), len(vector), utc_now()),
+            )
+
+    def get_memory_embedding(self, memory_id: int, model: str) -> list[float] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT vector_json FROM memory_embeddings WHERE memory_id=? AND model=?",
+                (memory_id, model),
+            ).fetchone()
+        return json.loads(row["vector_json"]) if row else None
+
+    def list_memory_embeddings(self, model: str, limit: int = 20000) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT e.memory_id, e.vector_json, m.content, m.source, m.status,
+                          m.metadata_json, m.created_at
+                   FROM memory_embeddings e
+                   JOIN memories m ON m.id=e.memory_id
+                   WHERE e.model=? AND m.status NOT IN ('superseded', 'rejected', 'deleted')
+                   ORDER BY e.memory_id DESC LIMIT ?""",
+                (model, max(0, min(limit, 20000))),
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            item["vector"] = json.loads(item.pop("vector_json"))
+            item["metadata"] = json.loads(item.pop("metadata_json"))
+            results.append(item)
+        return results
+
+    def list_memories_without_embedding(
+        self, model: str, limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT m.id, m.content, m.source, m.status, m.metadata_json, m.created_at
+                   FROM memories m LEFT JOIN memory_embeddings e
+                     ON e.memory_id=m.id AND e.model=?
+                   WHERE e.memory_id IS NULL
+                     AND m.status NOT IN ('superseded', 'rejected', 'deleted')
+                   ORDER BY m.id LIMIT ?""",
+                (model, max(0, min(limit, 1000))),
+            ).fetchall()
+        results = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = json.loads(item.pop("metadata_json"))
+            results.append(item)
+        return results
 
     def get_memory(self, memory_id: int) -> dict[str, Any] | None:
         with self._connect() as db:

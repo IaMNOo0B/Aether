@@ -1,14 +1,12 @@
-"""Structured, provenance-aware lexical memory retrieval.
-
-This is a transparent local retrieval baseline, not semantic embedding search.
-"""
+"""Typed local memory with BM25 lexical and optional embedding retrieval."""
 from __future__ import annotations
 
 from collections import Counter
-from math import log
+from math import log, sqrt
 import re
 from typing import Any
 
+from aether.embeddings import EmbeddingProvider, EmbeddingUnavailable
 from aether.storage import Store
 
 
@@ -29,12 +27,39 @@ def _tokens(text: str) -> list[str]:
     ]
 
 
-class MemoryManager:
-    """Manage typed memories, rank retrieval and preserve correction lineage."""
+def _cosine(left: list[float], right: list[float]) -> float | None:
+    if len(left) != len(right) or not left:
+        return None
+    left_norm = sqrt(sum(value * value for value in left))
+    right_norm = sqrt(sum(value * value for value in right))
+    if left_norm == 0 or right_norm == 0:
+        return None
+    return sum(a * b for a, b in zip(left, right)) / (left_norm * right_norm)
 
-    def __init__(self, store: Store, corpus_limit: int = 5000):
+
+class MemoryManager:
+    """Manage typed memories, ranked retrieval, optional embeddings and corrections."""
+
+    def __init__(
+        self, store: Store, corpus_limit: int = 5000,
+        embedding_provider: EmbeddingProvider | None = None,
+        semantic_weight: float = 0.45,
+    ):
+        if not 0 <= semantic_weight <= 1:
+            raise ValueError("semantic_weight must be between zero and one")
         self.store = store
         self.corpus_limit = max(100, min(corpus_limit, 20000))
+        self.embedding_provider = embedding_provider
+        self.semantic_weight = semantic_weight
+
+    def _index_one(self, memory_id: int, content: str) -> bool:
+        if self.embedding_provider is None:
+            return False
+        vector = self.embedding_provider.embed(content)
+        self.store.save_memory_embedding(
+            memory_id, self.embedding_provider.model, vector
+        )
+        return True
 
     def remember(
         self, content: str, *, source: str = "user", kind: str = "semantic",
@@ -63,7 +88,39 @@ class MemoryManager:
             "tags": normalized_tags,
             "schema_version": 1,
         })
-        return self.store.add_memory(text, source=source, status=status, metadata=record)
+        memory_id = self.store.add_memory(
+            text, source=source, status=status, metadata=record
+        )
+        if self.embedding_provider is not None:
+            try:
+                self._index_one(memory_id, text)
+            except EmbeddingUnavailable:
+                # Preserve the memory; lexical retrieval remains available.
+                pass
+        return memory_id
+
+    def index_pending(self, limit: int = 100) -> dict[str, Any]:
+        if self.embedding_provider is None:
+            raise ValueError("Semantic memory is disabled; configure an embedding provider first")
+        if not 1 <= limit <= 1000:
+            raise ValueError("Embedding index limit must be between 1 and 1000")
+        pending = self.store.list_memories_without_embedding(
+            self.embedding_provider.model, limit
+        )
+        indexed = 0
+        for item in pending:
+            try:
+                self._index_one(item["id"], item["content"])
+                indexed += 1
+            except EmbeddingUnavailable as exc:
+                return {
+                    "indexed": indexed, "remaining": len(pending) - indexed,
+                    "error": str(exc),
+                }
+        remaining = len(self.store.list_memories_without_embedding(
+            self.embedding_provider.model, 1000
+        ))
+        return {"indexed": indexed, "remaining": remaining, "error": None}
 
     def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
         terms = _tokens(query)
@@ -75,6 +132,7 @@ class MemoryManager:
         ]
         if not records:
             return []
+
         documents = []
         document_frequency: Counter[str] = Counter()
         for item in records:
@@ -90,7 +148,7 @@ class MemoryManager:
             document_frequency.update(set(counts))
         average_length = sum(length for _, _, length in documents) / len(documents) or 1.0
         query_terms = set(terms)
-        ranked = []
+        lexical_scores: dict[int, float] = {}
         for item, counts, length in documents:
             score = 0.0
             for term in query_terms:
@@ -101,25 +159,61 @@ class MemoryManager:
                           / (document_frequency[term] + 0.5))
                 denominator = frequency + 1.5 * (1 - 0.75 + 0.75 * length / average_length)
                 score += idf * frequency * 2.5 / denominator
-            if score <= 0:
-                continue
-            meta = item["metadata"]
             matched_tags = query_terms.intersection(
-                str(tag).casefold() for tag in meta.get("tags", [])
+                str(tag).casefold() for tag in item["metadata"].get("tags", [])
             )
-            score += 0.5 * len(matched_tags)
-            ranked.append((score, item["id"], item))
+            lexical_scores[item["id"]] = score + 0.5 * len(matched_tags)
+        max_lexical = max(lexical_scores.values(), default=0.0)
+
+        query_vector = None
+        embedding_map: dict[int, list[float]] = {}
+        if self.embedding_provider is not None and self.semantic_weight > 0:
+            try:
+                query_vector = self.embedding_provider.embed(query)
+                embedding_map = {
+                    item["memory_id"]: item["vector"]
+                    for item in self.store.list_memory_embeddings(
+                        self.embedding_provider.model, self.corpus_limit
+                    )
+                }
+            except EmbeddingUnavailable:
+                query_vector = None
+                embedding_map = {}
+
+        ranked = []
+        for item, _, _ in documents:
+            lexical = lexical_scores[item["id"]]
+            lexical_normalized = lexical / max_lexical if max_lexical else 0.0
+            semantic = None
+            if query_vector is not None and item["id"] in embedding_map:
+                semantic = _cosine(query_vector, embedding_map[item["id"]])
+            if query_vector is None:
+                relevance = lexical
+            elif semantic is None:
+                relevance = lexical_normalized * (1 - self.semantic_weight)
+            else:
+                relevance = (
+                    lexical_normalized * (1 - self.semantic_weight)
+                    + max(0.0, semantic) * self.semantic_weight
+                )
+            if relevance <= 0:
+                continue
+            ranked.append((relevance, item["id"], lexical, semantic, item))
         ranked.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
-        results = []
-        for score, _, item in ranked[:limit]:
-            results.append({
+        return [
+            {
                 **item,
-                "relevance": round(score, 6),
+                "relevance": round(relevance, 6),
+                "lexical_score": round(lexical, 6),
+                "semantic_similarity": (
+                    round(semantic, 6) if semantic is not None else None
+                ),
                 "kind": item["metadata"].get("kind", "semantic"),
                 "confidence": item["metadata"].get("confidence"),
                 "tags": item["metadata"].get("tags", []),
-            })
-        return results
+            }
+            for relevance, _, lexical, semantic, item in ranked[:limit]
+        ]
 
     def correct(self, memory_id: int, corrected_content: str, reason: str) -> int:
         """Supersede a memory without deleting history or rewriting its provenance."""
@@ -138,8 +232,14 @@ class MemoryManager:
             "schema_version": 1,
             "correction_reason": explanation,
         }
-        return self.store.supersede_memory(
+        new_id = self.store.supersede_memory(
             memory_id, correction, explanation,
             source="user-correction", status="user-corrected",
             metadata=metadata,
         )
+        if self.embedding_provider is not None:
+            try:
+                self._index_one(new_id, correction)
+            except EmbeddingUnavailable:
+                pass
+        return new_id

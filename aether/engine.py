@@ -5,6 +5,7 @@ import logging
 
 from aether.config import Settings
 from aether.decisions import DecisionManager
+from aether.embeddings import OllamaEmbeddingProvider
 from aether.context import fit_messages
 from aether.learning import SkillLearner
 from aether.knowledge import KnowledgeGraph
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 BUILTIN_CAPABILITIES = (
     ("identity.self_model", "Persistent self-model", "Versioned operational identity and evidence-backed capability records."),
-    ("memory.ranked_lexical", "Ranked local memory", "Typed memory records, BM25-style retrieval and correction lineage."),
+    ("memory.ranked_hybrid", "Hybrid local memory", "Typed memories, BM25 lexical retrieval, optional Ollama cosine embeddings and correction lineage."),
     ("tasks.event_recovery", "Task continuity and recovery", "Atomic task transitions, event history, checkpoints and conservative interruption recovery."),
     ("providers.openai_compatible", "OpenAI-compatible provider", "Chat Completions adapter with environment-based API key lookup."),
     ("providers.failover", "Provider failover", "Ordered fallback across explicitly configured model endpoints."),
@@ -68,7 +69,18 @@ class AetherEngine:
         )
         self.provider_chain = ProviderChain(provider_sequence)
         self.tasks = TaskManager(store)
-        self.memory = MemoryManager(store)
+        embedding_provider = (
+            OllamaEmbeddingProvider(
+                settings.memory.embedding_base_url,
+                settings.memory.embedding_model,
+                settings.memory.embedding_timeout_seconds,
+            )
+            if settings.memory.semantic_enabled else None
+        )
+        self.memory = MemoryManager(
+            store, embedding_provider=embedding_provider,
+            semantic_weight=settings.memory.semantic_weight,
+        )
         self.decisions = DecisionManager(store)
         self.knowledge = KnowledgeGraph(
             store, self.provider() if settings.models.enabled else None
@@ -113,6 +125,8 @@ class AetherEngine:
             "desktop_enabled": self.settings.desktop.enabled,
             "voice_enabled": self.settings.voice.enabled,
             "capability_records": len(identity["capabilities"]),
+            "semantic_memory_enabled": self.settings.memory.semantic_enabled,
+            "embedding_model": self.settings.memory.embedding_model,
             "database": str(self.store.path),
         }
 
