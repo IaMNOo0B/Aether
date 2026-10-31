@@ -547,6 +547,7 @@ def main() -> int:
                 continue
 
             if lower == "/voice":
+                engine.resources.check("voice recognition")
                 voice = VoiceInterface(
                     settings.voice.enabled, settings.voice.vosk_model_path,
                     settings.voice.wake_word, settings.voice.speak_responses,
@@ -596,6 +597,8 @@ def main() -> int:
             if lower.startswith("/remember "):
                 memory = user_text[len("/remember "):].strip()
                 if memory:
+                    if settings.memory.semantic_enabled:
+                        engine.resources.check("memory embedding", gpu_required=True)
                     memory_id = engine.memory.remember(
                         memory, source="user", kind="semantic", status="user-provided"
                     )
@@ -605,11 +608,16 @@ def main() -> int:
                 continue
 
             if lower == "/memory-index":
+                engine.resources.check(
+                    "memory embedding index", gpu_required=settings.memory.semantic_enabled
+                )
                 result = engine.memory.index_pending(settings.memory.index_batch_size)
                 print(json.dumps(result, indent=2))
                 continue
 
             if lower.startswith("/memory-search "):
+                if settings.memory.semantic_enabled:
+                    engine.resources.check("semantic memory search", gpu_required=True)
                 query = user_text[len("/memory-search "):].strip()
                 matches = engine.memory.search(query, limit=10)
                 if not matches:
