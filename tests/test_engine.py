@@ -16,3 +16,6 @@ def test_engine_persists_exchange_when_model_is_disabled(tmp_path):
     history = store.recent_messages()
     assert history[-2] == {"role": "user", "content": "hello"}
     assert history[-1]["role"] == "assistant"
+    tasks = store.list_tasks(limit=1)
+    assert tasks[0]["status"] == "completed"
+    assert tasks[0]["state"]["response_persisted"] is True
