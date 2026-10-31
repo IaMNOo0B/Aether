@@ -6,6 +6,7 @@ import logging
 from aether.config import Settings
 from aether.context import fit_messages
 from aether.learning import SkillLearner
+from aether.memory import MemoryManager
 from aether.ollama import ModelUnavailable
 from aether.providers import build_registry
 from aether.self_model import SelfModel
@@ -32,6 +33,7 @@ class AetherEngine:
             settings.models.timeout_seconds,
         )
         self.tasks = TaskManager(store)
+        self.memory = MemoryManager(store)
         self.self_model = SelfModel(
             settings.storage.database, settings.app.name, "0.3.0"
         )
@@ -75,12 +77,13 @@ class AetherEngine:
         task = self.tasks.create("Respond to user message", {"input_length": len(text)})
         self.tasks.transition(task.id, "running")
         try:
-            memories = self.store.search_memories(text)
+            memories = self.memory.search(text, limit=8)
             memory_context = ""
             if memories:
                 memory_context = "\n\nRelevant stored memories (verify before relying on them):\n"
                 memory_context += "\n".join(
-                    f"- [{item['source']}; {item['status']}] {item['content']}"
+                    f"- [{item['kind']}; {item['source']}; {item['status']}; "
+                    f"relevance={item['relevance']:.3f}] {item['content']}"
                     for item in memories
                 )
 
