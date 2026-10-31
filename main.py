@@ -183,9 +183,6 @@ def main() -> int:
                 continue
 
             if lower.startswith("/schedule "):
-                if not settings.scheduler.enabled:
-                    print("AETHER > Scheduler is disabled. Enable [scheduler] and [autonomy] in config/settings.toml.")
-                    continue
                 parts = user_text[len("/schedule "):].split(maxsplit=1)
                 action = parts[0].casefold()
                 argument = parts[1] if len(parts) == 2 else ""
@@ -216,8 +213,11 @@ def main() -> int:
                     store.set_schedule_enabled(argument.strip(), action == "resume")
                     print(f"AETHER > Schedule {argument.strip()} {action}d.")
                     continue
-                if action == "tick" and scheduler is not None:
-                    print(json.dumps(scheduler.run_once(), indent=2))
+                if action == "tick":
+                    if scheduler is None:
+                        print("AETHER > Scheduler is disabled. Enable [scheduler], [autonomy] and [models] in config/settings.toml.")
+                    else:
+                        print(json.dumps(scheduler.run_once(), indent=2))
                     continue
                 print("Usage: /schedule add|list|pause ID|resume ID|tick")
                 continue
