@@ -226,6 +226,20 @@ class AutonomyRunner:
         task = self.enqueue(objective)
         return self.run_task(task.id, approval)
 
+    def _guard_approval(self, approval: ApprovalCallback | None) -> ApprovalCallback | None:
+        if approval is None:
+            return None
+
+        def guarded(tool: str, purpose: str, args: dict[str, Any]) -> bool:
+            if self.store.emergency_stop_enabled():
+                raise EmergencyStop("AETHER emergency stop activated during approval")
+            approved = approval(tool, purpose, args)
+            if self.store.emergency_stop_enabled():
+                raise EmergencyStop("AETHER emergency stop activated while awaiting approval")
+            return approved
+
+        return guarded
+
     def run_task(
         self, task_id: str, approval: ApprovalCallback | None = None
     ) -> dict[str, Any]:
@@ -257,7 +271,9 @@ class AutonomyRunner:
             for index, step in enumerate(steps, start=1):
                 if self.store.emergency_stop_enabled():
                     raise EmergencyStop("AETHER emergency stop activated during task execution")
-                result = self.gateway.execute(step["tool"], step.get("args", {}), approval)
+                result = self.gateway.execute(
+                    step["tool"], step.get("args", {}), self._guard_approval(approval)
+                )
                 receipts.append({
                     "step": index, "tool": step["tool"], "purpose": step.get("purpose"),
                     "human_approved": step["tool"] in {"workspace.write", "tests.run"},
