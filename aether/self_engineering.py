@@ -19,7 +19,7 @@ class PatchRejected(ValueError):
 class SelfEngineer:
     PROTECTED_PATHS = {
         ".github/workflows", "config/settings.toml", "aether/autonomy.py",
-        "aether/desktop.py", "aether/voice.py", "aether/self_engineering.py",
+        "aether/desktop.py", "aether/voice.py", "aether/self_engineering.py",\n        "aether/config.py", "main.py",
         ".gitignore", "INSTALL.bat", "START_AETHER.bat",
     }
 
@@ -42,7 +42,7 @@ class SelfEngineer:
                     continue
                 files.append({
                     "path": str(path.relative_to(self.root)),
-                    "content": path.read_text(encoding="utf-8")[:12000],
+                    "content": path.read_text(encoding="utf-8")[:4000],
                 })
             except (OSError, UnicodeDecodeError):
                 continue
@@ -53,7 +53,7 @@ class SelfEngineer:
     def propose(self, objective: str) -> dict[str, Any]:
         if not objective.strip():
             raise ValueError("Self-engineering objective cannot be empty")
-        snapshot = self.inspect()
+        snapshot = self.inspect(max_files=12)
         context = "\n\n".join(
             "FILE: " + item["path"] + "\n" + item["content"]
             for item in snapshot["python_files"]
@@ -72,7 +72,7 @@ class SelfEngineer:
             },
             {"role": "user", "content": (
                 f"Improvement objective: {objective}\n\n"
-                "Current source snapshot (read-only reference):\n" + context[:45000]
+                "Current source snapshot (read-only reference):\n" + context[:10000]
             )},
         ])
         if response.strip() == "NO_SAFE_PATCH":
