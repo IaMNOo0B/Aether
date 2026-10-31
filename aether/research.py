@@ -154,7 +154,9 @@ class Researcher:
         text = query.strip()
         if len(text) < 3:
             raise ValueError("Research query must contain at least three characters")
-        count = min(limit or self.max_results, self.max_results)
+        if len(text) > 500:
+            raise ValueError("Research query is limited to 500 characters")
+        count = max(1, min(limit or self.max_results, self.max_results))
         collected: list[ResearchSource] = []
         errors: list[str] = []
         for label, operation, amount in (
