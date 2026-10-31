@@ -23,6 +23,10 @@ class ActionDeclined(ToolDenied):
     pass
 
 
+class EmergencyStop(ToolDenied):
+    pass
+
+
 ApprovalCallback = Callable[[str, str, dict[str, Any]], bool]
 
 
@@ -170,6 +174,8 @@ class AutonomyRunner:
         )
 
     def enqueue(self, objective: str) -> Task:
+        if self.store.emergency_stop_enabled():
+            raise EmergencyStop("AETHER emergency stop is active; autonomy is blocked")
         if not objective.strip():
             raise ValueError("Goal cannot be empty")
         return self.tasks.create(objective, {"kind": "autonomy", "receipts": []})
@@ -230,6 +236,12 @@ class AutonomyRunner:
             raise ValueError(f"Task is not queued: {task_data['status']}")
         if task_data["state"].get("kind") != "autonomy":
             raise ValueError("Task was not created by the autonomy queue")
+        if self.store.emergency_stop_enabled():
+            reason = "AETHER emergency stop is active; task was not executed"
+            self.tasks.transition(task_id, "cancelled", {
+                **task_data["state"], "emergency_stop": True, "reason": reason,
+            })
+            return {"task_id": task_id, "status": "cancelled", "reason": reason}
         self.tasks.transition(task_id, "running")
         receipts: list[dict[str, Any]] = []
         preserved_state = {
@@ -243,6 +255,8 @@ class AutonomyRunner:
                 "plan": steps, "receipts": receipts,
             })
             for index, step in enumerate(steps, start=1):
+                if self.store.emergency_stop_enabled():
+                    raise EmergencyStop("AETHER emergency stop activated during task execution")
                 result = self.gateway.execute(step["tool"], step.get("args", {}), approval)
                 receipts.append({
                     "step": index, "tool": step["tool"], "purpose": step.get("purpose"),
@@ -266,6 +280,15 @@ class AutonomyRunner:
             }
             self.tasks.transition(task_id, "completed", final_state)
             return {"task_id": task_id, "status": "completed", **final_state}
+        except EmergencyStop as exc:
+            self.tasks.transition(task_id, "cancelled", {
+                **preserved_state, "kind": "autonomy",
+                "receipts": receipts, "emergency_stop": True, "reason": str(exc),
+            })
+            return {
+                "task_id": task_id, "status": "cancelled",
+                "receipts": receipts, "reason": str(exc),
+            }
         except ActionDeclined as exc:
             self.tasks.transition(task_id, "cancelled", {
                 **preserved_state, "kind": "autonomy",
@@ -282,6 +305,8 @@ class AutonomyRunner:
     def run_pending(
         self, approval: ApprovalCallback | None = None, max_tasks: int = 3
     ) -> list[dict[str, Any]]:
+        if self.store.emergency_stop_enabled():
+            raise EmergencyStop("AETHER emergency stop is active; queued autonomy is blocked")
         if not self.policy.enabled:
             raise ToolDenied("Autonomy is disabled in config/settings.toml")
         queued = [
