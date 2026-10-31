@@ -243,6 +243,17 @@ class Store:
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(simulation_id) REFERENCES world_simulations(id)
                 );
+                CREATE TABLE IF NOT EXISTS world_action_outcomes (
+                    id TEXT PRIMARY KEY,
+                    action_id TEXT NOT NULL,
+                    simulation_id TEXT NOT NULL,
+                    outcome_class TEXT NOT NULL CHECK(outcome_class IN ('success', 'failure', 'ambiguous')),
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(action_id) REFERENCES world_actions(id),
+                    FOREIGN KEY(simulation_id) REFERENCES world_simulations(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_world_action_outcomes_action
+                    ON world_action_outcomes(action_id, outcome_class);
             """)
             db.execute(
                 """INSERT OR IGNORE INTO system_controls(name, enabled, reason, updated_at)
@@ -555,8 +566,12 @@ class Store:
         item["constraints_met"] = bool(item["constraints_met"])
         return item
 
-    def insert_world_observation(self, observation: dict[str, Any]) -> None:
+    def insert_world_observation(
+        self, observation: dict[str, Any], action_id: str, outcome_class: str,
+    ) -> None:
+        now = utc_now()
         with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             db.execute(
                 """INSERT INTO world_observations
                    (id, simulation_id, actual_state_json, prediction_error_json,
@@ -566,14 +581,32 @@ class Store:
                     observation["id"], observation["simulation_id"],
                     json.dumps(observation["actual_state"]),
                     json.dumps(observation["prediction_error"]),
-                    int(observation["applied_to_world"]), utc_now(),
+                    int(observation["applied_to_world"]), now,
                 ),
             )
+            db.execute(
+                """INSERT INTO world_action_outcomes
+                   (id, action_id, simulation_id, outcome_class, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (uuid4().hex, action_id, observation["simulation_id"], outcome_class, now),
+            )
+
+    def world_action_outcome_counts(self, action_id: str) -> dict[str, int]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT outcome_class, COUNT(*) AS count FROM world_action_outcomes
+                   WHERE action_id=? GROUP BY outcome_class""",
+                (action_id,),
+            ).fetchall()
+        counts = {"success": 0, "failure": 0, "ambiguous": 0}
+        counts.update({row["outcome_class"]: int(row["count"]) for row in rows})
+        return counts
 
 
     def apply_world_observation(
         self, observation: dict[str, Any], world_id: str,
         expected_version: int, actual_state: dict[str, Any],
+        action_id: str, outcome_class: str,
     ) -> int:
         """Atomically append an observation and update only the exact simulated world version."""
         now = utc_now()
@@ -596,6 +629,12 @@ class Store:
                     json.dumps(observation["actual_state"]),
                     json.dumps(observation["prediction_error"]), now,
                 ),
+            )
+            db.execute(
+                """INSERT INTO world_action_outcomes
+                   (id, action_id, simulation_id, outcome_class, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (uuid4().hex, action_id, observation["simulation_id"], outcome_class, now),
             )
             next_version = expected_version + 1
             db.execute(
