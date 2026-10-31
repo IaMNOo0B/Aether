@@ -58,6 +58,8 @@ class WorldModel:
         clean_name = " ".join(name.split())
         if not clean_name or len(clean_name) > 150:
             raise ValueError("World name must contain 1..150 characters")
+        if self.get_world(clean_name) is not None:
+            raise ValueError(f"World already exists: {clean_name}")
         state = _json_object(initial_state, "initial_state")
         rules = _json_object(constraints or {}, "constraints")
         self._validate_constraints(rules)
@@ -93,6 +95,9 @@ class WorldModel:
         clean_name = " ".join(name.split())
         if not clean_name or len(clean_name) > 150:
             raise ValueError("Action name must contain 1..150 characters")
+        if any(item["normalized_name"] == _normalize(clean_name)
+               for item in self.store.list_world_actions(world["id"])):
+            raise ValueError(f"Action already exists in world: {clean_name}")
         pre = _json_object(preconditions, "preconditions")
         effect = _json_object(effects, "effects")
         failure = _json_object(failure_effects or {}, "failure_effects")
@@ -217,11 +222,13 @@ class WorldModel:
             "prediction_error": differences,
             "applied_to_world": apply_to_world,
         }
-        self.store.insert_world_observation(observation)
         if apply_to_world:
-            self.store.update_world_state(
-                simulation["world_id"], actual, f"observed_after_simulation:{simulation_id}"
+            self.store.apply_world_observation(
+                observation, simulation["world_id"],
+                simulation["world_version"], actual,
             )
+        else:
+            self.store.insert_world_observation(observation)
         return observation
 
     def history(self, world_name: str) -> list[dict[str, Any]]:
