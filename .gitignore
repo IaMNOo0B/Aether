@@ -10,6 +10,10 @@ data/*
 !data/.gitkeep
 logs/*
 !logs/.gitkeep
+workspace/*
+!workspace/.gitkeep
+.aether/
+models/
 *.log
 .DS_Store
 Thumbs.db
