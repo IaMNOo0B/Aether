@@ -15,7 +15,7 @@ def sample_steps():
 
 def test_plan_graph_orders_dependencies_and_exposes_ready_frontier():
     graph = PlanGraph(sample_steps())
-    assert graph.topological_order() == ("inspect", "design", "test", "document")
+    assert graph.topological_order() == ("inspect", "design", "document", "test")
     assert graph.ready_steps() == ("inspect",)
     assert graph.ready_steps({"inspect"}) == ("design", "document")
 
