@@ -51,6 +51,8 @@ class Store:
                     state_json TEXT NOT NULL DEFAULT '{}',
                     updated_at TEXT NOT NULL
                 );
+                CREATE INDEX IF NOT EXISTS idx_tasks_status_updated
+                    ON tasks(status, updated_at);
             """)
 
     def add_message(self, role: str, content: str) -> int:
@@ -64,6 +66,8 @@ class Store:
             return int(cursor.lastrowid)
 
     def recent_messages(self, limit: int = 12) -> list[dict[str, str]]:
+        if limit < 1:
+            return []
         with self._connect() as db:
             rows = db.execute(
                 "SELECT role, content FROM messages ORDER BY id DESC LIMIT ?",
@@ -87,9 +91,8 @@ class Store:
             return int(cursor.lastrowid)
 
     def search_memories(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
-        # Simple baseline lexical retrieval. A vector/hybrid index is a later milestone.
         terms = [term.strip() for term in query.split() if len(term.strip()) > 2]
-        if not terms:
+        if not terms or limit < 1:
             return []
         clauses = " OR ".join("content LIKE ?" for _ in terms)
         parameters = [f"%{term}%" for term in terms]
@@ -117,6 +120,33 @@ class Store:
                      updated_at=excluded.updated_at""",
                 (task_id, objective, status, json.dumps(state or {}), utc_now()),
             )
+
+    def get_task(self, task_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT id, objective, status, state_json, updated_at FROM tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["state"] = json.loads(result.pop("state_json"))
+        return result
+
+    def list_tasks(self, status: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        if limit < 1:
+            return []
+        with self._connect() as db:
+            if status is None:
+                rows = db.execute(
+                    "SELECT id FROM tasks ORDER BY updated_at DESC LIMIT ?", (limit,)
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT id FROM tasks WHERE status = ? ORDER BY updated_at DESC LIMIT ?",
+                    (status, limit),
+                ).fetchall()
+        return [task for row in rows if (task := self.get_task(row["id"])) is not None]
 
     def close(self) -> None:
         """Reserved for interface symmetry; SQLite connections are short-lived."""
