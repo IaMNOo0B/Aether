@@ -39,6 +39,7 @@ class ToolGateway:
         policy: AutonomySettings,
         limits: LimitSettings,
         researcher: Researcher, research_enabled: bool = True,
+        emergency_stop_check: Callable[[], bool] | None = None,
     ):
         self.project_root = Path(project_root).resolve()
         self.workspace = (self.project_root / policy.workspace).resolve()
@@ -46,6 +47,7 @@ class ToolGateway:
         self.limits = limits
         self.researcher = researcher
         self.research_enabled = research_enabled
+        self.emergency_stop_check = emergency_stop_check
         self.workspace.mkdir(parents=True, exist_ok=True)
 
     def _workspace_path(self, relative: str) -> Path:
@@ -57,6 +59,8 @@ class ToolGateway:
     def _authorize(
         self, tool: str, args: dict[str, Any], approval: ApprovalCallback | None
     ) -> None:
+        if self.emergency_stop_check is not None and self.emergency_stop_check():
+            raise EmergencyStop("AETHER emergency stop is active; tool execution is blocked")
         if not self.policy.enabled:
             raise ToolDenied("Autonomous execution is disabled in config/settings.toml")
         if tool == "research.search" and not self.research_enabled:
@@ -73,9 +77,14 @@ class ToolGateway:
                 raise ToolDenied("Code execution is disabled")
         else:
             raise ToolDenied(f"Tool is not in the fixed tool registry: {tool}")
-        if approval is None or not approval(
+        if approval is None:
+            raise ActionDeclined(f"Human approval declined or unavailable for {tool}")
+        approved = approval(
             tool, str(args.get("purpose", "AETHER requested this operation")), args
-        ):
+        )
+        if self.emergency_stop_check is not None and self.emergency_stop_check():
+            raise EmergencyStop("AETHER emergency stop activated while awaiting approval")
+        if not approved:
             raise ActionDeclined(f"Human approval declined or unavailable for {tool}")
 
     def execute(
@@ -170,7 +179,8 @@ class AutonomyRunner:
             store, research_settings.timeout_seconds, limits.max_research_results
         )
         self.gateway = ToolGateway(
-            project_root, policy, limits, self.researcher, research_settings.enabled
+            project_root, policy, limits, self.researcher, research_settings.enabled,
+            emergency_stop_check=store.emergency_stop_enabled,
         )
 
     def enqueue(self, objective: str) -> Task:
