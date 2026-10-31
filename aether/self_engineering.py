@@ -153,6 +153,15 @@ class SelfEngineer:
             "workspace", ".aether", "node_modules",
         )
         shutil.copytree(self.root, worktree, ignore=ignored)
+        initialized = subprocess.run(
+            ["git", "init", "--quiet"], cwd=worktree, capture_output=True, text=True,
+            timeout=30, check=False, shell=False,
+        )
+        if initialized.returncode != 0:
+            metadata.update({"status": "rejected", "reason": "could not initialize candidate worktree",
+                             "patch_error": initialized.stderr[-4000:]})
+            metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+            return metadata
         check = subprocess.run(
             ["git", "apply", "--check", str(patch_path)],
             cwd=worktree, capture_output=True, text=True,
