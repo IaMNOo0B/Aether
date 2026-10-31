@@ -35,6 +35,7 @@ def main() -> int:
         configure_logging(settings.app.log_level)
         store = Store(settings.storage.database)
         engine = AetherEngine(settings, store)
+        recovered_tasks = engine.tasks.recover_interrupted()
     except Exception:
         logging.exception("AETHER could not initialize")
         print("AETHER could not start. Check logs/aether.log and config/settings.toml.")
@@ -43,7 +44,9 @@ def main() -> int:
     status = engine.status()
     print(f"{status['name']} v{status['version']} | Windows-first local AI")
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
-    print("Commands: /status /self-model /research /agents /autonomy /learn /skills /desktop /voice")
+    if recovered_tasks:
+        print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
+    print("Commands: /status /self-model /tasks /task-events ID /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /self-improve /self-improve-test /tasks /reports /calibration /quit\n")
 
     while True:
@@ -76,7 +79,21 @@ def main() -> int:
                 if not tasks:
                     print("AETHER > No recorded tasks.")
                 for task in tasks:
-                    print(f"{task['id'][:8]} | {task['status']} | {task['objective']}")
+                    print(f"{task['id']} | {task['status']} | {task['objective']}")
+                continue
+
+            if lower.startswith("/task-events "):
+                task_id = user_text[len("/task-events "):].strip()
+                events = engine.tasks.events(task_id)
+                if not events:
+                    print("AETHER > No audit events recorded for this task.")
+                for event in events:
+                    print(
+                        f"#{event['sequence']} {event['created_at']} | "
+                        f"{event['event_type']} | {event['from_status']} -> {event['to_status']}"
+                    )
+                    if event["payload"]:
+                        print(json.dumps(event["payload"], indent=2))
                 continue
 
             if lower == "/diagnostics":
