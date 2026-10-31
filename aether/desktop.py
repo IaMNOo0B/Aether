@@ -85,7 +85,14 @@ class DesktopController:
     def screenshot(self, destination: str | Path, approved: bool = False) -> Path:
         if not approved:
             raise DesktopPermissionError("A human approval is required before capturing the screen")
-        gui = self._input_backend()
+        self._require_enabled()
+        try:
+            import pyautogui
+        except ImportError as exc:
+            raise RuntimeError(
+                'Install the optional desktop extra: python -m pip install -e ".[desktop]"'
+            ) from exc
+        gui = pyautogui
         path = Path(destination).resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
         gui.screenshot().save(path)
