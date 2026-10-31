@@ -80,6 +80,13 @@ class VoiceSettings:
 
 
 @dataclass(frozen=True)
+class SchedulerSettings:
+    enabled: bool = False
+    poll_interval_seconds: int = 30
+    max_tasks_per_tick: int = 1
+
+
+@dataclass(frozen=True)
 class Settings:
     app: AppSettings
     models: ModelSettings
@@ -89,6 +96,7 @@ class Settings:
     autonomy: AutonomySettings = AutonomySettings()
     desktop: DesktopSettings = DesktopSettings()
     voice: VoiceSettings = VoiceSettings()
+    scheduler: SchedulerSettings = SchedulerSettings()
 
 
 def load_settings(path: Path | str = "config/settings.toml") -> Settings:
@@ -118,6 +126,7 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
             desktop_raw["allowed_apps"] = tuple(desktop_raw["allowed_apps"])
         desktop = DesktopSettings(**desktop_raw)
         voice = VoiceSettings(**raw.get("voice", {}))
+        scheduler = SchedulerSettings(**raw.get("scheduler", {}))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Unknown or invalid configuration field: {exc}") from exc
 
@@ -160,10 +169,15 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         raise ValueError("autonomy.workspace cannot be empty")
     if not desktop.allowed_apps:
         raise ValueError("desktop.allowed_apps must contain at least one application")
+    if scheduler.poll_interval_seconds < 5 or not 1 <= scheduler.max_tasks_per_tick <= 10:
+        raise ValueError("Scheduler poll interval must be >= 5 seconds and max_tasks_per_tick 1..10")
+    if scheduler.enabled and (not autonomy.enabled or not models.enabled):
+        raise ValueError("Scheduler requires both autonomy.enabled and models.enabled")
     if not voice.wake_word.strip() or not voice.vosk_model_path.strip():
         raise ValueError("Voice wake word and Vosk model path cannot be empty")
 
     return Settings(
         app=app, models=models, storage=storage, limits=limits,
         research=research, autonomy=autonomy, desktop=desktop, voice=voice,
+        scheduler=scheduler,
     )
