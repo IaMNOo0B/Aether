@@ -55,7 +55,7 @@ This roadmap translates the PROJECT AETHER — OMEGA directive into testable del
 - [x] Identify the public method and primary paper: OpenJev-RLCD, arXiv:2609.38850.
 - [x] Review its two-stage calibrate-then-reinforce recipe, proper scoring rules, KL anchor, and documented failure modes.
 - [x] Record reproduction constraints and licensing considerations in [RLCD feasibility](research/RLCD_FEASIBILITY.md).
-- [ ] Build typed decision-outcome logging and a held-out calibration evaluation harness.
+- [x] Add a persistent typed binary decision-outcome ledger and calibration metrics (Brier, log loss, ECE, risk-coverage/AURC, coverage at a risk limit).\n- [ ] Add held-out benchmark datasets and a decision-producer integration that emits typed probabilities.
 - [ ] Reproduce training only on suitable GPU hardware, after dataset/model license review.
 
 The paper's experimental runs use a 48 GB GPU. The target RTX 2060 has 6 GB VRAM, so full reproduction is deferred. Do not claim AETHER is RLCD-trained or substitute an unrelated confidence heuristic.
