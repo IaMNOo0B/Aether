@@ -111,6 +111,9 @@ class SelfEngineer:
             if raw_path.startswith(("/", "\\")) or ".." in Path(raw_path).parts:
                 raise PatchRejected(f"Unsafe patch path: {raw_path}")
             normalized = raw_path[2:] if raw_path.startswith(("a/", "b/")) else raw_path
+            normalized_path = Path(normalized)
+            if normalized_path.is_absolute() or normalized_path.drive:
+                raise PatchRejected(f"Absolute patch path is not allowed: {raw_path}")
             if any(
                 normalized == protected or normalized.startswith(protected + "/")
                 for protected in self.PROTECTED_PATHS
