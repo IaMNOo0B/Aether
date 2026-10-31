@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from array import array
 import json
+import math
+import time
 
 
 class VoiceUnavailable(RuntimeError):
@@ -51,20 +54,25 @@ class VoiceInterface:
                 input=True, frames_per_buffer=4000,
             )
             stream.start_stream()
-            import time
             started = time.monotonic()
-            last_voice = started
-            chunks = 0
-            while time.monotonic() - started < timeout + phrase_time_limit:
+            voice_started = None
+            while True:
+                now = time.monotonic()
+                if voice_started is None and now - started >= timeout:
+                    break
+                if voice_started is not None and now - voice_started >= phrase_time_limit:
+                    break
                 data = stream.read(4000, exception_on_overflow=False)
-                chunks += 1
+                samples = array("h")
+                samples.frombytes(data)
+                rms = math.sqrt(sum(sample * sample for sample in samples) / max(1, len(samples)))
+                if rms >= 300 and voice_started is None:
+                    voice_started = time.monotonic()
                 if recognizer.AcceptWaveform(data):
                     result = json.loads(recognizer.Result())
                     text = str(result.get("text", "")).strip()
                     if text:
                         return self._wake_filter(text)
-                if chunks * 0.25 >= phrase_time_limit:
-                    break
             final = json.loads(recognizer.FinalResult())
             return self._wake_filter(str(final.get("text", "")).strip())
         except (OSError, RuntimeError) as exc:
