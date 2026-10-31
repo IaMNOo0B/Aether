@@ -52,7 +52,13 @@ This roadmap translates the PROJECT AETHER — OMEGA directive into testable del
 
 ## Stage 5 — RLCD investigation
 
-The master directive uses the term "Reinforcement Learning for Calibrated Decisions" but does not identify a unique paper or formal method. Do not implement a guessed algorithm. First identify the intended primary source and verify its equations, training protocol, datasets, benchmarks, and limitations. If the acronym is project-defined rather than an established named method, document that explicitly.
+- [x] Identify the public method and primary paper: OpenJev-RLCD, arXiv:2609.38850.
+- [x] Review its two-stage calibrate-then-reinforce recipe, proper scoring rules, KL anchor, and documented failure modes.
+- [x] Record reproduction constraints and licensing considerations in [RLCD feasibility](research/RLCD_FEASIBILITY.md).
+- [ ] Build typed decision-outcome logging and a held-out calibration evaluation harness.
+- [ ] Reproduce training only on suitable GPU hardware, after dataset/model license review.
+
+The paper's experimental runs use a 48 GB GPU. The target RTX 2060 has 6 GB VRAM, so full reproduction is deferred. Do not claim AETHER is RLCD-trained or substitute an unrelated confidence heuristic.
 
 ## Stage 6 — Bounded autonomy
 
