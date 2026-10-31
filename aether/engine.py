@@ -7,6 +7,7 @@ from aether.config import Settings
 from aether.decisions import DecisionManager
 from aether.context import fit_messages
 from aether.learning import SkillLearner
+from aether.knowledge import KnowledgeGraph
 from aether.memory import MemoryManager
 from aether.ollama import ModelUnavailable
 from aether.providers import ProviderChain, build_registry
@@ -65,6 +66,9 @@ class AetherEngine:
         self.tasks = TaskManager(store)
         self.memory = MemoryManager(store)
         self.decisions = DecisionManager(store)
+        self.knowledge = KnowledgeGraph(
+            store, self.provider() if settings.models.enabled else None
+        )
         self.self_model = SelfModel(
             store.path, settings.app.name, "0.3.0"
         )
