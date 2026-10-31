@@ -570,6 +570,48 @@ class Store:
                 ),
             )
 
+
+    def apply_world_observation(
+        self, observation: dict[str, Any], world_id: str,
+        expected_version: int, actual_state: dict[str, Any],
+    ) -> int:
+        """Atomically append an observation and update only the exact simulated world version."""
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT version FROM worlds WHERE id=?", (world_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown world: {world_id}")
+            if int(row["version"]) != expected_version:
+                raise ValueError(
+                    "World changed after this simulation; observation was not applied to the newer state"
+                )
+            db.execute(
+                """INSERT INTO world_observations
+                   (id, simulation_id, actual_state_json, prediction_error_json,
+                    applied_to_world, created_at)
+                   VALUES (?, ?, ?, ?, 1, ?)""",
+                (
+                    observation["id"], observation["simulation_id"],
+                    json.dumps(observation["actual_state"]),
+                    json.dumps(observation["prediction_error"]), now,
+                ),
+            )
+            next_version = expected_version + 1
+            db.execute(
+                "UPDATE worlds SET state_json=?, version=?, updated_at=? WHERE id=?",
+                (json.dumps(actual_state), next_version, now, world_id),
+            )
+            db.execute(
+                """INSERT INTO world_state_history(world_id, version, state_json, source, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    world_id, next_version, json.dumps(actual_state),
+                    f"observed_after_simulation:{observation['simulation_id']}", now,
+                ),
+            )
+        return next_version
+
     def list_world_observations(self, simulation_id: str) -> list[dict[str, Any]]:
         with self._connect() as db:
             rows = db.execute(
