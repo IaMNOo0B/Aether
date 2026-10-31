@@ -1272,16 +1272,46 @@ class Store:
                 ).fetchall()
         return [skill for row in rows if (skill := self.get_skill(row["id"])) is not None]
 
-    def evaluate_skill(self, skill_id: str, passed: bool, evidence: str) -> None:
+    def evaluate_skill(
+        self, skill_id: str, passed: bool, evidence: str,
+        evaluation_kind: str = "manual", input_hash: str | None = None,
+        expected_hash: str | None = None, actual_hash: str | None = None,
+    ) -> None:
+        if not isinstance(passed, bool):
+            raise ValueError("Skill evaluation result must be boolean")
         if not evidence.strip():
             raise ValueError("Skill evaluation requires evidence")
+        if evaluation_kind not in {"manual", "held_out"}:
+            raise ValueError("Skill evaluation kind must be manual or held_out")
+        if evaluation_kind == "held_out" and not all(
+            isinstance(value, str) and value.strip()
+            for value in (input_hash, expected_hash, actual_hash)
+        ):
+            raise ValueError("Held-out evaluation requires input, expected and actual hashes")
         skill = self.get_skill(skill_id)
         if skill is None:
             raise KeyError(f"Unknown skill: {skill_id}")
         evaluation = dict(skill["evaluation"])
         history = evaluation.setdefault("runs", [])
-        history.append({"passed": bool(passed), "evidence": evidence, "at": utc_now()})
-        status = "validated" if passed else "draft"
+        history.append({
+            "passed": passed, "evidence": evidence,
+            "kind": evaluation_kind, "input_hash": input_hash,
+            "expected_hash": expected_hash, "actual_hash": actual_hash,
+            "at": utc_now(),
+        })
+        status = skill["status"]
+        if evaluation_kind == "held_out":
+            held_out_runs = [run for run in history if run.get("kind") == "held_out"]
+            unique_passes = {
+                run.get("input_hash") for run in held_out_runs
+                if run.get("passed") and run.get("input_hash")
+            }
+            has_failure = any(not run.get("passed") for run in held_out_runs)
+            status = (
+                "validated"
+                if len(unique_passes) >= 3 and not has_failure
+                else "draft"
+            )
         with self._connect() as db:
             db.execute(
                 """UPDATE skills SET status = ?, evaluation_json = ?, updated_at = ?
