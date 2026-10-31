@@ -209,3 +209,11 @@ def test_extractor_prompt_marks_research_summaries_as_untrusted(tmp_path):
     graph = KnowledgeGraph(store, provider)
     graph.extract_from_report("report-4")
     assert "untrusted data" in provider.messages[0]["content"]
+
+def test_report_extraction_requires_model_and_existing_report(tmp_path):
+    graph = KnowledgeGraph(Store(tmp_path / "knowledge.sqlite3"))
+    with pytest.raises(ValueError, match="requires an enabled model provider"):
+        graph.extract_from_report("missing")
+    graph = KnowledgeGraph(graph.store, FakeProvider("{}"))
+    with pytest.raises(ValueError, match="Unknown research report"):
+        graph.extract_from_report("missing")
