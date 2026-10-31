@@ -268,12 +268,13 @@ class AutonomyRunner:
             return {"task_id": task_id, "status": "completed", **final_state}
         except ActionDeclined as exc:
             self.tasks.transition(task_id, "cancelled", {
-                "kind": "autonomy", "receipts": receipts, "reason": str(exc),
+                **preserved_state, "kind": "autonomy",
+                "receipts": receipts, "reason": str(exc),
             })
             return {"task_id": task_id, "status": "cancelled", "receipts": receipts, "reason": str(exc)}
         except Exception as exc:
             self.tasks.transition(task_id, "failed", {
-                "kind": "autonomy", "receipts": receipts,
+                **preserved_state, "kind": "autonomy", "receipts": receipts,
                 "error_type": type(exc).__name__, "error": str(exc)[:1000],
             })
             raise
