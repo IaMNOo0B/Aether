@@ -5,6 +5,7 @@ import logging
 
 from aether.config import Settings
 from aether.decisions import DecisionManager
+from aether.embeddings import OllamaEmbeddingProvider
 from aether.context import fit_messages
 from aether.learning import SkillLearner
 from aether.knowledge import KnowledgeGraph
@@ -68,7 +69,18 @@ class AetherEngine:
         )
         self.provider_chain = ProviderChain(provider_sequence)
         self.tasks = TaskManager(store)
-        self.memory = MemoryManager(store)
+        embedding_provider = (
+            OllamaEmbeddingProvider(
+                settings.memory.embedding_base_url,
+                settings.memory.embedding_model,
+                settings.memory.embedding_timeout_seconds,
+            )
+            if settings.memory.semantic_enabled else None
+        )
+        self.memory = MemoryManager(
+            store, embedding_provider=embedding_provider,
+            semantic_weight=settings.memory.semantic_weight,
+        )
         self.decisions = DecisionManager(store)
         self.knowledge = KnowledgeGraph(
             store, self.provider() if settings.models.enabled else None
@@ -113,6 +125,8 @@ class AetherEngine:
             "desktop_enabled": self.settings.desktop.enabled,
             "voice_enabled": self.settings.voice.enabled,
             "capability_records": len(identity["capabilities"]),
+            "semantic_memory_enabled": self.settings.memory.semantic_enabled,
+            "embedding_model": self.settings.memory.embedding_model,
             "database": str(self.store.path),
         }
 
