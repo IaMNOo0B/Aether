@@ -189,9 +189,8 @@ class WorldModel:
             "observed_failures": outcome_counts["failure"],
             "ambiguous_observations": outcome_counts["ambiguous"],
             "risk_score": (
-                observed_failure_rate
-                if observed_failure_rate is not None
-                else action["failure_probability"]
+                (2 * action["failure_probability"] + outcome_counts["failure"])
+                / (2 + observed_total)
             ),
             "resource_costs": action["resource_costs"],
             "expected_resource_cost": sum(action["resource_costs"].values()),
