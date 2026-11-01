@@ -572,7 +572,7 @@ def main() -> int:
                         continue
                     print(json.dumps(advanced.add_review_sources(fields[0].strip(), [
                         ResearchSource(**{key: item.get(key, "") for key in
-                            ("title", "url", "publisher", "published", "evidence_type", "summary")})
+                            ("title", "url", "publisher", "published", "evidence_type", "summary", "full_text")})
                         for item in report["sources"]
                     ]), indent=2))
                     continue
