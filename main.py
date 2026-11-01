@@ -69,7 +69,8 @@ def main() -> int:
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
     print("Commands: /status /resources /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
-    print("          /remember /memory-search /memory-index /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
+    print("          /remember /memory-search /memory-index /correct-memory /memory-versions ID /memory-conflicts [ID]")
+    print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
 
     while True:
@@ -659,16 +660,21 @@ def main() -> int:
                 continue
 
             if lower.startswith("/memory-backup "):
-                destination = Path(user_text[len("/memory-backup "):].strip()).expanduser()
-                if not str(destination):
+                destination_text = user_text[len("/memory-backup "):].strip()
+                if not destination_text:
                     print("Usage: /memory-backup destination-file")
                     continue
+                destination = Path(destination_text).expanduser()
                 saved = store.backup_to(destination)
                 print(f"AETHER > Consistent database backup created: {saved}")
                 continue
 
             if lower.startswith("/memory-restore "):
-                source = Path(user_text[len("/memory-restore "):].strip()).expanduser()
+                source_text = user_text[len("/memory-restore "):].strip()
+                if not source_text:
+                    print("Usage: /memory-restore backup-file")
+                    continue
+                source = Path(source_text).expanduser()
                 if not source.is_file():
                     print(f"AETHER > Backup file not found: {source}")
                     continue
