@@ -16,7 +16,7 @@ from aether.desktop import DesktopController
 from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.learning import SkillLearner
-from aether.research import ResearchError, Researcher
+from aether.research import ResearchError, ResearchSource, Researcher
 from aether.research_quality import ResearchWorkflow
 from aether.resources import ResourceLimitExceeded
 from aether.scheduler import AutonomyScheduler
