@@ -1705,12 +1705,34 @@ class Store:
                 raise KeyError(f"Unknown systematic review: {review_id}")
             if review["status"] != "screening":
                 raise ValueError("Cannot add sources after screening is finalized")
-            db.execute(
-                """INSERT OR IGNORE INTO systematic_review_sources
-                   (review_id, source_key, source_json, decision, reason)
-                   VALUES (?, ?, ?, 'pending', '')""",
-                (review_id, source_key, json.dumps(source)),
-            )
+            existing = db.execute(
+                """SELECT source_json FROM systematic_review_sources
+                   WHERE review_id=? AND source_key=?""",
+                (review_id, source_key),
+            ).fetchone()
+            if existing is None:
+                db.execute(
+                    """INSERT INTO systematic_review_sources
+                       (review_id, source_key, source_json, decision, reason)
+                       VALUES (?, ?, ?, 'pending', '')""",
+                    (review_id, source_key, json.dumps(source)),
+                )
+            else:
+                prior = json.loads(existing["source_json"])
+                report_ids = set(prior.get("search_report_ids", []))
+                if prior.get("search_report_id"):
+                    report_ids.add(prior["search_report_id"])
+                report_ids.update(source.get("search_report_ids", []))
+                if source.get("search_report_id"):
+                    report_ids.add(source["search_report_id"])
+                prior["search_report_ids"] = sorted(report_ids)
+                if not prior.get("full_text") and source.get("full_text"):
+                    prior["full_text"] = source["full_text"]
+                db.execute(
+                    """UPDATE systematic_review_sources SET source_json=?
+                       WHERE review_id=? AND source_key=?""",
+                    (json.dumps(prior), review_id, source_key),
+                )
             db.execute(
                 "UPDATE systematic_reviews SET updated_at=? WHERE id=?",
                 (utc_now(), review_id),
