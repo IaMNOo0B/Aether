@@ -433,6 +433,9 @@ class AutonomyRunner:
         replan_history: list[dict[str, Any]] = (
             list(task_data["state"].get("replan_history", [])) if has_saved_plan else []
         )
+        steps: list[dict[str, Any]] = (
+            list(task_data["state"].get("plan", [])) if has_saved_plan else []
+        )
         try:
             saved_plan = task_data["state"].get("plan")
             steps = saved_plan if isinstance(saved_plan, list) else self._make_plan(task_data["objective"])
