@@ -137,6 +137,9 @@ class ResearchWorkflow:
         elif "full-text-web" in evidence:
             factors["evidence_type"] = 8
             caveats.append("General web content requires independent corroboration.")
+        elif "general-web-search" in evidence:
+            factors["evidence_type"] = 5
+            caveats.append("Search-result metadata/snippets are leads, not inspected primary evidence.")
         elif "tertiary" in evidence or "wikipedia" in evidence:
             factors["evidence_type"] = 5
             caveats.append("Tertiary source; follow its references to primary sources.")
