@@ -29,6 +29,8 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_research.py::test_crossref_results_are_structured_with_provenance",
             "tests/test_research.py::test_research_report_is_persisted_with_source_records",
             "tests/test_knowledge.py::test_report_extraction_uses_only_real_source_provenance",
+            "tests/test_research_quality.py::test_review_protocol_persists_all_sources_as_pending",
+            "tests/test_research_quality.py::test_experiment_lifecycle_is_audited_and_terminal",
         ],
         "full_scope": True,
         "limitations": [],
