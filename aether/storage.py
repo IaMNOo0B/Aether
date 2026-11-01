@@ -244,6 +244,7 @@ class Store:
                     source_json TEXT NOT NULL,
                     decision TEXT NOT NULL DEFAULT 'pending'
                         CHECK(decision IN ('pending', 'include', 'exclude', 'uncertain')),
+                    reviewer_decisions_json TEXT NOT NULL DEFAULT '[]',
                     reason TEXT NOT NULL DEFAULT '',
                     screened_at TEXT,
                     PRIMARY KEY(review_id, source_key),
@@ -1655,7 +1656,7 @@ class Store:
             if row is None:
                 return None
             sources = db.execute(
-                """SELECT source_key, source_json, decision, reason, screened_at
+                """SELECT source_key, source_json, decision, reviewer_decisions_json, reason, screened_at
                    FROM systematic_review_sources WHERE review_id=? ORDER BY source_key""",
                 (review_id,),
             ).fetchall()
@@ -1663,11 +1664,16 @@ class Store:
         item["protocol"] = json.loads(item.pop("protocol_json"))
         item["final_summary"] = json.loads(item.pop("final_summary_json"))
         item["sources"] = [
-            {**dict(source), "source": json.loads(source["source_json"])}
+            {
+                **dict(source),
+                "source": json.loads(source["source_json"]),
+                "reviewer_decisions": json.loads(source["reviewer_decisions_json"]),
+            }
             for source in sources
         ]
         for source in item["sources"]:
             source.pop("source_json", None)
+            source.pop("reviewer_decisions_json", None)
         return item
 
     def add_systematic_review_source(
