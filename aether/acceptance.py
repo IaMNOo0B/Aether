@@ -33,6 +33,7 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_research_quality.py::test_experiment_lifecycle_is_audited_and_terminal",
             "tests/test_research_advanced.py::test_general_web_search_parser_extracts_result_and_ignores_invalid_links",
             "tests/test_research_advanced.py::test_general_web_search_returns_structured_sources_without_fetching_results",
+            "tests/test_research_advanced.py::test_combined_research_search_interleaves_web_and_scholarly_sources",
             "tests/test_research_advanced.py::test_snippet_only_quote_cannot_be_adjudicated_as_support",
             "tests/test_research_advanced.py::test_full_systematic_review_requires_two_reviewers_and_runs_meta_analysis",
             "tests/test_research_advanced.py::test_systematic_review_disagreement_requires_distinct_adjudicator",
