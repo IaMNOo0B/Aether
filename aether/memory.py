@@ -241,7 +241,6 @@ class MemoryManager:
                 raise KeyError(f"Unknown memory: {memory_id}")
             if target["status"] in {"superseded", "rejected", "deleted"}:
                 return []
-            active = [item for item in active if item["id"] == memory_id or item["id"] != memory_id]
         facts: dict[tuple[str, str], list[tuple[dict[str, Any], str]]] = {}
         for item in active:
             for fact in item["metadata"].get("facts", []):
