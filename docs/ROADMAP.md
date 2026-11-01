@@ -17,7 +17,7 @@ A capability is marked complete only when its implementation and tests exist. Op
 - [x] Structured logging and redacted diagnostics.
 - [x] Runtime configuration validation.
 - [ ] Provider retry/backoff/fallback policy.
-- [x] Conservative task recovery after process interruption (interrupted work is marked failed for manual review; uncertain actions are never replayed).
+- [x] Conservative task recovery after process interruption; only read-only pending steps may be resumed automatically, while uncertain side effects require manual review.
 - [ ] Configuration schema migrations and model capability metadata.
 
 ## Stage 2 — Reliable memory
@@ -71,7 +71,8 @@ AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX
 - [x] Test execution requires feature flag and per-action human approval.
 - [x] Workspace path containment, file-size caps, step limits, and execution timeout.
 - [x] Persisted plans, progress, and action receipts.
-- [ ] Background scheduler, bounded goal discovery, pause/resume, and crash recovery.
+- [ ] Background scheduler and bounded goal discovery.
+- [x] Cooperative pause/resume and conservative crash recovery for explicitly queued autonomy tasks.
 - [ ] OS-level sandbox for arbitrary code (not provided by the current copy-based candidate workflow).
 
 No arbitrary shell, unrestricted filesystem, or unrestricted URL-fetch tool is exposed.
