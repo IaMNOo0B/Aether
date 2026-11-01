@@ -196,3 +196,82 @@ def test_autonomy_does_not_complete_when_tool_postcondition_fails(tmp_path):
     assert len(failed) == 1
     receipt = failed[0]["state"]["receipts"][0]
     assert receipt["verification"]["passed"] is False
+
+
+
+def test_autonomy_pauses_at_step_boundary_and_resumes_saved_plan(tmp_path):
+    response = json.dumps({"steps": [
+        {"id": "one", "purpose": "First listing", "tool": "workspace.list", "args": {"path": "."}},
+        {"id": "two", "depends_on": ["one"], "purpose": "Second listing",
+         "tool": "workspace.list", "args": {"path": "."}},
+    ]})
+    store = Store(tmp_path / "pause.sqlite3")
+    runner = AutonomyRunner(
+        FakeProvider(response), store, AutonomySettings(enabled=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+    task = runner.enqueue("Pause and resume a bounded plan")
+    calls = []
+
+    def execute(tool, args, approval=None):
+        calls.append(tool)
+        if len(calls) == 1:
+            runner.tasks.request_pause(task.id)
+        return {"path": args.get("path", "."), "entries": []}
+
+    runner.gateway.execute = execute
+    paused = runner.run_task(task.id)
+    assert paused["status"] == "paused"
+    assert store.get_task(task.id)["status"] == "paused"
+    resumed = runner.resume_task(task.id)
+    assert resumed["status"] == "completed"
+    assert resumed["completed_steps"] == ["one", "two"]
+    assert len(calls) == 2
+
+
+def test_interrupted_task_resumes_only_when_next_step_is_safe(tmp_path):
+    response = json.dumps({"steps": [
+        {"id": "unused", "tool": "workspace.list", "args": {"path": "."}},
+    ]})
+    store = Store(tmp_path / "recovery.sqlite3")
+    runner = AutonomyRunner(
+        FakeProvider(response), store, AutonomySettings(enabled=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+    task = runner.tasks.create("Recover a safe read-only task", {
+        "kind": "autonomy",
+        "plan": [{"id": "inspect", "depends_on": [], "purpose": "Inspect",
+                  "tool": "workspace.list", "args": {"path": "."}}],
+        "receipts": [], "completed_steps": [],
+    })
+    runner.tasks.transition(task.id, "running")
+    assert store.recover_interrupted_tasks() == [task.id]
+    runner.gateway.execute = lambda tool, args, approval=None: {
+        "path": args.get("path", "."), "entries": []
+    }
+    result = runner.resume_task(task.id)
+    assert result["status"] == "completed"
+    assert result["resumed_from_interruption"] is True
+
+
+def test_interrupted_task_refuses_to_replay_uncertain_workspace_write(tmp_path):
+    store = Store(tmp_path / "unsafe-recovery.sqlite3")
+    runner = AutonomyRunner(
+        FakeProvider("{}"), store, AutonomySettings(enabled=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+    task = runner.tasks.create("Do not replay an uncertain write", {
+        "kind": "autonomy",
+        "plan": [{"id": "write", "depends_on": [], "purpose": "Write",
+                  "tool": "workspace.write",
+                  "args": {"path": "result.txt", "content": "x"}}],
+        "receipts": [], "completed_steps": [],
+    })
+    runner.tasks.transition(task.id, "running")
+    store.recover_interrupted_tasks()
+    try:
+        runner.resume_task(task.id)
+    except RuntimeError as exc:
+        assert "side effects" in str(exc)
+    else:
+        raise AssertionError("Uncertain writes must never be replayed")
