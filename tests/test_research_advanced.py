@@ -308,3 +308,40 @@ def test_snippet_only_quote_cannot_be_adjudicated_as_support(tmp_path):
             evidence["id"], "reviewer-a", "supports",
             "The source summary appears to support the supplied claim wording."
         )
+
+
+def test_systematic_review_deduplicates_sources_but_preserves_report_provenance(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    workflow = AdvancedResearch(store)
+    review = workflow.create_systematic_review(
+        "Does intervention X improve outcome Y?",
+        ["Human studies"], ["Animal studies"],
+        {"databases": ["Crossref"], "queries": ["intervention X"], "searched_on": "2026-11-01"},
+    )
+    source = sample_source()
+    store.save_research_report("search-a", "query a", "report a", [source.to_dict()])
+    store.save_research_report("search-b", "query b", "report b", [source.to_dict()])
+    workflow.add_review_sources(review["id"], [source], "search-a")
+    workflow.add_review_sources(review["id"], [source], "search-b")
+    saved = store.get_systematic_review(review["id"])
+    assert len(saved["sources"]) == 1
+    assert saved["sources"][0]["source"]["search_report_ids"] == ["search-a", "search-b"]
+
+
+def test_systematic_review_can_synthesize_zero_eligible_studies(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    workflow = AdvancedResearch(store)
+    review = workflow.create_systematic_review(
+        "Does intervention X improve outcome Y?",
+        ["Human studies"], ["Animal studies"],
+        {"databases": ["Crossref"], "queries": ["intervention X"], "searched_on": "2026-11-01"},
+    )
+    source = sample_source()
+    workflow.add_review_sources(review["id"], [source])
+    workflow.screen_source(review["id"], source.url, "review-a", "exclude", "The study uses an ineligible animal population.")
+    workflow.screen_source(review["id"], source.url, "review-b", "exclude", "The population does not meet the human-study criterion.")
+    workflow.finalize_review(review["id"])
+    result = workflow.synthesize_review(review["id"])
+    assert result["status"] == "synthesized"
+    assert result["final_summary"]["screening_flow"]["included_in_synthesis"] == 0
+    assert result["final_summary"]["meta_analysis_status"] == "not_performed_fewer_than_two_eligible_studies"
