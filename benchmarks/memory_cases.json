@@ -1,0 +1,77 @@
+{
+  "top_k": 5,
+  "memories": [
+    {
+      "content": "SQLite online backup API creates a consistent database snapshot",
+      "kind": "procedural",
+      "tags": [
+        "sqlite",
+        "backup",
+        "database"
+      ]
+    },
+    {
+      "content": "NVIDIA RTX graphics memory and VRAM telemetry",
+      "kind": "semantic",
+      "tags": [
+        "gpu",
+        "graphics",
+        "vram"
+      ]
+    },
+    {
+      "content": "Windows audio microphone setup and voice recognition",
+      "kind": "procedural",
+      "tags": [
+        "windows",
+        "audio",
+        "voice"
+      ]
+    }
+  ],
+  "memory_queries": [
+    {
+      "query": "SQLite backup",
+      "expected_content": "SQLite online backup API creates a consistent database snapshot"
+    },
+    {
+      "query": "graphics VRAM",
+      "expected_content": "NVIDIA RTX graphics memory and VRAM telemetry"
+    },
+    {
+      "query": "microphone voice",
+      "expected_content": "Windows audio microphone setup and voice recognition"
+    }
+  ],
+  "skills": [
+    {
+      "key": "sqlite_restore",
+      "title": "Restore SQLite database",
+      "procedure": "Validate the backup integrity, stop AETHER processes, stage the database, restore it, and verify records.",
+      "validated": true
+    },
+    {
+      "key": "windows_audio",
+      "title": "Configure Windows audio",
+      "procedure": "Select the microphone, verify input levels, configure voice recognition, and test speech output.",
+      "validated": true
+    },
+    {
+      "key": "draft_unreviewed",
+      "title": "Unreviewed draft workflow",
+      "procedure": "This draft workflow is not validated and must never be retrieved into assistant context.",
+      "validated": false
+    }
+  ],
+  "skill_queries": [
+    {
+      "query": "SQLite database restore backup",
+      "expected_skill": "sqlite_restore"
+    },
+    {
+      "query": "Windows microphone audio voice",
+      "expected_skill": "windows_audio"
+    }
+  ],
+  "draft_exclusion_query": "unreviewed draft workflow"
+}\n
