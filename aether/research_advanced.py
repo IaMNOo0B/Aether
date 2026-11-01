@@ -454,6 +454,8 @@ class AdvancedResearch:
             "lexical_claim_coverage": round(overlap, 4),
             "assessment": assessment,
             "human_decision": None,
+            "review_status": "awaiting_second_reviewer",
+            "reviewer_decisions": [],
             "limitations": "Exact quote matching and lexical overlap are deterministic screening aids, not semantic entailment. A passage can mention the same terms while contradicting or qualifying a claim.",
         }
         self.store.save_citation_evidence(result)
