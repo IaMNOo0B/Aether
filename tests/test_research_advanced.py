@@ -237,10 +237,15 @@ def test_full_systematic_review_requires_two_reviewers_and_runs_meta_analysis(tm
         full_text = {"decision": "include", "rationale": "Full text confirms eligible population and prespecified outcome.", "text_locator": "Results, paragraph 2"}
         risk = _risk_payload()
         extraction = _extraction(float(index + 1) * 3.0)
-        for reviewer in ["review-a", "review-b"]:
-            assert workflow.record_review_stage(review["id"], key, "full_text", reviewer, full_text)["status"] == "agreed"
-            assert workflow.record_review_stage(review["id"], key, "risk_of_bias", reviewer, risk)["status"] == "agreed"
-            assert workflow.record_review_stage(review["id"], key, "extraction", reviewer, extraction)["status"] == "agreed"
+        for stage, payload in [
+            ("full_text", full_text),
+            ("risk_of_bias", risk),
+            ("extraction", extraction),
+        ]:
+            first = workflow.record_review_stage(review["id"], key, stage, "review-a", payload)
+            assert first["status"] == "awaiting_second_reviewer"
+            second = workflow.record_review_stage(review["id"], key, stage, "review-b", payload)
+            assert second["status"] == "agreed"
     synthesized = workflow.synthesize_review(review["id"])
     summary = synthesized["final_summary"]
     assert synthesized["status"] == "synthesized"
