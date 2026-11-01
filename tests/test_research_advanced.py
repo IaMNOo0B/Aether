@@ -377,3 +377,24 @@ def test_qualitative_systematic_review_synthesizes_without_forcing_meta_analysis
     result = workflow.synthesize_review(review["id"])
     assert result["final_summary"]["meta_analysis"] is None
     assert result["final_summary"]["meta_analysis_status"] == "not_performed_fewer_than_two_eligible_studies"
+
+
+def test_combined_research_search_interleaves_web_and_scholarly_sources(tmp_path, monkeypatch):
+    from aether.research import Researcher
+
+    researcher = Researcher(Store(tmp_path / "combined.sqlite3"), max_results=4)
+    providers = {
+        "search_web": [sample_source("https://web.example/a"), sample_source("https://web.example/b")],
+        "search_crossref": [sample_source("https://doi.org/10.1/a"), sample_source("https://doi.org/10.1/b")],
+        "search_arxiv": [sample_source("https://arxiv.org/a"), sample_source("https://arxiv.org/b")],
+        "search_wikipedia": [sample_source("https://wikipedia.org/a")],
+    }
+    for name, results in providers.items():
+        monkeypatch.setattr(researcher, name, lambda *args, _results=results: _results)
+    results = researcher.search("agent evidence", limit=4)
+    assert [item.url for item in results] == [
+        "https://web.example/a",
+        "https://doi.org/10.1/a",
+        "https://arxiv.org/a",
+        "https://wikipedia.org/a",
+    ]
