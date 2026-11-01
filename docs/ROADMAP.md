@@ -37,9 +37,11 @@ A capability is marked complete only when its implementation and tests exist. Op
 - [x] Model-generated bounded tool plans with a fixed tool registry.
 - [x] Persisted per-step action receipts.
 - [x] Test failures cause autonomous tasks to fail rather than report success.
-- [ ] Full pause/resume and crash recovery.
+- [x] Cooperative pause requests at safe step boundaries and resume from persisted plans/checkpoints.
+- [x] Conservative crash recovery: resume only when the next unreceipted step is on a read-only replay allowlist; uncertain side effects require manual review.
+- [x] Bounded automatic replanning after a missing workspace read/list target (one retry; completed actions cannot be repeated).
 - [x] Deterministic postcondition verification for every fixed autonomous tool; task receipts distinguish tool-result verification from objective verification.
-- [ ] Held-out multi-step task benchmark.
+- [x] Five-scenario deterministic end-to-end executor benchmark (reference plans; does not measure LLM planning quality).
 
 ## Stage 4 — Research and knowledge
 
@@ -128,6 +130,16 @@ Specialist roles currently share one local model and run sequentially to fit con
 - [x] Verify observable postconditions for workspace reads/writes/listings, research reports, test runs and symbolic world-model tools.
 - [x] Fail the task when a tool result cannot be independently verified.
 - [x] Separate `tool_results_verified` from the stronger `verified` flag, which additionally requires a successful test-run receipt.
-- [ ] Automatic replanning after a failed step (not enabled; failure remains fail-closed).
-- [ ] Explicit pause/resume and safe recovery of resumable, idempotent steps.
-- [ ] End-to-end goal-level benchmark with held-out tasks.
+- [x] One bounded replan after a failed read-only workspace lookup; completed actions are not repeated.
+- [x] Cooperative pause/resume at step boundaries with persisted plan and receipts.
+- [x] Conservative recovery after process interruption; only read-only pending steps may be replayed automatically.
+- [x] Five-scenario end-to-end executor benchmark in `benchmarks/phase1_cases.json` (fixed reference plans; planner intelligence is outside its scope).
+
+
+### Phase 1 operation notes
+
+- Request a cooperative pause with `TaskManager.request_pause(task_id)`; the active tool is allowed to finish, then execution pauses at the next checkpoint boundary.
+- Resume paused work with `AutonomyRunner.resume_task(task_id)`.
+- Interrupted tasks are resumed only when their next unreceipted operation is one of `workspace.read`, `workspace.list`, `world.state`, or `world.actions`. Writes, tests, research persistence, and simulations are never automatically replayed.
+- Automatic replanning is intentionally narrow: one retry after a missing workspace read/list target. It does not retry writes, tests, network research, or arbitrary failures.
+- Run the deterministic executor benchmark with `python -m aether.benchmark`. It validates reference plans and tool postconditions; it is not a held-out evaluation of the LLM's reasoning ability.
