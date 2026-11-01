@@ -56,13 +56,19 @@ Benchmark boundary: fixed lexical fixtures measure retrieval and draft-skill exc
 - [x] Transparent source-triage scoring with explicit factor breakdown and caveats; scores are not truth probabilities.
 - [x] Citation URL reachability checks tied to persisted report sources; claim-support verification remains a human review task.
 - [x] Persisted evidence-review inventory and protocol checklist; sources remain pending human screening and are never silently excluded.
-- [ ] General web-search provider integration beyond Crossref, arXiv and Wikipedia.
-- [ ] Structured inclusion/exclusion decisions, full-text claim extraction with page/section locators, and domain-specific risk-of-bias assessment.
+- [x] General public web search through a bounded DuckDuckGo HTML adapter, with untrusted result metadata and no automatic arbitrary result-page fetching.
+- [x] Systematic review protocol with databases, explicit queries/date, inclusion/exclusion criteria, source deduplication, dual title/abstract screening and third-reviewer conflict resolution.
+- [x] Full-text eligibility screening with locators, dual-review agreement and explicit adjudication.
+- [x] Structured five-domain risk-of-bias assessment and dual-reviewed data extraction with adjudication.
+- [x] Evidence-table synthesis and DerSimonian-Laird random-effects meta-analysis when at least two compatible effect estimates and standard errors are supplied.
+- [x] Exact-quote citation passage matching, lexical alignment screening, two-reviewer adjudication and third-reviewer disagreement resolution.
+- [x] Reproducible CSV experiment analysis with input SHA-256, Python/algorithm version, descriptive statistics, Welch two-sample tests, pooled effect size and confidence intervals.
+- [x] Analysis artifacts persist as research reports and append to experiment event history.
 - [x] Preregistered experiment records linked to typed hypothesis claims, with required objective/method/success criteria, explicit start/complete/cancel transitions, evidence-backed outcomes and append-only lifecycle events.
-- [ ] Observation ingestion, analysis artifact linking, statistical analysis/reproducibility checks and hypothesis outcome updates.
-- [ ] End-to-end systematic review acceptance benchmark and independent citation-support verification.
+- [ ] Held-out end-to-end systematic-review acceptance benchmark, publication-bias analysis, certainty-of-evidence grading, validated design-specific risk-of-bias tools and authenticated reviewer identities.
+- [ ] Raw observation ingestion from experiment runs and automatic validation of supplied effect estimates/standard errors.
 
-Stage 4 is partial: the new workflow improves source capture and evidence triage, but it is not a general crawler or completed systematic-review engine.
+Stage 4 remains partial until the end-to-end acceptance benchmark passes. Search rankings and source scores are not truth measures; exact-quote matching is not semantic entailment; reviewer IDs are operator-supplied and not authenticated. Meta-analysis assumes comparable independent effects and standard errors, and does not validate those assumptions.
 
 ## Stage 5 — RLCD investigation
 
