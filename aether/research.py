@@ -229,7 +229,7 @@ class Researcher:
         if len(text) > 500:
             raise ValueError("Research query is limited to 500 characters")
         count = max(1, min(limit or self.max_results, self.max_results))
-        collected: list[ResearchSource] = []
+        provider_results: list[list[ResearchSource]] = []
         errors: list[str] = []
         for label, operation, amount in (
             ("Web", self.search_web, min(4, count)),
@@ -238,18 +238,26 @@ class Researcher:
             ("Wikipedia", self.search_wikipedia, min(2, count)),
         ):
             try:
-                collected.extend(operation(text, amount))
+                provider_results.append(operation(text, amount))
             except ResearchError as exc:
                 errors.append(f"{label}: {exc}")
                 logger.warning("%s search failed: %s", label, exc)
+                provider_results.append([])
             except (ValueError, KeyError, TypeError, json.JSONDecodeError, ET.ParseError) as exc:
                 errors.append(f"{label}: invalid response ({exc})")
                 logger.warning("%s returned an invalid response: %s", label, exc)
+                provider_results.append([])
 
+        # Interleave providers so the general web adapter cannot crowd out scholarly sources.
         unique: dict[str, ResearchSource] = {}
-        for source in collected:
-            key = source.url or source.title.casefold()
-            unique.setdefault(key, source)
+        max_provider_results = max((len(items) for items in provider_results), default=0)
+        for index in range(max_provider_results):
+            for items in provider_results:
+                if index >= len(items):
+                    continue
+                source = items[index]
+                key = source.url or source.title.casefold()
+                unique.setdefault(key, source)
         results = list(unique.values())[:count]
         if not results and errors:
             raise ResearchError("All research providers failed: " + "; ".join(errors))
