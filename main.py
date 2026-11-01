@@ -17,6 +17,7 @@ from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.learning import SkillLearner
 from aether.research import ResearchError, Researcher
+from aether.research_quality import ResearchWorkflow
 from aether.resources import ResourceLimitExceeded
 from aether.scheduler import AutonomyScheduler
 from aether.self_engineering import SelfEngineer
@@ -424,13 +425,49 @@ def main() -> int:
                 if not settings.research.enabled:
                     print("AETHER > Research is disabled in config/settings.toml.")
                     continue
-                query = user_text[len("/research "):].strip()
+                argument = user_text[len("/research "):].strip()
+                workflow = ResearchWorkflow(store, settings.research.timeout_seconds)
                 researcher = Researcher(
                     store, settings.research.timeout_seconds,
                     settings.limits.max_research_results,
                 )
-                sources = researcher.search(query)
-                report = researcher.create_report(query, sources)
+                action, _, value = argument.partition(" ")
+                if action.casefold() == "ingest" and value.strip():
+                    source = workflow.ingest_url(value.strip())
+                    report = researcher.create_report(
+                        f"manually ingested source: {source.title}", [source]
+                    )
+                    print(f"AETHER > Full-text source ingested. Report ID: {report['id']}")
+                    print(json.dumps(workflow.assess_source(source).to_dict(), indent=2))
+                    continue
+                if action.casefold() == "verify" and value.strip():
+                    print(json.dumps(workflow.verify_citations(value.strip()), indent=2))
+                    continue
+                if action.casefold() == "score" and value.strip():
+                    saved = store.get_research_report(value.strip())
+                    if saved is None:
+                        print("AETHER > Research report not found.")
+                    else:
+                        scored = []
+                        for item in saved["sources"]:
+                            source = ResearchSource(**{
+                                key: item.get(key, "") for key in
+                                ("title", "url", "publisher", "published", "evidence_type", "summary")
+                            })
+                            scored.append({
+                                "title": source.title,
+                                **workflow.assess_source(source).to_dict(),
+                            })
+                        print(json.dumps(scored, indent=2))
+                    continue
+                if action.casefold() == "review" and value.strip():
+                    sources = researcher.search(value.strip())
+                    review = workflow.create_review_protocol(value.strip(), sources)
+                    print(f"AETHER > Evidence inventory saved. ID: {review['id']}")
+                    print(review["content"])
+                    continue
+                sources = researcher.search(argument)
+                report = researcher.create_report(argument, sources)
                 print(f"AETHER > Research report saved. ID: {report['id']}")
                 print(report["content"])
                 continue
