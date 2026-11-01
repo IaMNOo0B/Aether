@@ -203,8 +203,6 @@ class AdvancedResearch:
         if any(item["decision"] in {"pending", "uncertain"} for item in sources):
             raise ValueError("Every retrieved source must have an include/exclude decision before finalization")
         included = [item for item in sources if item["decision"] == "include"]
-        if not included:
-            raise ValueError("Review cannot be finalized with zero included sources")
         summary = {
             "review_id": review_id,
             "question": review["protocol"]["question"],
@@ -357,8 +355,6 @@ class AdvancedResearch:
                 "risk_of_bias": risk["payload"],
                 "extraction": extraction["payload"],
             })
-        if not included:
-            raise ValueError("No full-text eligible studies have complete risk-of-bias and extraction records")
         effect_measures = {item["extraction"]["effect_measure"] for item in included}
         meta_analysis = None
         if len(included) >= 2 and len(effect_measures) == 1:
@@ -401,7 +397,11 @@ class AdvancedResearch:
             "full_text_excluded": full_text_excluded,
             "included_studies": included,
             "meta_analysis": meta_analysis,
-            "narrative_synthesis": "Structured evidence table generated from independently reviewed extraction records. Interpret results alongside risk-of-bias ratings and protocol limitations.",
+            "narrative_synthesis": (
+                "No studies met full-text eligibility; no quantitative synthesis was possible."
+                if not included else
+                "Structured evidence table generated from independently reviewed extraction records. Interpret results alongside risk-of-bias ratings and protocol limitations."
+            ),
             "limitations": [
                 "Reviewer IDs are operator-supplied labels, not authenticated identities.",
                 "Risk-of-bias domains are a generic structured template, not a validated tool for every study design.",
