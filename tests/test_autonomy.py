@@ -275,3 +275,65 @@ def test_interrupted_task_refuses_to_replay_uncertain_workspace_write(tmp_path):
         assert "side effects" in str(exc)
     else:
         raise AssertionError("Uncertain writes must never be replayed")
+
+
+
+class SequenceProvider:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = 0
+
+    def chat(self, messages):
+        response = self.responses[self.calls]
+        self.calls += 1
+        return response
+
+
+def test_autonomy_replans_once_after_safe_missing_workspace_read(tmp_path):
+    first = json.dumps({"steps": [
+        {"id": "missing", "purpose": "Read a missing note", "tool": "workspace.read",
+         "args": {"path": "not-created.txt"}},
+    ]})
+    replacement = json.dumps({"steps": [
+        {"id": "inspect", "purpose": "List available workspace files", "tool": "workspace.list",
+         "args": {"path": "."}},
+    ]})
+    provider = SequenceProvider([first, replacement])
+    store = Store(tmp_path / "replan.sqlite3")
+    runner = AutonomyRunner(
+        provider, store, AutonomySettings(enabled=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+
+    result = runner.run("Find the available workspace notes")
+
+    assert result["status"] == "completed"
+    assert result["replan_history"][0]["attempt"] == 1
+    assert result["receipts"][0]["tool"] == "workspace.list"
+    assert provider.calls == 2
+
+
+def test_autonomy_replan_rejects_repeating_a_completed_action(tmp_path):
+    first = json.dumps({"steps": [
+        {"id": "list", "purpose": "List workspace", "tool": "workspace.list",
+         "args": {"path": "."}},
+        {"id": "missing", "purpose": "Read missing note", "tool": "workspace.read",
+         "args": {"path": "missing.txt"}},
+    ]})
+    replacement = json.dumps({"steps": [
+        {"id": "repeat-list", "purpose": "List workspace again", "tool": "workspace.list",
+         "args": {"path": "."}},
+    ]})
+    provider = SequenceProvider([first, replacement])
+    store = Store(tmp_path / "replan-repeat.sqlite3")
+    runner = AutonomyRunner(
+        provider, store, AutonomySettings(enabled=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+
+    try:
+        runner.run("Inspect workspace and find missing note")
+    except RuntimeError as exc:
+        assert "repeat a completed action" in str(exc)
+    else:
+        raise AssertionError("Replanning must reject duplicate completed actions")
