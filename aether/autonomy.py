@@ -407,13 +407,13 @@ class AutonomyRunner:
                 **task_data["state"], "emergency_stop": True, "reason": reason,
             })
             return {"task_id": task_id, "status": "cancelled", "reason": reason}
-        resuming_paused = task_data["status"] == "paused"
+        has_saved_plan = isinstance(task_data["state"].get("plan"), list)
         self.tasks.transition(task_id, "running", task_data["state"])
         receipts: list[dict[str, Any]] = (
-            list(task_data["state"].get("receipts", [])) if resuming_paused else []
+            list(task_data["state"].get("receipts", [])) if has_saved_plan else []
         )
         completed_steps: list[str] = (
-            list(task_data["state"].get("completed_steps", [])) if resuming_paused else []
+            list(task_data["state"].get("completed_steps", [])) if has_saved_plan else []
         )
         preserved_state = {
             key: value for key, value in task_data["state"].items()
@@ -421,7 +421,7 @@ class AutonomyRunner:
         }
         try:
             saved_plan = task_data["state"].get("plan")
-            steps = saved_plan if resuming_paused and isinstance(saved_plan, list) else self._make_plan(task_data["objective"])
+            steps = saved_plan if isinstance(saved_plan, list) else self._make_plan(task_data["objective"])
             self.tasks.checkpoint(task_id, {
                 **preserved_state, "kind": "autonomy",
                 "plan": steps, "receipts": receipts,
