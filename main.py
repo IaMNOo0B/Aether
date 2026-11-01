@@ -343,6 +343,54 @@ def main() -> int:
                 print("Usage: /world create|list|state|action|actions|simulate|compare|observe|history")
                 continue
 
+            if lower.startswith("/experiment "):
+                parts = user_text[len("/experiment "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                if action == "create":
+                    fields = argument.split("|", 2)
+                    if len(fields) != 3:
+                        print("Usage: /experiment create TITLE | HYPOTHESIS_CLAIM_ID(optional) | PROTOCOL_JSON")
+                        continue
+                    hypothesis_id = fields[1].strip() or None
+                    experiment = store.create_research_experiment(
+                        uuid4().hex, fields[0].strip(), hypothesis_id,
+                        json.loads(fields[2].strip()),
+                    )
+                    print(f"AETHER > Preregistered experiment created: {experiment['id']} | planned")
+                    continue
+                if action in {"start", "cancel"} and argument.strip():
+                    target = "running" if action == "start" else "cancelled"
+                    experiment = store.transition_research_experiment(
+                        argument.strip(), target,
+                        {"reason": "Cancelled by operator"} if target == "cancelled" else {},
+                    )
+                    print(f"AETHER > Experiment {experiment['id']}: {experiment['status']}")
+                    continue
+                if action == "complete":
+                    fields = argument.split("|", 1)
+                    if len(fields) != 2:
+                        print("Usage: /experiment complete ID | OUTCOME_JSON")
+                        continue
+                    experiment = store.transition_research_experiment(
+                        fields[0].strip(), "completed", json.loads(fields[1].strip())
+                    )
+                    print(f"AETHER > Experiment completed and outcome recorded: {experiment['id']}")
+                    continue
+                if action == "list":
+                    print(json.dumps(store.list_research_experiments(), indent=2))
+                    continue
+                if action == "show" and argument.strip():
+                    experiment = store.get_research_experiment(argument.strip())
+                    if experiment is None:
+                        print("AETHER > Experiment not found.")
+                    else:
+                        experiment["events"] = store.list_research_experiment_events(argument.strip())
+                        print(json.dumps(experiment, indent=2))
+                    continue
+                print("Usage: /experiment create TITLE | HYPOTHESIS_CLAIM_ID(optional) | PROTOCOL_JSON | start ID | complete ID | OUTCOME_JSON | cancel ID | list | show ID")
+                continue
+
             if lower.startswith("/knowledge "):
                 parts = user_text[len("/knowledge "):].split(maxsplit=1)
                 action = parts[0].casefold()
