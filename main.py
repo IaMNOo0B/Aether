@@ -69,7 +69,8 @@ def main() -> int:
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
     print("Commands: /status /resources /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
-    print("          /remember /memory-search /memory-index /correct-memory /memory-versions ID /memory-conflicts [ID]")
+    print("          /remember /remember-fact SUBJECT | PREDICATE | OBJECT | NOTE /memory-search /memory-index")
+    print("          /correct-memory /memory-versions ID /memory-conflicts [ID]")
     print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
 
@@ -606,6 +607,18 @@ def main() -> int:
                     print(f"AETHER > Saved memory #{memory_id}.")
                 else:
                     print("AETHER > Usage: /remember information to save")
+                continue
+
+            if lower.startswith("/remember-fact "):
+                parts = user_text[len("/remember-fact "):].split("|", 3)
+                if len(parts) < 3:
+                    print("Usage: /remember-fact subject | predicate | object | optional note")
+                    continue
+                memory_id = engine.memory.remember_fact(
+                    parts[0].strip(), parts[1].strip(), parts[2].strip(),
+                    note=parts[3].strip() if len(parts) == 4 else "",
+                )
+                print(f"AETHER > Structured fact saved as memory #{memory_id}.")
                 continue
 
             if lower == "/memory-index":
