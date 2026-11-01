@@ -408,6 +408,7 @@ class AdvancedResearch:
         source = next((item for item in report["sources"] if item.get("url") == source_url), None)
         if source is None:
             raise ValueError("Source URL must belong to the specified research report")
+        source_text_kind = "captured_full_text" if source.get("full_text") else "abstract_or_search_snippet"
         source_text = str(source.get("full_text") or source.get("summary") or "")
         normalized_source = " ".join(source_text.casefold().split())
         normalized_quote = " ".join(quote.casefold().split())
@@ -418,8 +419,10 @@ class AdvancedResearch:
         exact_match = position >= 0
         if not exact_match:
             assessment = "quote_not_found"
-        elif overlap >= 0.6:
+        elif overlap >= 0.6 and source_text_kind == "captured_full_text":
             assessment = "candidate_support_requires_human_adjudication"
+        elif overlap >= 0.6:
+            assessment = "quote_found_in_abstract_or_snippet_full_text_required"
         else:
             assessment = "passage_found_but_weak_lexical_alignment"
         result = {
@@ -428,6 +431,7 @@ class AdvancedResearch:
             "report_id": report_id,
             "source_url": source_url,
             "quoted_passage": quote,
+            "source_text_kind": source_text_kind,
             "normalized_character_offset": position if exact_match else None,
             "lexical_claim_coverage": round(overlap, 4),
             "assessment": assessment,
@@ -518,9 +522,10 @@ class AdvancedResearch:
             })
             if len(groups) != 2 or groups[0] == groups[1]:
                 raise ValueError("Grouped comparison requires exactly two distinct group labels")
+            if any(not (row.get(group_column) or "").strip() for row in rows):
+                raise ValueError("Grouped comparison does not allow missing group labels")
             observed_groups = {
                 (row.get(group_column) or "").strip() for row in rows
-                if (row.get(group_column) or "").strip()
             }
             if observed_groups != set(groups):
                 raise ValueError("CSV contains group labels outside the requested two-group comparison")
