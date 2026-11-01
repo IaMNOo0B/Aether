@@ -20,3 +20,14 @@ def test_task_manager_rejects_invalid_transition(tmp_path):
     task = manager.create("Do not skip states")
     with pytest.raises(ValueError):
         manager.transition(task.id, "completed")
+
+
+
+def test_task_pause_request_is_persisted_and_audited(tmp_path):
+    manager = TaskManager(Store(tmp_path / "tasks.sqlite3"))
+    task = manager.create("Pause at a safe boundary", {"kind": "autonomy"})
+    manager.transition(task.id, "running")
+    paused = manager.request_pause(task.id)
+    assert paused.status == "running"
+    assert paused.state["pause_requested"] is True
+    assert manager.events(task.id)[-1]["event_type"] == "pause_requested"
