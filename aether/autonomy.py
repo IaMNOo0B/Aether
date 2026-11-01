@@ -10,6 +10,7 @@ import sys
 
 from aether.config import AutonomySettings, LimitSettings, ResearchSettings
 from aether.providers import ChatProvider
+from aether.planning import PlanGraph, PlanStep
 from aether.research import Researcher
 from aether.storage import Store
 from aether.world_model import WorldModel
@@ -263,13 +264,112 @@ class AutonomyRunner:
             raise ValueError("Model plan must contain a non-empty steps array")
         if len(steps) > self.limits.max_autonomy_steps:
             raise ValueError("Model plan exceeds the configured autonomy step limit")
-        for step in steps:
+        normalized: list[dict[str, Any]] = []
+        for index, step in enumerate(steps, start=1):
             if not isinstance(step, dict) or step.get("tool") not in allowed:
                 raise ToolDenied("Plan contains an unknown tool")
-            if not isinstance(step.get("args", {}), dict):
+            args = step.get("args", {})
+            if not isinstance(args, dict):
                 raise ValueError("Each plan step must contain an args object")
-            step["args"]["purpose"] = str(step.get("purpose", "Complete planned task"))[:300]
-        return steps
+            step_id = str(step.get("id") or f"step-{index:03d}").strip()
+            dependencies = step.get("depends_on", [])
+            if not isinstance(dependencies, list) or not all(
+                isinstance(item, str) and item.strip() for item in dependencies
+            ):
+                raise ValueError("Each plan step depends_on must be an array of non-empty step IDs")
+            purpose = str(step.get("purpose", "Complete planned task"))[:300]
+            args = dict(args)
+            args["purpose"] = purpose
+            normalized.append({
+                "id": step_id,
+                "depends_on": list(dict.fromkeys(dependencies)),
+                "purpose": purpose,
+                "tool": step["tool"],
+                "args": args,
+            })
+        graph = PlanGraph(
+            PlanStep(
+                id=step["id"],
+                description=step["purpose"],
+                depends_on=tuple(step["depends_on"]),
+            )
+            for step in normalized
+        )
+        by_id = {step["id"]: step for step in normalized}
+        return [by_id[step_id] for step_id in graph.topological_order()]
+
+    def _verify_result(
+        self, tool: str, args: dict[str, Any], result: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Verify observable tool postconditions; model self-reports are never evidence."""
+        passed = False
+        method = "deterministic_contract"
+        detail = "No verifier is registered for this tool."
+        try:
+            if tool == "workspace.write":
+                expected = args.get("content")
+                path = self.gateway._workspace_path(str(args.get("path", "")))
+                actual = path.read_text(encoding="utf-8") if path.is_file() else None
+                passed = (
+                    isinstance(expected, str)
+                    and actual == expected
+                    and result.get("bytes") == len(expected.encode("utf-8"))
+                )
+                detail = "Read-back content and UTF-8 byte count match the requested write."
+            elif tool == "workspace.read":
+                passed = (
+                    result.get("path") == args.get("path")
+                    and isinstance(result.get("content"), str)
+                )
+                detail = "Returned path matches the request and content is text."
+            elif tool == "workspace.list":
+                passed = (
+                    result.get("path") == args.get("path", ".")
+                    and isinstance(result.get("entries"), list)
+                )
+                detail = "Directory listing has the requested path and a structured entries array."
+            elif tool == "research.search":
+                passed = (
+                    isinstance(result.get("report_id"), str) and bool(result["report_id"])
+                    and isinstance(result.get("sources"), list)
+                    and isinstance(result.get("report"), str)
+                )
+                detail = "Research result contains a persisted report identifier, sources and report text."
+            elif tool == "tests.run":
+                code = result.get("return_code")
+                passed = (
+                    isinstance(code, int)
+                    and isinstance(result.get("passed"), bool)
+                    and result["passed"] is (code == 0)
+                    and code == 0
+                )
+                detail = "Pytest process exit code and reported pass state agree and indicate success."
+            elif tool == "world.state":
+                passed = isinstance(result, dict) and isinstance(result.get("state"), dict)
+                detail = "World state response contains a state object."
+            elif tool == "world.actions":
+                passed = (
+                    isinstance(result, dict)
+                    and isinstance(result.get("actions"), list)
+                )
+                detail = "World action response contains a structured actions array."
+            elif tool == "world.simulate":
+                passed = (
+                    isinstance(result, dict)
+                    and isinstance(result.get("executable"), bool)
+                    and isinstance(result.get("predicted_state"), dict)
+                )
+                detail = "Simulation includes an explicit executability decision and predicted state."
+            elif tool == "world.compare":
+                passed = (
+                    isinstance(result, dict)
+                    and isinstance(result.get("simulations"), list)
+                )
+                detail = "Action comparison contains a simulations array."
+        except (OSError, UnicodeError, TypeError, ValueError):
+            passed = False
+            detail = "Postcondition verification raised an error; result is not trusted."
+        return {"passed": passed, "method": method, "detail": detail}
 
     def run(
         self, objective: str, approval: ApprovalCallback | None = None
@@ -309,6 +409,7 @@ class AutonomyRunner:
             return {"task_id": task_id, "status": "cancelled", "reason": reason}
         self.tasks.transition(task_id, "running")
         receipts: list[dict[str, Any]] = []
+        completed_steps: list[str] = []
         preserved_state = {
             key: value for key, value in task_data["state"].items()
             if key not in {"plan", "receipts", "current_step"}
@@ -318,8 +419,13 @@ class AutonomyRunner:
             self.tasks.checkpoint(task_id, {
                 **preserved_state, "kind": "autonomy",
                 "plan": steps, "receipts": receipts,
+                "completed_steps": completed_steps,
             })
             for index, step in enumerate(steps, start=1):
+                if not set(step["depends_on"]).issubset(completed_steps):
+                    raise RuntimeError(
+                        f"Plan dependency is not satisfied before step {step['id']}"
+                    )
                 if self.store.emergency_stop_enabled():
                     raise EmergencyStop("AETHER emergency stop activated during task execution")
                 if self.resource_guard is not None:
@@ -327,25 +433,42 @@ class AutonomyRunner:
                 result = self.gateway.execute(
                     step["tool"], step.get("args", {}), self._guard_approval(approval)
                 )
-                receipts.append({
-                    "step": index, "tool": step["tool"], "purpose": step.get("purpose"),
+                verification = self._verify_result(step["tool"], step.get("args", {}), result)
+                receipt = {
+                    "step": index,
+                    "plan_step_id": step["id"],
+                    "depends_on": step["depends_on"],
+                    "tool": step["tool"],
+                    "purpose": step.get("purpose"),
                     "human_approved": step["tool"] in {"workspace.write", "tests.run"},
                     "result": result,
-                })
+                    "verification": verification,
+                }
+                receipts.append(receipt)
                 self.tasks.checkpoint(task_id, {
                     **preserved_state, "kind": "autonomy",
                     "plan": steps, "receipts": receipts,
+                    "completed_steps": completed_steps,
                     "current_step": index,
                 })
-                if step["tool"] == "tests.run" and not result.get("passed", False):
-                    raise RuntimeError("Independent test suite failed; autonomy task rejected")
-            test_receipts = [item for item in receipts if item["tool"] == "tests.run"]
+                if not verification["passed"]:
+                    raise RuntimeError(
+                        f"Deterministic verification failed for step {step['id']}: "
+                        f"{verification['detail']}"
+                    )
+                completed_steps.append(step["id"])
+                self.tasks.checkpoint(task_id, {
+                    **preserved_state, "kind": "autonomy",
+                    "plan": steps, "receipts": receipts,
+                    "completed_steps": completed_steps,
+                    "current_step": index,
+                })
             final_state = {
                 **preserved_state, "kind": "autonomy",
                 "plan": steps, "receipts": receipts,
-                "verified": bool(test_receipts) and all(
-                    item["result"].get("passed", False) for item in test_receipts
-                ),
+                "completed_steps": completed_steps,
+                "verified": len(completed_steps) == len(steps)
+                    and all(item["verification"]["passed"] for item in receipts),
             }
             self.tasks.transition(task_id, "completed", final_state)
             return {"task_id": task_id, "status": "completed", **final_state}
@@ -376,6 +499,7 @@ class AutonomyRunner:
         except Exception as exc:
             self.tasks.transition(task_id, "failed", {
                 **preserved_state, "kind": "autonomy", "receipts": receipts,
+                "completed_steps": completed_steps,
                 "error_type": type(exc).__name__, "error": str(exc)[:1000],
             })
             raise
