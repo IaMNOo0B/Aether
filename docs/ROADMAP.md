@@ -52,10 +52,16 @@ Benchmark boundary: fixed lexical fixtures measure retrieval and draft-skill exc
 - [x] Public source adapters for Crossref, arXiv, and Wikipedia.
 - [x] Provenance-aware reports with source URL, publisher, date, evidence class, and limitations.
 - [x] Persistent research report history.
-- [ ] Full-text ingestion, broader web search, source-quality scoring, and citation verification.
-- [ ] Entity graph, hypothesis/experiment store, and systematic review workflow.
+- [x] Operator-supplied public HTML/plain-text full-text ingestion with private-network/localhost rejection, redirect refusal, content-type checks, timeout and 2 MB cap.
+- [x] Transparent source-triage scoring with explicit factor breakdown and caveats; scores are not truth probabilities.
+- [x] Citation URL reachability checks tied to persisted report sources; claim-support verification remains a human review task.
+- [x] Persisted evidence-review inventory and protocol checklist; sources remain pending human screening and are never silently excluded.
+- [ ] General web-search provider integration beyond Crossref, arXiv and Wikipedia.
+- [ ] Structured inclusion/exclusion decisions, full-text claim extraction with page/section locators, and domain-specific risk-of-bias assessment.
+- [ ] Dedicated hypothesis/experiment lifecycle with preregistered predictions, observations, outcomes and reproducible analysis links.
+- [ ] End-to-end systematic review acceptance benchmark and independent citation-support verification.
 
-Research scope is intentionally bounded; index ranking is not evidence quality and this is not a systematic literature review.
+Stage 4 is partial: the new workflow improves source capture and evidence triage, but it is not a general crawler or completed systematic-review engine.
 
 ## Stage 5 — RLCD investigation
 
