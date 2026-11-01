@@ -76,7 +76,7 @@ def main() -> int:
     print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
     print("          /research QUERY|ingest|verify|score|review /experiment create|start|complete|cancel|list|show")
-    print("          /review create|add|screen|finalize|show /citation-check /citation-review /experiment analyze")
+    print("          /review create|add|screen|resolve|finalize|show /citation-check /citation-review /experiment analyze")
 
     while True:
         try:
@@ -575,12 +575,20 @@ def main() -> int:
                     ]), indent=2))
                     continue
                 if action == "screen":
-                    fields = argument.split("|", 3)
-                    if len(fields) != 4:
-                        print("Usage: /review screen REVIEW_ID | SOURCE_URL | include/exclude/uncertain | REASON")
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review screen REVIEW_ID | SOURCE_URL | REVIEWER_ID | include/exclude | REASON")
                         continue
                     review = advanced.screen_source(*[field.strip() for field in fields])
-                    print(f"AETHER > Screening saved. Review status: {review['status']}")
+                    print(f"AETHER > Screening saved. Two distinct reviewers are required for consensus.")
+                    continue
+                if action == "resolve":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review resolve REVIEW_ID | SOURCE_URL | ADJUDICATOR_ID | include/exclude | RATIONALE")
+                        continue
+                    review = advanced.resolve_review_conflict(*[field.strip() for field in fields])
+                    print("AETHER > Screening disagreement adjudicated.")
                     continue
                 if action == "finalize" and argument.strip():
                     review = advanced.finalize_review(argument.strip())
@@ -605,14 +613,15 @@ def main() -> int:
                 continue
 
             if lower.startswith("/citation-review "):
-                fields = user_text[len("/citation-review "):].split("|", 2)
-                if len(fields) != 3:
-                    print("Usage: /citation-review EVIDENCE_ID | supports/contradicts/insufficient | RATIONALE")
+                fields = user_text[len("/citation-review "):].split("|", 3)
+                if len(fields) != 4:
+                    print("Usage: /citation-review EVIDENCE_ID | REVIEWER_ID | supports/contradicts/insufficient | RATIONALE")
                     continue
                 result = AdvancedResearch(store).adjudicate_citation(
-                    fields[0].strip(), fields[1].strip(), fields[2]
+                    fields[0].strip(), fields[1].strip(), fields[2].strip(), fields[3]
                 )
                 print(json.dumps(result, indent=2))
+                print("AETHER > Two distinct reviewer IDs are required for agreement; IDs are operator-supplied, not authenticated.")
                 continue
 
             if lower == "/reports":
