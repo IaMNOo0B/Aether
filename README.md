@@ -161,7 +161,13 @@ AETHER validates the dependency graph before running any tool, rejects missing d
 
 Each executed step receives a persisted receipt with its plan-step ID, dependencies, raw tool result and deterministic postcondition check. Workspace writes are read back from disk; reads/listings are structurally checked; research outputs must include a persisted report ID and source list; test results must agree with the process exit code; symbolic world-model outputs must match their expected response shape. A failed postcondition fails the task instead of allowing a false success.
 
-The task state distinguishes `tool_results_verified` (all individual tool postconditions passed) from `verified` (tool postconditions passed and an explicitly requested pytest run succeeded). Neither flag proves a broad natural-language objective beyond those recorded checks. Failed plans are not automatically replayed or replanned; interrupted tasks remain manual-review-only until safe idempotent resume semantics exist.
+The task state distinguishes `tool_results_verified` (all individual tool postconditions passed) from `verified` (tool postconditions passed and an explicitly requested pytest run succeeded). Neither flag proves a broad natural-language objective beyond those recorded checks.
+
+AETHER supports cooperative pause requests at safe step boundaries through `TaskManager.request_pause(task_id)`, then resumes saved plans with `AutonomyRunner.resume_task(task_id)`. After a process interruption, automatic resume is allowed only when the next unreceipted operation is on the read-only replay allowlist (`workspace.read`, `workspace.list`, `world.state`, `world.actions`). Writes, tests, research persistence and simulations are never automatically replayed.
+
+Automatic replanning is deliberately narrow: one replan is permitted after a missing workspace read/list target. Completed tool+argument pairs cannot be repeated by the replacement plan. Other failures remain fail-closed.
+
+Run the five-scenario executor benchmark with `python -m aether.benchmark`. It uses fixed reference plans to measure orchestration and tool postconditions; it does not measure the LLM's natural-language planning ability or establish general intelligence.
 
 ### Resource telemetry and execution budgets
 
