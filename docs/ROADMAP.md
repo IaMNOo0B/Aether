@@ -17,7 +17,7 @@ A capability is marked complete only when its implementation and tests exist. Op
 - [x] Structured logging and redacted diagnostics.
 - [x] Runtime configuration validation.
 - [ ] Provider retry/backoff/fallback policy.
-- [ ] Task recovery after process interruption.
+- [x] Conservative task recovery after process interruption (interrupted work is marked failed for manual review; uncertain actions are never replayed).
 - [ ] Configuration schema migrations and model capability metadata.
 
 ## Stage 2 — Reliable memory
@@ -33,11 +33,12 @@ A capability is marked complete only when its implementation and tests exist. Op
 ## Stage 3 — Planning and verification
 
 - [x] Deterministic dependency graph, cycle detection, and persisted plan progress.
+- [x] Model-generated autonomy plans are normalized into validated DAGs and executed in topological order.
 - [x] Model-generated bounded tool plans with a fixed tool registry.
 - [x] Persisted per-step action receipts.
 - [x] Test failures cause autonomous tasks to fail rather than report success.
 - [ ] Full pause/resume and crash recovery.
-- [ ] Independent deterministic verification for all tool types.
+- [x] Deterministic postcondition verification for every fixed autonomous tool; task receipts distinguish tool-result verification from objective verification.
 - [ ] Held-out multi-step task benchmark.
 
 ## Stage 4 — Research and knowledge
@@ -116,3 +117,17 @@ Specialist roles currently share one local model and run sequentially to fit con
 4. Separate retrieval, procedural learning, policy adaptation, and model-weight updates.
 5. Do not claim consciousness or general intelligence from architecture labels.
 6. Keep Windows 10/11 as the primary platform.
+
+
+## Phase 1 implementation log — orchestration and verification
+
+- [x] Integrate the existing `PlanGraph` into model-generated autonomous plans.
+- [x] Reject duplicate IDs, missing dependencies, self-dependencies and cycles before executing tools.
+- [x] Execute dependency-ready steps in deterministic topological order.
+- [x] Persist plan-step IDs, dependencies, receipts and completed-step IDs at checkpoints.
+- [x] Verify observable postconditions for workspace reads/writes/listings, research reports, test runs and symbolic world-model tools.
+- [x] Fail the task when a tool result cannot be independently verified.
+- [x] Separate `tool_results_verified` from the stronger `verified` flag, which additionally requires a successful test-run receipt.
+- [ ] Automatic replanning after a failed step (not enabled; failure remains fail-closed).
+- [ ] Explicit pause/resume and safe recovery of resumable, idempotent steps.
+- [ ] End-to-end goal-level benchmark with held-out tasks.
