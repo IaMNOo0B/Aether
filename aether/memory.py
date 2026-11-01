@@ -123,9 +123,9 @@ class MemoryManager:
         return {"indexed": indexed, "remaining": remaining, "error": None}
 
     def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
-        terms = _tokens(query)
-        if not terms or limit < 1:
+        if not isinstance(query, str) or not query.strip() or limit < 1:
             return []
+        terms = _tokens(query)
         records = [
             item for item in self.store.list_memories(self.corpus_limit)
             if item["status"] not in {"superseded", "rejected", "deleted"}
@@ -177,8 +177,13 @@ class MemoryManager:
                     )
                 }
             except EmbeddingUnavailable:
+                # An unavailable semantic backend must not reduce lexical recall.
                 query_vector = None
                 embedding_map = {}
+
+        # A query with no lexical tokens is valid when semantic retrieval is available.
+        if not terms and query_vector is None:
+            return []
 
         ranked = []
         for item, _, _ in documents:
@@ -190,7 +195,9 @@ class MemoryManager:
             if query_vector is None:
                 relevance = lexical
             elif semantic is None:
-                relevance = lexical_normalized * (1 - self.semantic_weight)
+                # Do not penalize records that have not yet been indexed or have
+                # incompatible vector dimensions; retain their full lexical score.
+                relevance = lexical_normalized
             else:
                 relevance = (
                     lexical_normalized * (1 - self.semantic_weight)
@@ -214,6 +221,52 @@ class MemoryManager:
             }
             for relevance, _, lexical, semantic, item in ranked[:limit]
         ]
+
+    def versions(self, memory_id: int) -> list[dict[str, Any]]:
+        """Return the correction lineage from the original memory to its latest version."""
+        return self.store.list_memory_versions(memory_id)
+
+    def find_contradictions(self, memory_id: int | None = None) -> list[dict[str, Any]]:
+        """Find explicit, user-supplied fact slots that disagree; never infer truth from prose.
+
+        Memories may carry metadata['facts'] as [{subject, predicate, object}].
+        Only exact subject/predicate matches with different normalized objects are flagged.
+        """
+        records = self.store.list_memories(self.corpus_limit)
+        active = [item for item in records
+                  if item["status"] not in {"superseded", "rejected", "deleted"}]
+        if memory_id is not None:
+            target = self.store.get_memory(memory_id)
+            if target is None:
+                raise KeyError(f"Unknown memory: {memory_id}")
+            if target["status"] in {"superseded", "rejected", "deleted"}:
+                return []
+            active = [item for item in active if item["id"] == memory_id or item["id"] != memory_id]
+        facts: dict[tuple[str, str], list[tuple[dict[str, Any], str]]] = {}
+        for item in active:
+            for fact in item["metadata"].get("facts", []):
+                if not isinstance(fact, dict):
+                    continue
+                subject = " ".join(str(fact.get("subject", "")).casefold().split())
+                predicate = " ".join(str(fact.get("predicate", "")).casefold().split())
+                value = " ".join(str(fact.get("object", "")).casefold().split())
+                if subject and predicate and value:
+                    facts.setdefault((subject, predicate), []).append((item, value))
+        conflicts = []
+        for (subject, predicate), entries in facts.items():
+            for index, (left, left_value) in enumerate(entries):
+                for right, right_value in entries[index + 1:]:
+                    if left_value == right_value:
+                        continue
+                    if memory_id is not None and memory_id not in {left["id"], right["id"]}:
+                        continue
+                    conflicts.append({
+                        "subject": subject, "predicate": predicate,
+                        "left_memory_id": left["id"], "left_value": left_value,
+                        "right_memory_id": right["id"], "right_value": right_value,
+                        "resolution": "unresolved; explicit review required",
+                    })
+        return conflicts
 
     def correct(self, memory_id: int, corrected_content: str, reason: str) -> int:
         """Supersede a memory without deleting history or rewriting its provenance."""
