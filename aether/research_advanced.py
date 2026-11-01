@@ -157,14 +157,21 @@ class AdvancedResearch:
         self.store.create_systematic_review(review_id, protocol)
         return self.store.get_systematic_review(review_id)
 
-    def add_review_sources(self, review_id: str, sources: list[ResearchSource]) -> dict[str, Any]:
+    def add_review_sources(
+        self, review_id: str, sources: list[ResearchSource],
+        search_report_id: str | None = None,
+    ) -> dict[str, Any]:
         review = self.store.get_systematic_review(review_id)
         if review is None:
             raise KeyError(f"Unknown systematic review: {review_id}")
+        if search_report_id is not None and self.store.get_research_report(search_report_id) is None:
+            raise ValueError("search_report_id must identify an existing research report")
         added = 0
         for source in sources:
+            source_record = source.to_dict()
+            source_record["search_report_id"] = search_report_id
             self.store.add_systematic_review_source(
-                review_id, source.url or source.title, source.to_dict()
+                review_id, source.url or source.title, source_record
             )
             added += 1
         return {"review_id": review_id, "submitted": len(sources), "added_or_already_present": added}
@@ -384,7 +391,13 @@ class AdvancedResearch:
             "review_id": review_id,
             "question": review["protocol"]["question"],
             "status": "synthesized",
-            "title_abstract_included": sum(item["decision"] == "include" for item in review["sources"]),
+            "screening_flow": {
+                "records_retrieved": len(review["sources"]),
+                "title_abstract_excluded": sum(item["decision"] == "exclude" for item in review["sources"]),
+                "title_abstract_included": sum(item["decision"] == "include" for item in review["sources"]),
+                "full_text_excluded": len(full_text_excluded),
+                "included_in_synthesis": len(included),
+            },
             "full_text_excluded": full_text_excluded,
             "included_studies": included,
             "meta_analysis": meta_analysis,
