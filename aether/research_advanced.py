@@ -453,6 +453,14 @@ class AdvancedResearch:
             raise ValueError("Decision must be supports, contradicts or insufficient")
         if len(rationale.strip()) < 12:
             raise ValueError("Human adjudication requires a rationale of at least 12 characters")
+        evidence = self.store.get_citation_evidence(evidence_id)
+        if evidence is None:
+            raise KeyError(f"Unknown citation evidence: {evidence_id}")
+        if decision in {"supports", "contradicts"} and (
+            evidence.get("normalized_character_offset") is None
+            or evidence.get("source_text_kind") != "captured_full_text"
+        ):
+            raise ValueError("Support/contradiction decisions require an exact passage in captured full text; otherwise use insufficient")
         self.store.adjudicate_citation_evidence(evidence_id, reviewer_id, decision, rationale.strip())
         return self.store.get_citation_evidence(evidence_id)
 
