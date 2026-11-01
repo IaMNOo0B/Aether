@@ -46,6 +46,8 @@ AETHER never downloads models automatically. Phi-3 Mini's 4K context and model c
 - `/research score REPORT_ID` shows transparent source-triage scores and their component factors/caveats. Scores are not truth probabilities.
 - `/research verify REPORT_ID` checks source URL reachability and report membership only. It does **not** verify that a source supports a claim.
 - `/research review QUERY` saves a reproducible evidence inventory with all results awaiting human screening; no source is silently excluded.
+- `/experiment create TITLE | HYPOTHESIS_CLAIM_ID(optional) | PROTOCOL_JSON` creates a preregistered experiment. Protocol JSON requires `objective`, `method`, and `success_criteria`; an optional hypothesis ID must identify an existing hypothesis claim.
+- `/experiment start ID`, `/experiment complete ID | OUTCOME_JSON`, `/experiment cancel ID`, `/experiment list`, and `/experiment show ID` manage the lifecycle. Completion requires both a result and evidence reference; lifecycle events are persisted and completed/cancelled experiments are terminal.
 - `/reports` lists saved reports.
 
 Research fetching rejects localhost/private-network targets, non-HTTP schemes, embedded credentials, non-standard ports, redirects, unsupported content types, and responses above 2 MB. Full-text ingestion is not a crawler: it fetches only URLs explicitly supplied by the operator. Citation reachability is not citation-support verification. The review command creates an evidence inventory and protocol checklist; it does not claim a completed systematic review, PRISMA compliance, risk-of-bias assessment, or meta-analysis.
