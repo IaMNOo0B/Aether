@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 import json
+import os
+import tempfile
 import math
 import sqlite3
 import time
@@ -696,6 +698,105 @@ class Store:
             ).fetchall()
         return [dict(row) for row in reversed(rows)]
 
+    def backup_to(self, destination: str | Path) -> Path:
+        """Create a consistent SQLite snapshot and atomically publish it."""
+        target = Path(destination).expanduser()
+        if target.resolve() == self.path.resolve():
+            raise ValueError("Backup destination cannot be the live database")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
+        )
+        os.close(fd)
+        temporary = Path(temporary_name)
+        try:
+            with sqlite3.connect(self.path) as source, sqlite3.connect(temporary) as backup:
+                source.backup(backup)
+                result = backup.execute("PRAGMA integrity_check").fetchone()
+                if not result or result[0] != "ok":
+                    raise RuntimeError("SQLite backup failed its integrity check")
+            os.replace(temporary, target)
+            return target
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def restore_from(self, source_path: str | Path) -> None:
+        """Validate a backup, stage it beside the live DB, then atomically replace it.
+
+        Stop other AETHER processes before restoring. The method never accepts the
+        live database itself as its source and leaves the current DB untouched if
+        validation or staging fails.
+        """
+        source = Path(source_path).expanduser()
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        if source.resolve() == self.path.resolve():
+            raise ValueError("Restore source cannot be the live database")
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary_name = tempfile.mkstemp(
+            prefix=f".{self.path.name}.restore.", suffix=".tmp", dir=self.path.parent
+        )
+        os.close(fd)
+        temporary = Path(temporary_name)
+        try:
+            with sqlite3.connect(source) as candidate:
+                check = candidate.execute("PRAGMA integrity_check").fetchone()
+                if not check or check[0] != "ok":
+                    raise ValueError("Restore source failed SQLite integrity_check")
+                tables = {
+                    row[0] for row in candidate.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    )
+                }
+                required = {"messages", "memories", "tasks", "skills"}
+                if not required.issubset(tables):
+                    raise ValueError("Restore source is not a compatible AETHER database")
+                with sqlite3.connect(temporary) as staged:
+                    candidate.backup(staged)
+                    staged_check = staged.execute("PRAGMA integrity_check").fetchone()
+                    if not staged_check or staged_check[0] != "ok":
+                        raise ValueError("Staged restore failed SQLite integrity_check")
+            with self._connect() as live:
+                checkpoint = live.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                if checkpoint and checkpoint[0] != 0:
+                    raise RuntimeError("Could not checkpoint the live database; stop other AETHER processes")
+            os.replace(temporary, self.path)
+            Path(str(self.path) + "-wal").unlink(missing_ok=True)
+            Path(str(self.path) + "-shm").unlink(missing_ok=True)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def list_memory_versions(self, memory_id: int) -> list[dict[str, Any]]:
+        """Return a validated, ordered correction chain containing memory_id."""
+        records = {item["id"]: item for item in self.list_memories(20000)}
+        if memory_id not in records:
+            raise KeyError(f"Unknown memory: {memory_id}")
+        current = records[memory_id]
+        visited: set[int] = set()
+        while current["metadata"].get("supersedes_memory_id") is not None:
+            if current["id"] in visited:
+                raise RuntimeError("Memory correction history contains a cycle")
+            visited.add(current["id"])
+            parent_id = current["metadata"]["supersedes_memory_id"]
+            parent = records.get(parent_id)
+            if parent is None or parent["metadata"].get("superseded_by_id") != current["id"]:
+                raise RuntimeError("Memory correction history has a broken predecessor link")
+            current = parent
+        lineage = []
+        while True:
+            if current["id"] in visited:
+                raise RuntimeError("Memory correction history contains a cycle")
+            visited.add(current["id"])
+            lineage.append(current)
+            child_id = current["metadata"].get("superseded_by_id")
+            if child_id is None:
+                break
+            child = records.get(child_id)
+            if child is None or child["metadata"].get("supersedes_memory_id") != current["id"]:
+                raise RuntimeError("Memory correction history has a broken successor link")
+            current = child
+        return lineage
+
     def add_memory(
         self, content: str, source: str = "user", status: str = "unverified",
         metadata: dict[str, Any] | None = None,
@@ -846,6 +947,8 @@ class Store:
                 raise KeyError(f"Unknown memory: {memory_id}")
             if row["status"] == "superseded":
                 raise ValueError("Memory has already been superseded")
+            if row["status"] in {"rejected", "deleted"}:
+                raise ValueError("Rejected or deleted memories cannot be corrected")
             successor_metadata = dict(metadata)
             successor_metadata["supersedes_memory_id"] = memory_id
             cursor = db.execute(
