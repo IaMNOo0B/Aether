@@ -70,3 +70,48 @@ def test_citation_verification_only_reports_reachability(tmp_path, monkeypatch):
     result = workflow.verify_citations("r1")
     assert result["results"][0]["status"] == "reachable_only"
     assert result["results"][0]["citation_support"] == "not_checked"
+
+
+def test_experiment_requires_preregistered_protocol_and_valid_hypothesis(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    with pytest.raises(ValueError, match="objective, method"):
+        store.create_research_experiment("e1", "Test", None, {"objective": "x"})
+    with pytest.raises(ValueError, match="existing hypothesis"):
+        store.create_research_experiment(
+            "e2", "Test", "missing",
+            {"objective": "x", "method": "y", "success_criteria": "z"},
+        )
+
+
+def test_experiment_lifecycle_is_audited_and_terminal(tmp_path):
+    from uuid import uuid4
+
+    store = Store(tmp_path / "research.sqlite3")
+    graph = __import__("aether.knowledge", fromlist=["KnowledgeGraph"]).KnowledgeGraph(store)
+    hypothesis = graph.add_claim(
+        "Model A", "outperforms", "Model B", claim_type="hypothesis"
+    )
+    experiment = store.create_research_experiment(
+        "exp-1", "Benchmark A vs B", hypothesis["id"],
+        {
+            "objective": "Compare latency on a fixed workload",
+            "method": "Run 30 repetitions per model with identical settings",
+            "success_criteria": "A has lower median latency without lower task accuracy",
+            "metrics": ["median_latency_ms", "task_accuracy"],
+        },
+    )
+    assert experiment["status"] == "planned"
+    started = store.transition_research_experiment("exp-1", "running")
+    assert started["status"] == "running"
+    with pytest.raises(ValueError, match="requires a non-empty result"):
+        store.transition_research_experiment("exp-1", "completed", {"evidence": "log"})
+    completed = store.transition_research_experiment(
+        "exp-1", "completed",
+        {"result": "A was 8% faster; accuracy unchanged", "evidence": "benchmark-run-2026-11-01"},
+    )
+    assert completed["status"] == "completed"
+    assert completed["outcome"]["evidence"] == "benchmark-run-2026-11-01"
+    with pytest.raises(ValueError, match="Invalid experiment transition"):
+        store.transition_research_experiment("exp-1", "running")
+    events = store.list_research_experiment_events("exp-1")
+    assert [event["event_type"] for event in events] == ["created", "running", "completed"]
