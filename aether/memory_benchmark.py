@@ -85,7 +85,7 @@ def run_benchmark(cases_path: str | Path = CASES_PATH) -> dict[str, Any]:
 
     result = {
         "memory_retrieval": metrics(memory_ranks),
-        "skill_retrieval_retention": metrics(skill_ranks),
+        "validated_skill_retrieval": metrics(skill_ranks),
         "draft_skill_leakage_count": draft_leakage,
         "memory_query_ranks": memory_ranks,
         "skill_query_ranks": skill_ranks,
@@ -97,7 +97,7 @@ def run_benchmark(cases_path: str | Path = CASES_PATH) -> dict[str, Any]:
     }
     result["passed"] = (
         result["memory_retrieval"]["recall_at_k"] == 1.0
-        and result["skill_retrieval_retention"]["recall_at_k"] == 1.0
+        and result["validated_skill_retrieval"]["recall_at_k"] == 1.0
         and draft_leakage == 0
     )
     return result
