@@ -1927,6 +1927,8 @@ class Store:
                 raise KeyError(f"Unknown citation evidence: {evidence_id}")
             evidence = json.loads(row["evidence_json"])
             reviews = evidence.setdefault("reviewer_decisions", [])
+            if evidence.get("review_status") != "awaiting_second_reviewer":
+                raise ValueError("Citation evidence is not awaiting a second reviewer")
             if any(item["reviewer_id"] == reviewer for item in reviews):
                 raise ValueError("Reviewer has already adjudicated this evidence")
             reviews.append({
