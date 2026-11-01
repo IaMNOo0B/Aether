@@ -1,0 +1,131 @@
+[
+  {
+    "id": "root-list",
+    "objective": "List the workspace root",
+    "expected_tools": [
+      "workspace.list"
+    ],
+    "steps": [
+      {
+        "id": "list-root",
+        "purpose": "List workspace root",
+        "tool": "workspace.list",
+        "args": {
+          "path": "."
+        }
+      }
+    ]
+  },
+  {
+    "id": "read-seeded-note",
+    "objective": "Read the supplied project note",
+    "seed_files": {
+      "notes/brief.txt": "AETHER benchmark fixture."
+    },
+    "expected_tools": [
+      "workspace.read"
+    ],
+    "steps": [
+      {
+        "id": "read-brief",
+        "purpose": "Read supplied brief",
+        "tool": "workspace.read",
+        "args": {
+          "path": "notes/brief.txt"
+        }
+      }
+    ]
+  },
+  {
+    "id": "write-then-read",
+    "objective": "Create a note and verify its contents",
+    "expected_tools": [
+      "workspace.write",
+      "workspace.read"
+    ],
+    "steps": [
+      {
+        "id": "write-note",
+        "purpose": "Create benchmark note",
+        "tool": "workspace.write",
+        "args": {
+          "path": "notes/output.txt",
+          "content": "phase one verified"
+        }
+      },
+      {
+        "id": "read-note",
+        "depends_on": [
+          "write-note"
+        ],
+        "purpose": "Read back benchmark note",
+        "tool": "workspace.read",
+        "args": {
+          "path": "notes/output.txt"
+        }
+      }
+    ]
+  },
+  {
+    "id": "topological-order",
+    "objective": "Run the dependent workspace inspections in dependency order",
+    "expected_tools": [
+      "workspace.list",
+      "workspace.list"
+    ],
+    "steps": [
+      {
+        "id": "second",
+        "depends_on": [
+          "first"
+        ],
+        "purpose": "List notes after root inspection",
+        "tool": "workspace.list",
+        "args": {
+          "path": "notes"
+        }
+      },
+      {
+        "id": "first",
+        "purpose": "List workspace root first",
+        "tool": "workspace.list",
+        "args": {
+          "path": "."
+        }
+      }
+    ],
+    "seed_files": {
+      "notes/seed.txt": "seed for dependency ordering"
+    }
+  },
+  {
+    "id": "nested-write-list",
+    "objective": "Create a nested artifact and list its directory",
+    "expected_tools": [
+      "workspace.write",
+      "workspace.list"
+    ],
+    "steps": [
+      {
+        "id": "create",
+        "purpose": "Create nested artifact",
+        "tool": "workspace.write",
+        "args": {
+          "path": "reports/daily.txt",
+          "content": "daily report"
+        }
+      },
+      {
+        "id": "inspect",
+        "depends_on": [
+          "create"
+        ],
+        "purpose": "Inspect report directory",
+        "tool": "workspace.list",
+        "args": {
+          "path": "reports"
+        }
+      }
+    ]
+  }
+]

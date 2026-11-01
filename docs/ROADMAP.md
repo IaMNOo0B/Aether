@@ -17,7 +17,7 @@ A capability is marked complete only when its implementation and tests exist. Op
 - [x] Structured logging and redacted diagnostics.
 - [x] Runtime configuration validation.
 - [ ] Provider retry/backoff/fallback policy.
-- [ ] Task recovery after process interruption.
+- [x] Conservative task recovery after process interruption; only read-only pending steps may be resumed automatically, while uncertain side effects require manual review.
 - [ ] Configuration schema migrations and model capability metadata.
 
 ## Stage 2 — Reliable memory
@@ -33,12 +33,15 @@ A capability is marked complete only when its implementation and tests exist. Op
 ## Stage 3 — Planning and verification
 
 - [x] Deterministic dependency graph, cycle detection, and persisted plan progress.
+- [x] Model-generated autonomy plans are normalized into validated DAGs and executed in topological order.
 - [x] Model-generated bounded tool plans with a fixed tool registry.
 - [x] Persisted per-step action receipts.
 - [x] Test failures cause autonomous tasks to fail rather than report success.
-- [ ] Full pause/resume and crash recovery.
-- [ ] Independent deterministic verification for all tool types.
-- [ ] Held-out multi-step task benchmark.
+- [x] Cooperative pause requests at safe step boundaries and resume from persisted plans/checkpoints.
+- [x] Conservative crash recovery: resume only when the next unreceipted step is on a read-only replay allowlist; uncertain side effects require manual review.
+- [x] Bounded automatic replanning after a missing workspace read/list target (one retry; completed actions cannot be repeated).
+- [x] Deterministic postcondition verification for every fixed autonomous tool; task receipts distinguish tool-result verification from objective verification.
+- [x] Five-scenario deterministic end-to-end executor benchmark (reference plans; does not measure LLM planning quality).
 
 ## Stage 4 — Research and knowledge
 
@@ -68,7 +71,8 @@ AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX
 - [x] Test execution requires feature flag and per-action human approval.
 - [x] Workspace path containment, file-size caps, step limits, and execution timeout.
 - [x] Persisted plans, progress, and action receipts.
-- [ ] Background scheduler, bounded goal discovery, pause/resume, and crash recovery.
+- [ ] Background scheduler and bounded goal discovery.
+- [x] Cooperative pause/resume and conservative crash recovery for explicitly queued autonomy tasks.
 - [ ] OS-level sandbox for arbitrary code (not provided by the current copy-based candidate workflow).
 
 No arbitrary shell, unrestricted filesystem, or unrestricted URL-fetch tool is exposed.
@@ -116,3 +120,27 @@ Specialist roles currently share one local model and run sequentially to fit con
 4. Separate retrieval, procedural learning, policy adaptation, and model-weight updates.
 5. Do not claim consciousness or general intelligence from architecture labels.
 6. Keep Windows 10/11 as the primary platform.
+
+
+## Phase 1 implementation log — orchestration and verification
+
+- [x] Integrate the existing `PlanGraph` into model-generated autonomous plans.
+- [x] Reject duplicate IDs, missing dependencies, self-dependencies and cycles before executing tools.
+- [x] Execute dependency-ready steps in deterministic topological order.
+- [x] Persist plan-step IDs, dependencies, receipts and completed-step IDs at checkpoints.
+- [x] Verify observable postconditions for workspace reads/writes/listings, research reports, test runs and symbolic world-model tools.
+- [x] Fail the task when a tool result cannot be independently verified.
+- [x] Separate `tool_results_verified` from the stronger `verified` flag, which additionally requires a successful test-run receipt.
+- [x] One bounded replan after a failed read-only workspace lookup; completed actions are not repeated.
+- [x] Cooperative pause/resume at step boundaries with persisted plan and receipts.
+- [x] Conservative recovery after process interruption; only read-only pending steps may be replayed automatically.
+- [x] Five-scenario end-to-end executor benchmark in `benchmarks/phase1_cases.json` (fixed reference plans; planner intelligence is outside its scope).
+
+
+### Phase 1 operation notes
+
+- Request a cooperative pause with `TaskManager.request_pause(task_id)`; the active tool is allowed to finish, then execution pauses at the next checkpoint boundary.
+- Resume paused work with `AutonomyRunner.resume_task(task_id)`.
+- Interrupted tasks are resumed only when their next unreceipted operation is one of `workspace.read`, `workspace.list`, `world.state`, or `world.actions`. Writes, tests, research persistence, and simulations are never automatically replayed.
+- Automatic replanning is intentionally narrow: one retry after a missing workspace read/list target. It does not retry writes, tests, network research, or arbitrary failures.
+- Run the deterministic executor benchmark with `python -m aether.benchmark`. It validates reference plans and tool postconditions; it is not a held-out evaluation of the LLM's reasoning ability.

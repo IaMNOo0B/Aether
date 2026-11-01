@@ -972,19 +972,48 @@ class Store:
         now = utc_now()
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+            row = db.execute("SELECT status, state_json FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row is None:
                 raise KeyError(f"Unknown task: {task_id}")
             if row["status"] != "running":
                 raise ValueError(f"Only running tasks can be checkpointed, found {row['status']}")
+            payload = dict(state)
+            existing = json.loads(row["state_json"])
+            if existing.get("pause_requested"):
+                payload["pause_requested"] = True
+            db.execute(
+                "UPDATE tasks SET state_json=?, updated_at=? WHERE id=?",
+                (json.dumps(payload), now, task_id),
+            )
+            db.execute(
+                """INSERT INTO task_events(task_id, event_type, from_status, to_status,
+                   payload_json, created_at) VALUES (?, 'checkpoint', 'running', 'running', ?, ?)""",
+                (task_id, json.dumps(event_data or state), now),
+            )
+        return self.get_task(task_id)  # type: ignore[return-value]
+
+    def request_task_pause(self, task_id: str) -> dict[str, Any]:
+        """Persist a cooperative pause request without interrupting an active tool."""
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status, state_json FROM tasks WHERE id=?", (task_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown task: {task_id}")
+            if row["status"] != "running":
+                raise ValueError(f"Only running tasks can be paused, found {row['status']}")
+            state = json.loads(row["state_json"])
+            state["pause_requested"] = True
             db.execute(
                 "UPDATE tasks SET state_json=?, updated_at=? WHERE id=?",
                 (json.dumps(state), now, task_id),
             )
             db.execute(
                 """INSERT INTO task_events(task_id, event_type, from_status, to_status,
-                   payload_json, created_at) VALUES (?, 'checkpoint', 'running', 'running', ?, ?)""",
-                (task_id, json.dumps(event_data or state), now),
+                   payload_json, created_at) VALUES (?, 'pause_requested', 'running', 'running', ?, ?)""",
+                (task_id, json.dumps({"requested": True}), now),
             )
         return self.get_task(task_id)  # type: ignore[return-value]
 

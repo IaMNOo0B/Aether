@@ -21,7 +21,13 @@ jobs:
           $acceptanceExit = $LASTEXITCODE
           if ($acceptanceExit -eq 1) { exit 1 }
           if ($acceptanceExit -eq 2) {
-            Write-Host "Some OMEGA acceptance areas are still partial; inspect the JSON report."
+            $report = Get-Content reports/acceptance/latest.json -Raw | ConvertFrom-Json
+            $counts = $report.counts | ConvertTo-Json -Compress
+            Write-Host "::warning::OMEGA acceptance is PARTIAL. Counts: $counts. Green core tests do not mean the full OMEGA specification passed."
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## OMEGA acceptance: PARTIAL"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Counts: $counts"
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "The Python test suite passed, but one or more acceptance requirements remain incomplete. See the uploaded JSON artifact."
             exit 0
           }
           if ($acceptanceExit -ne 0) { exit $acceptanceExit }

@@ -10,7 +10,8 @@ from aether.storage import Store
 
 ALLOWED_TRANSITIONS = {
     "queued": {"running", "cancelled"},
-    "running": {"completed", "failed", "cancelled"},
+    "running": {"completed", "failed", "cancelled", "paused"},
+    "paused": {"running", "cancelled"},
     "failed": {"queued", "cancelled"},
     "completed": set(),
     "cancelled": set(),
@@ -63,6 +64,11 @@ class TaskManager:
         event_data: dict[str, Any] | None = None,
     ) -> Task:
         updated = self.store.checkpoint_task(task_id, state, event_data)
+        return Task(updated["id"], updated["objective"], updated["status"], updated["state"])
+
+    def request_pause(self, task_id: str) -> Task:
+        """Request a cooperative pause at the next safe step boundary."""
+        updated = self.store.request_task_pause(task_id)
         return Task(updated["id"], updated["objective"], updated["status"], updated["state"])
 
     def events(self, task_id: str, limit: int = 500) -> list[dict[str, Any]]:
