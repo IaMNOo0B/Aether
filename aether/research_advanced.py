@@ -35,6 +35,92 @@ def _tokens(value: str) -> set[str]:
     }
 
 
+
+def _beta_continued_fraction(a: float, b: float, x: float) -> float:
+    """Numerical Recipes continued fraction for the regularized beta function."""
+    max_iterations, epsilon, floor = 200, 3e-14, 1e-300
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c_value = 1.0
+    d_value = 1.0 - qab * x / qap
+    if abs(d_value) < floor:
+        d_value = floor
+    d_value = 1.0 / d_value
+    result = d_value
+    for iteration in range(1, max_iterations + 1):
+        m2 = 2 * iteration
+        aa = iteration * (b - iteration) * x / ((qam + m2) * (a + m2))
+        d_value = 1.0 + aa * d_value
+        if abs(d_value) < floor:
+            d_value = floor
+        c_value = 1.0 + aa / c_value
+        if abs(c_value) < floor:
+            c_value = floor
+        d_value = 1.0 / d_value
+        result *= d_value * c_value
+        aa = -(a + iteration) * (qab + iteration) * x / ((a + m2) * (qap + m2))
+        d_value = 1.0 + aa * d_value
+        if abs(d_value) < floor:
+            d_value = floor
+        c_value = 1.0 + aa / c_value
+        if abs(c_value) < floor:
+            c_value = floor
+        d_value = 1.0 / d_value
+        delta = d_value * c_value
+        result *= delta
+        if abs(delta - 1.0) < epsilon:
+            return result
+    raise ArithmeticError("Incomplete beta continued fraction did not converge")
+
+
+def _regularized_beta(x: float, a: float, b: float) -> float:
+    if x <= 0:
+        return 0.0
+    if x >= 1:
+        return 1.0
+    factor = math.exp(
+        math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+        + a * math.log(x) + b * math.log1p(-x)
+    )
+    if x < (a + 1.0) / (a + b + 2.0):
+        return factor * _beta_continued_fraction(a, b, x) / a
+    return 1.0 - factor * _beta_continued_fraction(b, a, 1.0 - x) / b
+
+
+def _welch_test(left: list[float], right: list[float]) -> dict[str, float]:
+    if len(left) < 2 or len(right) < 2:
+        raise ValueError("Welch comparison requires at least two observations per group")
+    left_var, right_var = pstdev(left) ** 2 * len(left) / (len(left) - 1), pstdev(right) ** 2 * len(right) / (len(right) - 1)
+    left_term, right_term = left_var / len(left), right_var / len(right)
+    standard_error = math.sqrt(left_term + right_term)
+    if standard_error == 0:
+        raise ValueError("Welch comparison is undefined when both groups have zero variance")
+    statistic = (mean(left) - mean(right)) / standard_error
+    degrees = (left_term + right_term) ** 2 / (
+        left_term ** 2 / (len(left) - 1) + right_term ** 2 / (len(right) - 1)
+    )
+    p_value = _regularized_beta(
+        degrees / (degrees + statistic * statistic), degrees / 2.0, 0.5
+    )
+    pooled_variance = (
+        (len(left) - 1) * left_var + (len(right) - 1) * right_var
+    ) / (len(left) + len(right) - 2)
+    effect_size = (
+        (mean(left) - mean(right)) / math.sqrt(pooled_variance)
+        if pooled_variance > 0 else 0.0
+    )
+    return {
+        "mean_difference_left_minus_right": mean(left) - mean(right),
+        "welch_t": statistic,
+        "welch_degrees_of_freedom": degrees,
+        "two_sided_p_value": p_value,
+        "cohens_d_pooled_sd": effect_size,
+        "mean_difference_95pct_normal_approximation": [
+            mean(left) - mean(right) - 1.96 * standard_error,
+            mean(left) - mean(right) + 1.96 * standard_error,
+        ],
+    }
+
+
 class AdvancedResearch:
     def __init__(self, store: Store):
         self.store = store
@@ -183,6 +269,7 @@ class AdvancedResearch:
 
     def analyze_csv(
         self, experiment_id: str, csv_bytes: bytes, numeric_columns: list[str],
+        group_column: str | None = None, comparison_groups: list[str] | None = None,
     ) -> dict[str, Any]:
         experiment = self.store.get_research_experiment(experiment_id)
         if experiment is None:
@@ -229,6 +316,39 @@ class AdvancedResearch:
                 "min": min(values),
                 "max": max(values),
             }
+        comparison = None
+        if group_column is not None:
+            if group_column not in reader.fieldnames:
+                raise ValueError("Group column does not exist in the CSV header")
+            groups = comparison_groups or sorted({
+                (row.get(group_column) or "").strip() for row in rows
+                if (row.get(group_column) or "").strip()
+            })
+            if len(groups) != 2 or groups[0] == groups[1]:
+                raise ValueError("Grouped comparison requires exactly two distinct group labels")
+            comparison = {}
+            for column in requested:
+                grouped = {label: [] for label in groups}
+                for row_number, row in enumerate(rows, start=2):
+                    label = (row.get(group_column) or "").strip()
+                    raw = (row.get(column) or "").strip()
+                    if label not in grouped or not raw:
+                        continue
+                    try:
+                        value = float(raw)
+                    except ValueError as exc:
+                        raise ValueError(f"Non-numeric value in {column!r} at CSV row {row_number}") from exc
+                    if not math.isfinite(value):
+                        raise ValueError(f"Non-finite value in {column!r} at CSV row {row_number}")
+                    grouped[label].append(value)
+                comparison[column] = {
+                    "group_column": group_column,
+                    "left_group": groups[0],
+                    "right_group": groups[1],
+                    "left_n": len(grouped[groups[0]]),
+                    "right_n": len(grouped[groups[1]]),
+                    **_welch_test(grouped[groups[0]], grouped[groups[1]]),
+                }
         dataset_hash = sha256(csv_bytes).hexdigest()
         reproducibility = {
             "analysis_version": ANALYSIS_VERSION,
@@ -238,6 +358,7 @@ class AdvancedResearch:
             "columns": requested,
             "row_count": len(rows),
             "results": results,
+            "group_comparison": comparison,
         }
         fingerprint = sha256(
             json.dumps(reproducibility, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -246,7 +367,7 @@ class AdvancedResearch:
             "experiment_id": experiment_id,
             "reproducibility_fingerprint": fingerprint,
             **reproducibility,
-            "interpretation": "Descriptive statistics only. No causal inference, significance test, or hypothesis confirmation is performed.",
+            "interpretation": "Descriptive statistics and optional Welch two-sample comparison. Statistical assumptions, sampling design and confounding are not validated; no causal inference or hypothesis confirmation is performed.",
         }
         report_id = uuid4().hex
         self.store.save_research_report(
