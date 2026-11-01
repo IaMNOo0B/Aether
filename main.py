@@ -76,7 +76,7 @@ def main() -> int:
     print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
     print("          /research QUERY|ingest|verify|score|review /experiment create|start|complete|cancel|list|show")
-    print("          /review create|add|screen|resolve|finalize|show /citation-check /citation-review /citation-resolve /experiment analyze")
+    print("          /review create|add|screen|resolve|finalize|stage|adjudicate-stage|synthesize|show /citation-check /citation-review /citation-resolve /experiment analyze")
 
     while True:
         try:
@@ -591,6 +591,32 @@ def main() -> int:
                         continue
                     review = advanced.resolve_review_conflict(*[field.strip() for field in fields])
                     print("AETHER > Screening disagreement adjudicated.")
+                    continue
+                if action == "stage":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review stage REVIEW_ID | SOURCE_URL | full_text/risk_of_bias/extraction | REVIEWER_ID | PAYLOAD_JSON")
+                        continue
+                    result = advanced.record_review_stage(
+                        fields[0].strip(), fields[1].strip(), fields[2].strip(),
+                        fields[3].strip(), json.loads(fields[4])
+                    )
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "adjudicate-stage":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review adjudicate-stage REVIEW_ID | SOURCE_URL | STAGE | ADJUDICATOR_ID | PAYLOAD_JSON")
+                        continue
+                    result = advanced.resolve_review_stage(
+                        fields[0].strip(), fields[1].strip(), fields[2].strip(),
+                        fields[3].strip(), json.loads(fields[4])
+                    )
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "synthesize" and argument.strip():
+                    review = advanced.synthesize_review(argument.strip())
+                    print(json.dumps(review["final_summary"], indent=2))
                     continue
                 if action == "finalize" and argument.strip():
                     review = advanced.finalize_review(argument.strip())
