@@ -18,6 +18,7 @@ from aether.engine import AetherEngine
 from aether.learning import SkillLearner
 from aether.research import ResearchError, ResearchSource, Researcher
 from aether.research_quality import ResearchWorkflow
+from aether.research_advanced import AdvancedResearch
 from aether.resources import ResourceLimitExceeded
 from aether.scheduler import AutonomyScheduler
 from aether.self_engineering import SelfEngineer
@@ -75,6 +76,7 @@ def main() -> int:
     print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
     print("          /research QUERY|ingest|verify|score|review /experiment create|start|complete|cancel|list|show")
+    print("          /review create|add|screen|finalize|show /citation-check /citation-review /experiment analyze")
 
     while True:
         try:
@@ -378,6 +380,20 @@ def main() -> int:
                     )
                     print(f"AETHER > Experiment completed and outcome recorded: {experiment['id']}")
                     continue
+                if action == "analyze":
+                    fields = argument.split("|", 2)
+                    if len(fields) != 3:
+                        print("Usage: /experiment analyze ID | CSV_PATH | NUMERIC_COLUMNS_JSON")
+                        continue
+                    csv_path = Path(fields[1].strip())
+                    if not csv_path.is_file():
+                        print("AETHER > CSV file not found.")
+                        continue
+                    artifact = AdvancedResearch(store).analyze_csv(
+                        fields[0].strip(), csv_path.read_bytes(), json.loads(fields[2])
+                    )
+                    print(json.dumps(artifact, indent=2))
+                    continue
                 if action == "list":
                     print(json.dumps(store.list_research_experiments(), indent=2))
                     continue
@@ -481,6 +497,12 @@ def main() -> int:
                     settings.limits.max_research_results,
                 )
                 action, _, value = argument.partition(" ")
+                if action.casefold() == "web" and value.strip():
+                    sources = researcher.search_web(value.strip(), settings.limits.max_research_results)
+                    report = researcher.create_report(value.strip(), sources)
+                    print(f"AETHER > General web search report saved. ID: {report['id']}")
+                    print(report["content"])
+                    continue
                 if action.casefold() == "ingest" and value.strip():
                     source = workflow.ingest_url(value.strip())
                     report = researcher.create_report(
@@ -519,6 +541,78 @@ def main() -> int:
                 report = researcher.create_report(argument, sources)
                 print(f"AETHER > Research report saved. ID: {report['id']}")
                 print(report["content"])
+                continue
+
+
+            if lower.startswith("/review "):
+                parts = user_text[len("/review "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                advanced = AdvancedResearch(store)
+                if action == "create":
+                    fields = argument.split("|", 3)
+                    if len(fields) != 4:
+                        print("Usage: /review create QUESTION | INCLUSION_JSON_ARRAY | EXCLUSION_JSON_ARRAY | SEARCH_STRATEGY_JSON")
+                        continue
+                    review = advanced.create_systematic_review(
+                        fields[0].strip(), json.loads(fields[1]), json.loads(fields[2]), json.loads(fields[3])
+                    )
+                    print(f"AETHER > Systematic review protocol created: {review['id']}")
+                    continue
+                if action == "add":
+                    fields = argument.split("|", 1)
+                    if len(fields) != 2:
+                        print("Usage: /review add REVIEW_ID | RESEARCH_REPORT_ID")
+                        continue
+                    report = store.get_research_report(fields[1].strip())
+                    if report is None:
+                        print("AETHER > Research report not found.")
+                        continue
+                    print(json.dumps(advanced.add_review_sources(fields[0].strip(), [
+                        ResearchSource(**{key: item.get(key, "") for key in
+                            ("title", "url", "publisher", "published", "evidence_type", "summary")})
+                        for item in report["sources"]
+                    ]), indent=2))
+                    continue
+                if action == "screen":
+                    fields = argument.split("|", 3)
+                    if len(fields) != 4:
+                        print("Usage: /review screen REVIEW_ID | SOURCE_URL | include/exclude/uncertain | REASON")
+                        continue
+                    review = advanced.screen_source(*[field.strip() for field in fields])
+                    print(f"AETHER > Screening saved. Review status: {review['status']}")
+                    continue
+                if action == "finalize" and argument.strip():
+                    review = advanced.finalize_review(argument.strip())
+                    print(json.dumps(review["final_summary"], indent=2))
+                    continue
+                if action == "show" and argument.strip():
+                    review = store.get_systematic_review(argument.strip())
+                    print(json.dumps(review, indent=2) if review else "AETHER > Review not found.")
+                    continue
+                print("Usage: /review create|add|screen|finalize|show")
+                continue
+
+            if lower.startswith("/citation-check "):
+                fields = user_text[len("/citation-check "):].split("|", 3)
+                if len(fields) != 4:
+                    print("Usage: /citation-check CLAIM_TEXT | REPORT_ID | SOURCE_URL | EXACT_QUOTED_PASSAGE")
+                    continue
+                result = AdvancedResearch(store).check_citation_support(
+                    fields[0], fields[1].strip(), fields[2].strip(), fields[3]
+                )
+                print(json.dumps(result, indent=2))
+                continue
+
+            if lower.startswith("/citation-review "):
+                fields = user_text[len("/citation-review "):].split("|", 2)
+                if len(fields) != 3:
+                    print("Usage: /citation-review EVIDENCE_ID | supports/contradicts/insufficient | RATIONALE")
+                    continue
+                result = AdvancedResearch(store).adjudicate_citation(
+                    fields[0].strip(), fields[1].strip(), fields[2]
+                )
+                print(json.dumps(result, indent=2))
                 continue
 
             if lower == "/reports":
