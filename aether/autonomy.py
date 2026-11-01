@@ -503,6 +503,11 @@ class AutonomyRunner:
                     }
                     if any(action_key(candidate) in completed_keys for candidate in replanned):
                         raise RuntimeError("Replan attempted to repeat a completed action; rejected")
+                    failed_key = action_key(step)
+                    if any(action_key(candidate) == failed_key for candidate in replanned):
+                        raise RuntimeError("Replan repeated the failed action without changing it; rejected")
+                    if index + len(replanned) > self.limits.max_autonomy_steps:
+                        raise RuntimeError("Replanned task exceeds the configured total step limit")
                     id_map = {
                         candidate["id"]: f"replan-{replan_attempts + 1}-{candidate['id']}"
                         for candidate in replanned
@@ -641,6 +646,9 @@ class AutonomyRunner:
             raise RuntimeError("Interrupted task has no durable plan; create a new task instead")
         receipts = state.get("receipts", [])
         completed = set(state.get("completed_steps", []))
+        plan_ids = {step.get("id") for step in plan if isinstance(step, dict)}
+        if not completed.issubset(plan_ids):
+            raise RuntimeError("Interrupted task checkpoint has unknown completed step IDs")
         for receipt in receipts:
             if receipt.get("verification", {}).get("passed") is True:
                 completed.add(receipt.get("plan_step_id"))
