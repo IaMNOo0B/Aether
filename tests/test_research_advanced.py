@@ -153,3 +153,42 @@ def test_citation_disagreement_is_not_silently_resolved(tmp_path):
     result = workflow.adjudicate_citation(evidence["id"], "reviewer-b", "contradicts", "The context qualifies the result and does not support the broader claim.")
     assert result["human_decision"] is None
     assert result["review_status"] == "reviewer_disagreement_requires_resolution"
+    resolved = workflow.resolve_citation_conflict(
+        evidence["id"], "adjudicator-c", "insufficient",
+        "The evidence does not establish the full scope of the original claim."
+    )
+    assert resolved["human_decision"] == "insufficient"
+    assert resolved["review_status"] == "resolved_by_third_reviewer"
+
+
+def test_grouped_experiment_analysis_is_reproducible(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    store.create_research_experiment(
+        "exp-groups", "Control vs treatment", None,
+        {"objective": "Compare groups", "method": "Collect scores", "success_criteria": "Treatment mean higher"},
+    )
+    store.transition_research_experiment("exp-groups", "running")
+    workflow = AdvancedResearch(store)
+    data = b"group,score\ncontrol,10\ncontrol,11\ncontrol,12\ntreatment,20\ntreatment,21\ntreatment,22\n"
+    first = workflow.analyze_csv("exp-groups", data, ["score"], "group", ["treatment", "control"])
+    second = workflow.analyze_csv("exp-groups", data, ["score"], "group", ["treatment", "control"])
+    result = first["group_comparison"]["score"]
+    assert result["left_group"] == "treatment"
+    assert result["mean_difference_left_minus_right"] == 10
+    assert 0 <= result["two_sided_p_value"] <= 1
+    assert first["reproducibility_fingerprint"] == second["reproducibility_fingerprint"]
+
+
+def test_grouped_analysis_rejects_unrequested_third_group(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    store.create_research_experiment(
+        "exp-three", "Three groups", None,
+        {"objective": "Compare", "method": "Sample", "success_criteria": "No third group"},
+    )
+    store.transition_research_experiment("exp-three", "running")
+    with pytest.raises(ValueError, match="outside the requested two-group"):
+        AdvancedResearch(store).analyze_csv(
+            "exp-three",
+            b"group,score\na,1\na,2\nb,3\nb,4\nc,5\nc,6\n",
+            ["score"], "group", ["a", "b"],
+        )
