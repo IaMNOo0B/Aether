@@ -236,6 +236,20 @@ class AdvancedResearch:
             "reviewers": reviewers,
         }
 
+    @staticmethod
+    def _validate_extraction_payload(payload: dict[str, Any]) -> None:
+        required = {"study_design", "population", "sample_size", "outcome", "effect_measure", "effect_estimate", "standard_error"}
+        if not required.issubset(payload):
+            raise ValueError("Extraction requires study_design, population, sample_size, outcome, effect_measure, effect_estimate and standard_error")
+        if isinstance(payload["sample_size"], bool) or int(payload["sample_size"]) < 1:
+            raise ValueError("sample_size must be a positive integer")
+        estimate, standard_error = float(payload["effect_estimate"]), float(payload["standard_error"])
+        if not math.isfinite(estimate) or not math.isfinite(standard_error) or standard_error <= 0:
+            raise ValueError("effect_estimate must be finite and standard_error must be finite and positive")
+        for key in ("study_design", "population", "outcome", "effect_measure"):
+            if not str(payload[key]).strip():
+                raise ValueError(f"{key} must not be empty")
+
     def record_review_stage(
         self, review_id: str, source_key: str, stage: str,
         reviewer_id: str, payload: dict[str, Any],
@@ -261,14 +275,7 @@ class AdvancedResearch:
                 if not isinstance(item, dict) or item.get("rating") not in valid or len(str(item.get("rationale", "")).strip()) < 12:
                     raise ValueError(f"Risk-of-bias domain {name} requires a valid rating and rationale")
         elif stage == "extraction":
-            required = {"study_design", "population", "sample_size", "outcome", "effect_measure", "effect_estimate", "standard_error"}
-            if not required.issubset(payload):
-                raise ValueError("Extraction requires study_design, population, sample_size, outcome, effect_measure, effect_estimate and standard_error")
-            if isinstance(payload["sample_size"], bool) or int(payload["sample_size"]) < 1:
-                raise ValueError("sample_size must be a positive integer")
-            estimate, standard_error = float(payload["effect_estimate"]), float(payload["standard_error"])
-            if not math.isfinite(estimate) or not math.isfinite(standard_error) or standard_error <= 0:
-                raise ValueError("effect_estimate must be finite and standard_error must be finite and positive")
+            self._validate_extraction_payload(payload)
         else:
             raise ValueError("Stage must be full_text, risk_of_bias or extraction")
         self.store.record_systematic_review_assessment(
@@ -292,9 +299,7 @@ class AdvancedResearch:
         elif stage == "risk_of_bias":
             self._validate_risk_domains(payload)
         elif stage == "extraction":
-            required = {"study_design", "population", "sample_size", "outcome", "effect_measure", "effect_estimate", "standard_error"}
-            if not required.issubset(payload) or float(payload["standard_error"]) <= 0:
-                raise ValueError("Adjudicated extraction is missing required fields or has invalid standard error")
+            self._validate_extraction_payload(payload)
         reviewers = {item["reviewer_id"] for item in current["reviewers"]}
         if adjudicator_id in reviewers:
             raise ValueError("Adjudicator must be distinct from both reviewers")
