@@ -192,3 +192,78 @@ def test_grouped_analysis_rejects_unrequested_third_group(tmp_path):
             b"group,score\na,1\na,2\nb,3\nb,4\nc,5\nc,6\n",
             ["score"], "group", ["a", "b"],
         )
+
+
+def _risk_payload():
+    domains = {}
+    for name in ["randomization", "deviations", "missing_data", "outcome_measurement", "selective_reporting"]:
+        domains[name] = {"rating": "low", "rationale": "The study report provides enough detail to assess this domain."}
+    return {"domains": domains}
+
+
+def _extraction(effect):
+    return {
+        "study_design": "randomized controlled trial",
+        "population": "Adults with condition X",
+        "sample_size": 120,
+        "outcome": "response time",
+        "effect_measure": "mean_difference_ms",
+        "effect_estimate": effect,
+        "standard_error": 2.0,
+    }
+
+
+def test_full_systematic_review_requires_two_reviewers_and_runs_meta_analysis(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    workflow = AdvancedResearch(store)
+    review = workflow.create_systematic_review(
+        "Does intervention X reduce response time?",
+        ["Adult human studies"], ["Animal studies"],
+        {"databases": ["Crossref", "DuckDuckGo"], "queries": ["intervention X response time"], "searched_on": "2026-11-01"},
+    )
+    sources = [
+        sample_source("https://example.org/study-a"),
+        sample_source("https://example.org/study-b"),
+    ]
+    workflow.add_review_sources(review["id"], sources)
+    for source in sources:
+        key = source.url
+        workflow.screen_source(review["id"], key, "screen-a", "include", "The abstract meets the prespecified population and outcome criteria.")
+        workflow.screen_source(review["id"], key, "screen-b", "include", "The abstract independently meets the population and outcome criteria.")
+    workflow.finalize_review(review["id"])
+    for index, source in enumerate(sources):
+        key = source.url
+        full_text = {"decision": "include", "rationale": "Full text confirms eligible population and prespecified outcome.", "text_locator": "Results, paragraph 2"}
+        risk = _risk_payload()
+        extraction = _extraction(float(index + 1) * 3.0)
+        for reviewer in ["review-a", "review-b"]:
+            assert workflow.record_review_stage(review["id"], key, "full_text", reviewer, full_text)["status"] == "agreed"
+            assert workflow.record_review_stage(review["id"], key, "risk_of_bias", reviewer, risk)["status"] == "agreed"
+            assert workflow.record_review_stage(review["id"], key, "extraction", reviewer, extraction)["status"] == "agreed"
+    synthesized = workflow.synthesize_review(review["id"])
+    summary = synthesized["final_summary"]
+    assert synthesized["status"] == "synthesized"
+    assert summary["meta_analysis"]["studies"] == 2
+    assert summary["meta_analysis"]["model"] == "DerSimonian-Laird random effects"
+    assert len(summary["included_studies"]) == 2
+
+
+def test_systematic_review_cannot_synthesize_with_unresolved_full_text_stage(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    workflow = AdvancedResearch(store)
+    review = workflow.create_systematic_review(
+        "Does intervention X improve outcome Y?",
+        ["Human studies"], ["Animal studies"],
+        {"databases": ["Crossref"], "queries": ["intervention X"], "searched_on": "2026-11-01"},
+    )
+    source = sample_source()
+    workflow.add_review_sources(review["id"], [source])
+    workflow.screen_source(review["id"], source.url, "screen-a", "include", "The abstract matches the inclusion criteria.")
+    workflow.screen_source(review["id"], source.url, "screen-b", "include", "The abstract matches the inclusion criteria independently.")
+    workflow.finalize_review(review["id"])
+    workflow.record_review_stage(
+        review["id"], source.url, "full_text", "review-a",
+        {"decision": "include", "rationale": "Full text seems to match the eligibility requirements.", "text_locator": "Methods section"},
+    )
+    with pytest.raises(ValueError, match="Full-text eligibility"):
+        workflow.synthesize_review(review["id"])
