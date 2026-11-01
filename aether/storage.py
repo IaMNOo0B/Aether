@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 import json
 import os
+from contextlib import closing
 import tempfile
 import math
 import sqlite3
@@ -710,7 +711,7 @@ class Store:
         os.close(fd)
         temporary = Path(temporary_name)
         try:
-            with sqlite3.connect(self.path) as source, sqlite3.connect(temporary) as backup:
+            with closing(sqlite3.connect(self.path)) as source, closing(sqlite3.connect(temporary)) as backup:
                 source.backup(backup)
                 result = backup.execute("PRAGMA integrity_check").fetchone()
                 if not result or result[0] != "ok":
@@ -739,7 +740,7 @@ class Store:
         os.close(fd)
         temporary = Path(temporary_name)
         try:
-            with sqlite3.connect(source) as candidate:
+            with closing(sqlite3.connect(source)) as candidate:
                 check = candidate.execute("PRAGMA integrity_check").fetchone()
                 if not check or check[0] != "ok":
                     raise ValueError("Restore source failed SQLite integrity_check")
@@ -751,15 +752,18 @@ class Store:
                 required = {"messages", "memories", "tasks", "skills"}
                 if not required.issubset(tables):
                     raise ValueError("Restore source is not a compatible AETHER database")
-                with sqlite3.connect(temporary) as staged:
+                with closing(sqlite3.connect(temporary)) as staged:
                     candidate.backup(staged)
                     staged_check = staged.execute("PRAGMA integrity_check").fetchone()
                     if not staged_check or staged_check[0] != "ok":
                         raise ValueError("Staged restore failed SQLite integrity_check")
-            with self._connect() as live:
+            live = self._connect()
+            try:
                 checkpoint = live.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
                 if checkpoint and checkpoint[0] != 0:
                     raise RuntimeError("Could not checkpoint the live database; stop other AETHER processes")
+            finally:
+                live.close()
             os.replace(temporary, self.path)
             Path(str(self.path) + "-wal").unlink(missing_ok=True)
             Path(str(self.path) + "-shm").unlink(missing_ok=True)
@@ -772,17 +776,18 @@ class Store:
         if memory_id not in records:
             raise KeyError(f"Unknown memory: {memory_id}")
         current = records[memory_id]
-        visited: set[int] = set()
+        backward_seen: set[int] = set()
         while current["metadata"].get("supersedes_memory_id") is not None:
-            if current["id"] in visited:
+            if current["id"] in backward_seen:
                 raise RuntimeError("Memory correction history contains a cycle")
-            visited.add(current["id"])
+            backward_seen.add(current["id"])
             parent_id = current["metadata"]["supersedes_memory_id"]
             parent = records.get(parent_id)
             if parent is None or parent["metadata"].get("superseded_by_id") != current["id"]:
                 raise RuntimeError("Memory correction history has a broken predecessor link")
             current = parent
         lineage = []
+        visited: set[int] = set()
         while True:
             if current["id"] in visited:
                 raise RuntimeError("Memory correction history contains a cycle")
