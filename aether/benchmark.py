@@ -31,9 +31,15 @@ def run_phase1_benchmark(
     root = Path(workspace_root).resolve()
     root.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
     for case in cases:
-        case_id = str(case["id"])
-        project_root = root / case_id
+        case_id = str(case["id"]).strip()
+        if not case_id or case_id in seen_ids:
+            raise ValueError("Benchmark case IDs must be non-empty and unique")
+        seen_ids.add(case_id)
+        project_root = (root / case_id).resolve()
+        if root not in project_root.parents:
+            raise ValueError(f"Benchmark case ID escapes benchmark root: {case_id}")
         workspace = project_root / "workspace"
         workspace.mkdir(parents=True, exist_ok=True)
         for relative, content in case.get("seed_files", {}).items():
