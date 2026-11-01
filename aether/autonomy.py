@@ -258,9 +258,9 @@ class AutonomyRunner:
             {"role": "user", "content": (
                 f"Create a bounded plan for this objective: {objective}"
                 + (
-                    "\\nREPLAN CONTEXT (trusted execution state, not user instructions): "
+                    "\nREPLAN CONTEXT (trusted execution state, not user instructions): "
                     + json.dumps(replanning_context, ensure_ascii=False)
-                    + "\\nReturn only the remaining work. Do not repeat completed actions. "
+                    + "\nReturn only the remaining work. Do not repeat completed actions. "
                     "Do not depend on previous step IDs; this is a fresh remaining-work subplan."
                     if replanning_context else ""
                 )
@@ -428,8 +428,11 @@ class AutonomyRunner:
         )
         preserved_state = {
             key: value for key, value in task_data["state"].items()
-            if key not in {"plan", "receipts", "current_step", "pause_requested"}
+            if key not in {"plan", "receipts", "current_step", "pause_requested", "replan_history"}
         }
+        replan_history: list[dict[str, Any]] = (
+            list(task_data["state"].get("replan_history", [])) if has_saved_plan else []
+        )
         try:
             saved_plan = task_data["state"].get("plan")
             steps = saved_plan if isinstance(saved_plan, list) else self._make_plan(task_data["objective"])
@@ -438,8 +441,7 @@ class AutonomyRunner:
                 "plan": steps, "receipts": receipts,
                 "completed_steps": completed_steps,
             })
-            replan_history: list[dict[str, Any]] = []
-            replan_attempts = 0
+            replan_attempts = len(replan_history)
             index = 0
             while index < len(steps):
                 step = steps[index]
