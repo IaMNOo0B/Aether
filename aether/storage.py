@@ -18,6 +18,16 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class _ClosingConnection(sqlite3.Connection):
+    """Connection context manager that also releases OS file handles on exit."""
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 class Store:
     def __init__(self, database_path: str | Path):
         self.path = Path(database_path)
@@ -25,7 +35,9 @@ class Store:
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.path, timeout=15)
+        connection = sqlite3.connect(
+            self.path, timeout=15, factory=_ClosingConnection
+        )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA foreign_keys=ON")
