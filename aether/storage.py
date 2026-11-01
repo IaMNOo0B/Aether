@@ -233,7 +233,7 @@ class Store:
                     id TEXT PRIMARY KEY,
                     protocol_json TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'screening'
-                        CHECK(status IN ('screening', 'screening_complete_synthesis_pending')),
+                        CHECK(status IN ('screening', 'screening_complete_synthesis_pending', 'synthesized')),
                     final_summary_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -250,6 +250,23 @@ class Store:
                     PRIMARY KEY(review_id, source_key),
                     FOREIGN KEY(review_id) REFERENCES systematic_reviews(id) ON DELETE CASCADE
                 );
+                CREATE TABLE IF NOT EXISTS systematic_review_assessments (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    review_id TEXT NOT NULL,
+                    source_key TEXT NOT NULL,
+                    stage TEXT NOT NULL CHECK(stage IN ('full_text', 'risk_of_bias', 'extraction')),
+                    reviewer_id TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'reviewer'
+                        CHECK(role IN ('reviewer', 'adjudicator')),
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(review_id, source_key, stage, reviewer_id),
+                    FOREIGN KEY(review_id) REFERENCES systematic_reviews(id) ON DELETE CASCADE,
+                    FOREIGN KEY(review_id, source_key)
+                        REFERENCES systematic_review_sources(review_id, source_key) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_review_assessments
+                    ON systematic_review_assessments(review_id, source_key, stage, sequence);
                 CREATE TABLE IF NOT EXISTS citation_evidence (
                     id TEXT PRIMARY KEY,
                     evidence_json TEXT NOT NULL,
@@ -1781,6 +1798,76 @@ class Store:
                    SET reviewer_decisions_json=?, decision=?, reason=?, screened_at=?
                    WHERE review_id=? AND source_key=?""",
                 (json.dumps(decisions), decision, rationale.strip(), utc_now(), review_id, source_key),
+            )
+
+
+    def record_systematic_review_assessment(
+        self, review_id: str, source_key: str, stage: str,
+        reviewer_id: str, payload: dict[str, Any], role: str = "reviewer",
+    ) -> None:
+        reviewer = reviewer_id.strip()
+        if not reviewer or len(reviewer) > 120:
+            raise ValueError("Reviewer ID must contain 1..120 characters")
+        if stage not in {"full_text", "risk_of_bias", "extraction"}:
+            raise ValueError("Unknown systematic review assessment stage")
+        if role not in {"reviewer", "adjudicator"} or not isinstance(payload, dict) or not payload:
+            raise ValueError("Assessment requires a valid role and non-empty JSON object")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            review = db.execute(
+                "SELECT status FROM systematic_reviews WHERE id=?", (review_id,)
+            ).fetchone()
+            if review is None:
+                raise KeyError(f"Unknown systematic review: {review_id}")
+            if review["status"] != "screening_complete_synthesis_pending":
+                raise ValueError("Full-text assessments require completed title/abstract screening")
+            source = db.execute(
+                "SELECT decision FROM systematic_review_sources WHERE review_id=? AND source_key=?",
+                (review_id, source_key),
+            ).fetchone()
+            if source is None or source["decision"] != "include":
+                raise ValueError("Only title/abstract-included sources can enter full-text assessment")
+            db.execute(
+                """INSERT INTO systematic_review_assessments
+                   (review_id, source_key, stage, reviewer_id, role, payload_json, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (review_id, source_key, stage, reviewer, role, json.dumps(payload), utc_now()),
+            )
+
+    def list_systematic_review_assessments(
+        self, review_id: str, source_key: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = """SELECT sequence, review_id, source_key, stage, reviewer_id,
+                          role, payload_json, created_at
+                   FROM systematic_review_assessments WHERE review_id=?"""
+        parameters: list[Any] = [review_id]
+        if source_key is not None:
+            query += " AND source_key=?"
+            parameters.append(source_key)
+        query += " ORDER BY sequence"
+        with self._connect() as db:
+            rows = db.execute(query, tuple(parameters)).fetchall()
+        return [
+            {**dict(row), "payload": json.loads(row["payload_json"])}
+            for row in rows
+        ]
+
+    def complete_systematic_review_synthesis(
+        self, review_id: str, synthesis: dict[str, Any],
+    ) -> None:
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status FROM systematic_reviews WHERE id=?", (review_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown systematic review: {review_id}")
+            if row["status"] != "screening_complete_synthesis_pending":
+                raise ValueError("Review is not ready for evidence synthesis")
+            db.execute(
+                """UPDATE systematic_reviews SET status='synthesized',
+                   final_summary_json=?, updated_at=? WHERE id=?""",
+                (json.dumps(synthesis), utc_now(), review_id),
             )
 
     def finalize_systematic_review(self, review_id: str, summary: dict[str, Any]) -> None:
