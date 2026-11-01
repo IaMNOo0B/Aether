@@ -570,11 +570,13 @@ def main() -> int:
                     if report is None:
                         print("AETHER > Research report not found.")
                         continue
-                    print(json.dumps(advanced.add_review_sources(fields[0].strip(), [
-                        ResearchSource(**{key: item.get(key, "") for key in
+                    print(json.dumps(advanced.add_review_sources(
+                        fields[0].strip(),
+                        [ResearchSource(**{key: item.get(key, "") for key in
                             ("title", "url", "publisher", "published", "evidence_type", "summary", "full_text")})
-                        for item in report["sources"]
-                    ]), indent=2))
+                         for item in report["sources"]],
+                        search_report_id=fields[1].strip(),
+                    ), indent=2))
                     continue
                 if action == "screen":
                     fields = argument.split("|", 4)
