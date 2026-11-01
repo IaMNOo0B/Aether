@@ -397,8 +397,8 @@ class AutonomyRunner:
         task_data = self.store.get_task(task_id)
         if task_data is None:
             raise KeyError(f"Unknown task: {task_id}")
-        if task_data["status"] != "queued":
-            raise ValueError(f"Task is not queued: {task_data['status']}")
+        if task_data["status"] not in {"queued", "paused"}:
+            raise ValueError(f"Task is not queued or paused: {task_data['status']}")
         if task_data["state"].get("kind") != "autonomy":
             raise ValueError("Task was not created by the autonomy queue")
         if self.store.emergency_stop_enabled():
@@ -407,21 +407,39 @@ class AutonomyRunner:
                 **task_data["state"], "emergency_stop": True, "reason": reason,
             })
             return {"task_id": task_id, "status": "cancelled", "reason": reason}
-        self.tasks.transition(task_id, "running")
-        receipts: list[dict[str, Any]] = []
-        completed_steps: list[str] = []
+        resuming_paused = task_data["status"] == "paused"
+        self.tasks.transition(task_id, "running", task_data["state"])
+        receipts: list[dict[str, Any]] = (
+            list(task_data["state"].get("receipts", [])) if resuming_paused else []
+        )
+        completed_steps: list[str] = (
+            list(task_data["state"].get("completed_steps", [])) if resuming_paused else []
+        )
         preserved_state = {
             key: value for key, value in task_data["state"].items()
-            if key not in {"plan", "receipts", "current_step"}
+            if key not in {"plan", "receipts", "current_step", "pause_requested"}
         }
         try:
-            steps = self._make_plan(task_data["objective"])
+            saved_plan = task_data["state"].get("plan")
+            steps = saved_plan if resuming_paused and isinstance(saved_plan, list) else self._make_plan(task_data["objective"])
             self.tasks.checkpoint(task_id, {
                 **preserved_state, "kind": "autonomy",
                 "plan": steps, "receipts": receipts,
                 "completed_steps": completed_steps,
             })
             for index, step in enumerate(steps, start=1):
+                if step["id"] in completed_steps:
+                    continue
+                latest = self.store.get_task(task_id)
+                if latest and latest["state"].get("pause_requested"):
+                    paused_state = dict(latest["state"])
+                    paused_state.pop("pause_requested", None)
+                    self.tasks.transition(task_id, "paused", paused_state)
+                    return {
+                        "task_id": task_id, "status": "paused",
+                        "receipts": receipts, "completed_steps": completed_steps,
+                        "reason": "Pause requested; task stopped at a safe step boundary.",
+                    }
                 if not set(step["depends_on"]).issubset(completed_steps):
                     raise RuntimeError(
                         f"Plan dependency is not satisfied before step {step['id']}"
@@ -463,6 +481,16 @@ class AutonomyRunner:
                     "completed_steps": completed_steps,
                     "current_step": index,
                 })
+                latest = self.store.get_task(task_id)
+                if latest and latest["state"].get("pause_requested"):
+                    paused_state = dict(latest["state"])
+                    paused_state.pop("pause_requested", None)
+                    self.tasks.transition(task_id, "paused", paused_state)
+                    return {
+                        "task_id": task_id, "status": "paused",
+                        "receipts": receipts, "completed_steps": completed_steps,
+                        "reason": "Pause requested; task stopped at a safe step boundary.",
+                    }
             tool_results_verified = (
                 len(completed_steps) == len(steps)
                 and all(item["verification"]["passed"] for item in receipts)
@@ -513,6 +541,41 @@ class AutonomyRunner:
                 "error_type": type(exc).__name__, "error": str(exc)[:1000],
             })
             raise
+
+    def resume_task(
+        self, task_id: str, approval: ApprovalCallback | None = None
+    ) -> dict[str, Any]:
+        """Resume a paused task, or an interrupted task only when its next step is safe to replay."""
+        task = self.store.get_task(task_id)
+        if task is None:
+            raise KeyError(f"Unknown task: {task_id}")
+        if task["status"] == "paused":
+            return self.run_task(task_id, approval)
+        if task["status"] != "failed" or task["state"].get("recovery", {}).get("status") != "interrupted":
+            raise ValueError("Only paused tasks or interrupted tasks can be resumed")
+        state = dict(task["state"])
+        plan = state.get("plan")
+        if not isinstance(plan, list) or not plan:
+            raise RuntimeError("Interrupted task has no durable plan; create a new task instead")
+        receipts = state.get("receipts", [])
+        completed = set(state.get("completed_steps", []))
+        for receipt in receipts:
+            if receipt.get("verification", {}).get("passed") is True:
+                completed.add(receipt.get("plan_step_id"))
+            elif receipt.get("plan_step_id"):
+                raise RuntimeError("Interrupted task contains an unverified receipt; manual review required")
+        pending = next((step for step in plan if step.get("id") not in completed), None)
+        safe_to_replay = {"workspace.read", "workspace.list", "world.state", "world.actions"}
+        if pending is not None and pending.get("tool") not in safe_to_replay:
+            raise RuntimeError(
+                "Interrupted task's next step may have side effects; automatic replay is blocked"
+            )
+        state["completed_steps"] = [step["id"] for step in plan if step.get("id") in completed]
+        state.pop("recovery", None)
+        state.pop("pause_requested", None)
+        state["resumed_from_interruption"] = True
+        self.tasks.transition(task_id, "queued", state)
+        return self.run_task(task_id, approval)
 
     def run_pending(
         self, approval: ApprovalCallback | None = None, max_tasks: int = 3
