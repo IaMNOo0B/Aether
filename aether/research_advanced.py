@@ -207,8 +207,8 @@ class AdvancedResearch:
             "included_sources": [item["source"] for item in included],
             "status": "screening_complete_synthesis_pending",
             "limitations": [
-                "Screening decisions are single-reviewer unless independent reviewers are separately recorded.",
-                "Full-text eligibility, risk-of-bias assessment and evidence synthesis are not inferred from title/abstract screening.",
+                "Title/abstract screening requires two distinct operator-supplied reviewer IDs; those IDs are not authenticated identities.",
+                "Full-text eligibility, risk-of-bias assessment, extraction and synthesis require separate explicit records.",
                 "No PRISMA compliance or meta-analysis is claimed.",
             ],
         }
