@@ -76,7 +76,7 @@ def main() -> int:
     print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
     print("          /research QUERY|ingest|verify|score|review /experiment create|start|complete|cancel|list|show")
-    print("          /review create|add|screen|resolve|finalize|show /citation-check /citation-review /experiment analyze")
+    print("          /review create|add|screen|resolve|finalize|show /citation-check /citation-review /citation-resolve /experiment analyze")
 
     while True:
         try:
@@ -381,16 +381,18 @@ def main() -> int:
                     print(f"AETHER > Experiment completed and outcome recorded: {experiment['id']}")
                     continue
                 if action == "analyze":
-                    fields = argument.split("|", 2)
-                    if len(fields) != 3:
-                        print("Usage: /experiment analyze ID | CSV_PATH | NUMERIC_COLUMNS_JSON")
+                    fields = argument.split("|", 3)
+                    if len(fields) not in {3, 4}:
+                        print("Usage: /experiment analyze ID | CSV_PATH | NUMERIC_COLUMNS_JSON | OPTIONAL_GROUP_CONFIG_JSON")
                         continue
                     csv_path = Path(fields[1].strip())
                     if not csv_path.is_file():
                         print("AETHER > CSV file not found.")
                         continue
+                    group_config = json.loads(fields[3]) if len(fields) == 4 else {}
                     artifact = AdvancedResearch(store).analyze_csv(
-                        fields[0].strip(), csv_path.read_bytes(), json.loads(fields[2])
+                        fields[0].strip(), csv_path.read_bytes(), json.loads(fields[2]),
+                        group_config.get("group_column"), group_config.get("comparison_groups")
                     )
                     print(json.dumps(artifact, indent=2))
                     continue
@@ -622,6 +624,17 @@ def main() -> int:
                 )
                 print(json.dumps(result, indent=2))
                 print("AETHER > Two distinct reviewer IDs are required for agreement; IDs are operator-supplied, not authenticated.")
+                continue
+
+            if lower.startswith("/citation-resolve "):
+                fields = user_text[len("/citation-resolve "):].split("|", 3)
+                if len(fields) != 4:
+                    print("Usage: /citation-resolve EVIDENCE_ID | ADJUDICATOR_ID | supports/contradicts/insufficient | RATIONALE")
+                    continue
+                result = AdvancedResearch(store).resolve_citation_conflict(
+                    fields[0].strip(), fields[1].strip(), fields[2].strip(), fields[3]
+                )
+                print(json.dumps(result, indent=2))
                 continue
 
             if lower == "/reports":
