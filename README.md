@@ -42,9 +42,13 @@ AETHER never downloads models automatically. Phi-3 Mini's 4K context and model c
 
 - `/research <question>` searches Crossref scholarly records, arXiv preprints, and Wikipedia summaries.
 - Research reports retain source URLs, publisher, date, evidence class, and limitations in SQLite.
+- `/research ingest URL` extracts up to 12,000 characters from a public HTML/plain-text page and saves it as a report. Redirects are not followed; ingest the reviewed destination URL separately.
+- `/research score REPORT_ID` shows transparent source-triage scores and their component factors/caveats. Scores are not truth probabilities.
+- `/research verify REPORT_ID` checks source URL reachability and report membership only. It does **not** verify that a source supports a claim.
+- `/research review QUERY` saves a reproducible evidence inventory with all results awaiting human screening; no source is silently excluded.
 - `/reports` lists saved reports.
 
-This is a bounded source adapter, not a general-purpose web crawler or a systematic literature review. Search ranking is not evidence quality.
+Research fetching rejects localhost/private-network targets, non-HTTP schemes, embedded credentials, non-standard ports, redirects, unsupported content types, and responses above 2 MB. Full-text ingestion is not a crawler: it fetches only URLs explicitly supplied by the operator. Citation reachability is not citation-support verification. The review command creates an evidence inventory and protocol checklist; it does not claim a completed systematic review, PRISMA compliance, risk-of-bias assessment, or meta-analysis.
 
 ### Bounded autonomous execution
 
