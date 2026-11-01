@@ -110,3 +110,20 @@ def test_memory_conflicts_ignore_superseded_versions(tmp_path):
     )
     manager.correct(old, "Corrected model note", "Old note was inaccurate")
     assert manager.find_contradictions() == []
+
+
+
+def test_remember_fact_creates_structured_claim_for_conflict_review(tmp_path):
+    manager = MemoryManager(Store(tmp_path / "memory.sqlite3"))
+    first = manager.remember_fact("AETHER", "default model", "alpha")
+    second = manager.remember_fact("aether", "default model", "beta")
+    assert len(manager.find_contradictions(second)) == 1
+    assert [item["id"] for item in manager.versions(first)] == [first]
+
+
+def test_memory_conflict_results_are_bounded(tmp_path):
+    manager = MemoryManager(Store(tmp_path / "memory.sqlite3"))
+    manager.remember_fact("service", "region", "north")
+    manager.remember_fact("service", "region", "south")
+    manager.remember_fact("service", "region", "east")
+    assert len(manager.find_contradictions(limit=1)) == 1
