@@ -1861,6 +1861,40 @@ class Store:
                 (json.dumps(evidence), utc_now(), evidence_id),
             )
 
+
+    def resolve_citation_evidence(
+        self, evidence_id: str, adjudicator_id: str,
+        decision: str, rationale: str,
+    ) -> None:
+        adjudicator = adjudicator_id.strip()
+        if not adjudicator or len(adjudicator) > 120:
+            raise ValueError("Adjudicator ID must contain 1..120 characters")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT evidence_json FROM citation_evidence WHERE id=?", (evidence_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown citation evidence: {evidence_id}")
+            evidence = json.loads(row["evidence_json"])
+            reviews = evidence.setdefault("reviewer_decisions", [])
+            if evidence.get("review_status") != "reviewer_disagreement_requires_resolution":
+                raise ValueError("Citation evidence has no unresolved reviewer disagreement")
+            if any(item["reviewer_id"] == adjudicator for item in reviews):
+                raise ValueError("Adjudicator must be distinct from both reviewers")
+            reviews.append({
+                "reviewer_id": adjudicator, "decision": decision,
+                "rationale": rationale, "role": "adjudicator",
+                "adjudicated_at": utc_now(),
+            })
+            evidence["human_decision"] = decision
+            evidence["review_status"] = "resolved_by_third_reviewer"
+            evidence["resolution_rationale"] = rationale
+            db.execute(
+                "UPDATE citation_evidence SET evidence_json=?, updated_at=? WHERE id=?",
+                (json.dumps(evidence), utc_now(), evidence_id),
+            )
+
     def append_research_experiment_event(
         self, experiment_id: str, event_type: str, payload: dict[str, Any],
     ) -> None:
