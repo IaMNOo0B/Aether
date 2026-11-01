@@ -254,17 +254,24 @@ class AdvancedResearch:
 
     @staticmethod
     def _validate_extraction_payload(payload: dict[str, Any]) -> None:
-        required = {"study_design", "population", "sample_size", "outcome", "effect_measure", "effect_estimate", "standard_error"}
+        required = {"study_design", "population", "sample_size", "outcome", "findings"}
         if not required.issubset(payload):
-            raise ValueError("Extraction requires study_design, population, sample_size, outcome, effect_measure, effect_estimate and standard_error")
+            raise ValueError("Extraction requires study_design, population, sample_size, outcome and findings")
         if isinstance(payload["sample_size"], bool) or int(payload["sample_size"]) < 1:
             raise ValueError("sample_size must be a positive integer")
-        estimate, standard_error = float(payload["effect_estimate"]), float(payload["standard_error"])
-        if not math.isfinite(estimate) or not math.isfinite(standard_error) or standard_error <= 0:
-            raise ValueError("effect_estimate must be finite and standard_error must be finite and positive")
-        for key in ("study_design", "population", "outcome", "effect_measure"):
+        for key in ("study_design", "population", "outcome", "findings"):
             if not str(payload[key]).strip():
                 raise ValueError(f"{key} must not be empty")
+        quantitative = {"effect_measure", "effect_estimate", "standard_error"}
+        supplied = quantitative & set(payload)
+        if supplied and supplied != quantitative:
+            raise ValueError("Quantitative extraction must supply effect_measure, effect_estimate and standard_error together")
+        if supplied:
+            estimate, standard_error = float(payload["effect_estimate"]), float(payload["standard_error"])
+            if not str(payload["effect_measure"]).strip():
+                raise ValueError("effect_measure must not be empty")
+            if not math.isfinite(estimate) or not math.isfinite(standard_error) or standard_error <= 0:
+                raise ValueError("effect_estimate must be finite and standard_error must be finite and positive")
 
     def record_review_stage(
         self, review_id: str, source_key: str, stage: str,
@@ -366,9 +373,16 @@ class AdvancedResearch:
                 "risk_of_bias": risk["payload"],
                 "extraction": extraction["payload"],
             })
-        effect_measures = {item["extraction"]["effect_measure"] for item in included}
+        quantitative_complete = all(
+            {"effect_measure", "effect_estimate", "standard_error"}.issubset(item["extraction"])
+            for item in included
+        )
+        effect_measures = {
+            item["extraction"].get("effect_measure")
+            for item in included if "effect_measure" in item["extraction"]
+        }
         meta_analysis = None
-        if len(included) >= 2 and len(effect_measures) == 1:
+        if len(included) >= 2 and quantitative_complete and len(effect_measures) == 1:
             rows = [item["extraction"] for item in included]
             estimates = [float(item["effect_estimate"]) for item in rows]
             variances = [float(item["standard_error"]) ** 2 for item in rows]
@@ -396,6 +410,8 @@ class AdvancedResearch:
             }
         if len(included) < 2:
             meta_analysis_status = "not_performed_fewer_than_two_eligible_studies"
+        elif not quantitative_complete:
+            meta_analysis_status = "not_performed_incomplete_quantitative_effect_data"
         elif len(effect_measures) != 1:
             meta_analysis_status = "not_performed_incompatible_effect_measure_labels"
         else:
