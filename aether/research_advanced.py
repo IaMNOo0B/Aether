@@ -84,13 +84,20 @@ class AdvancedResearch:
         return {"review_id": review_id, "submitted": len(sources), "added_or_already_present": added}
 
     def screen_source(
-        self, review_id: str, source_key: str, decision: str, reason: str,
+        self, review_id: str, source_key: str, reviewer_id: str,
+        decision: str, reason: str,
     ) -> dict[str, Any]:
-        if decision not in {"include", "exclude", "uncertain"}:
-            raise ValueError("Screening decision must be include, exclude or uncertain")
+        if decision not in {"include", "exclude"}:
+            raise ValueError("Screening decision must be include or exclude")
         if len(reason.strip()) < 8:
             raise ValueError("A screening reason of at least 8 characters is required")
-        self.store.screen_systematic_review_source(review_id, source_key, decision, reason.strip())
+        self.store.screen_systematic_review_source(review_id, source_key, reviewer_id, decision, reason.strip())
+        return self.store.get_systematic_review(review_id)
+
+    def resolve_review_conflict(self, review_id: str, source_key: str, adjudicator_id: str, decision: str, rationale: str) -> dict[str, Any]:
+        self.store.resolve_systematic_review_conflict(
+            review_id, source_key, adjudicator_id, decision, rationale
+        )
         return self.store.get_systematic_review(review_id)
 
     def finalize_review(self, review_id: str) -> dict[str, Any]:
@@ -165,13 +172,13 @@ class AdvancedResearch:
         return result
 
     def adjudicate_citation(
-        self, evidence_id: str, decision: str, rationale: str,
+        self, evidence_id: str, reviewer_id: str, decision: str, rationale: str,
     ) -> dict[str, Any]:
         if decision not in {"supports", "contradicts", "insufficient"}:
             raise ValueError("Decision must be supports, contradicts or insufficient")
         if len(rationale.strip()) < 12:
             raise ValueError("Human adjudication requires a rationale of at least 12 characters")
-        self.store.adjudicate_citation_evidence(evidence_id, decision, rationale.strip())
+        self.store.adjudicate_citation_evidence(evidence_id, reviewer_id, decision, rationale.strip())
         return self.store.get_citation_evidence(evidence_id)
 
     def analyze_csv(
