@@ -41,16 +41,22 @@ AETHER never downloads models automatically. Phi-3 Mini's 4K context and model c
 ### Research
 
 - `/research <question>` searches Crossref scholarly records, arXiv preprints, and Wikipedia summaries.
-- Research reports retain source URLs, publisher, date, evidence class, and limitations in SQLite.
-- `/research ingest URL` extracts up to 12,000 characters from a public HTML/plain-text page and saves it as a report. Redirects are not followed; ingest the reviewed destination URL separately.
-- `/research score REPORT_ID` shows transparent source-triage scores and their component factors/caveats. Scores are not truth probabilities.
-- `/research verify REPORT_ID` checks source URL reachability and report membership only. It does **not** verify that a source supports a claim.
-- `/research review QUERY` saves a reproducible evidence inventory with all results awaiting human screening; no source is silently excluded.
-- `/experiment create TITLE | HYPOTHESIS_CLAIM_ID(optional) | PROTOCOL_JSON` creates a preregistered experiment. Protocol JSON requires `objective`, `method`, and `success_criteria`; an optional hypothesis ID must identify an existing hypothesis claim.
-- `/experiment start ID`, `/experiment complete ID | OUTCOME_JSON`, `/experiment cancel ID`, `/experiment list`, and `/experiment show ID` manage the lifecycle. Completion requires both a result and evidence reference; lifecycle events are persisted and completed/cancelled experiments are terminal.
+- Research reports retain source URLs, publisher, date, evidence class, summaries and (for operator-ingested documents) bounded full text in SQLite.
+- `/research QUERY` searches general web results plus Crossref, arXiv and Wikipedia. `/research web QUERY` runs the general web provider directly. Search results are untrusted leads, not verified evidence.
+- `/research ingest URL` captures public HTML/plain text up to 2 MB, retaining extracted full text for exact passage checks. Redirects are not followed; inspect and ingest the destination URL separately.
+- `/research score REPORT_ID` shows transparent source-triage factors/caveats. Scores are not truth probabilities.
+- `/research verify REPORT_ID` checks URL reachability only; it does not verify claim support.
+- `/citation-check CLAIM | REPORT_ID | SOURCE_URL | EXACT_QUOTED_PASSAGE` checks source membership, exact quote presence and lexical alignment. It is a deterministic candidate check, not semantic entailment.
+- `/citation-review EVIDENCE_ID | REVIEWER_ID | supports/contradicts/insufficient | RATIONALE` records independent reviewer decisions. Two distinct reviewer IDs must agree; disagreement requires `/citation-resolve EVIDENCE_ID | ADJUDICATOR_ID | DECISION | RATIONALE`. IDs are operator-supplied labels, not authenticated identities.
+- `/review create QUESTION | INCLUSION_JSON_ARRAY | EXCLUSION_JSON_ARRAY | SEARCH_STRATEGY_JSON` creates a protocol with named databases, queries and search date.
+- `/review add REVIEW_ID | RESEARCH_REPORT_ID` imports retrieved sources. `/review screen REVIEW_ID | SOURCE_URL | REVIEWER_ID | include/exclude | REASON` performs dual title/abstract screening; disagreements use `/review resolve REVIEW_ID | SOURCE_URL | ADJUDICATOR_ID | include/exclude | RATIONALE`.
+- `/review finalize REVIEW_ID` locks title/abstract screening. Then use `/review stage REVIEW_ID | SOURCE_URL | full_text/risk_of_bias/extraction | REVIEWER_ID | PAYLOAD_JSON` for two-reviewer full-text eligibility, structured risk-of-bias domains and data extraction. `/review adjudicate-stage REVIEW_ID | SOURCE_URL | STAGE | ADJUDICATOR_ID | PAYLOAD_JSON` resolves disagreements, and `/review synthesize REVIEW_ID` produces the evidence table and, where compatible effect estimates/standard errors exist, a DerSimonian-Laird random-effects meta-analysis.
+- `/experiment create TITLE | HYPOTHESIS_CLAIM_ID(optional) | PROTOCOL_JSON` preregisters an experiment. Protocol JSON requires `objective`, `method`, and `success_criteria`.
+- `/experiment analyze ID | CSV_PATH | NUMERIC_COLUMNS_JSON | OPTIONAL_GROUP_CONFIG_JSON` records input SHA-256, Python/algorithm versions, descriptive statistics and optional two-group Welch tests, effect size and confidence interval. Example group config: `{"group_column":"arm","comparison_groups":["treatment","control"]}`. Artifacts are saved as research reports and linked in the experiment event history.
+- `/experiment start ID`, `/experiment complete ID | OUTCOME_JSON`, `/experiment cancel ID`, `/experiment list`, and `/experiment show ID` manage the lifecycle.
 - `/reports` lists saved reports.
 
-Research fetching rejects localhost/private-network targets, non-HTTP schemes, embedded credentials, non-standard ports, redirects, unsupported content types, and responses above 2 MB. Full-text ingestion is not a crawler: it fetches only URLs explicitly supplied by the operator. Citation reachability is not citation-support verification. The review command creates an evidence inventory and protocol checklist; it does not claim a completed systematic review, PRISMA compliance, risk-of-bias assessment, or meta-analysis.
+Research fetching rejects localhost/private-network targets, non-HTTP schemes, embedded credentials, non-standard ports, redirects, unsupported content types, and responses above 2 MB. General web search does not fetch arbitrary result pages automatically. Citation matching is exact-quote plus lexical screening; it cannot infer entailment, negation or causal validity. Systematic review reviewer IDs are not authenticated, and the generic risk-of-bias template is not a substitute for a validated domain-specific instrument. The meta-analysis requires comparable independent effects and standard errors supplied by reviewers; AETHER cannot validate those assumptions, publication bias, certainty of evidence or PRISMA compliance. Welch and meta-analysis confidence intervals use normal approximations.
 
 ### Bounded autonomous execution
 
