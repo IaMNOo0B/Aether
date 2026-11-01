@@ -39,12 +39,15 @@ def test_systematic_review_requires_explicit_protocol_and_decisions(tmp_path):
     workflow.add_review_sources(review["id"], [sample_source()])
     with pytest.raises(ValueError, match="Every retrieved source"):
         workflow.finalize_review(review["id"])
-    workflow.screen_source(review["id"], "https://example.org/article", "include", "Population and outcome match criteria.")
+    workflow.screen_source(review["id"], "https://example.org/article", "reviewer-a", "include", "Population and outcome match criteria.")
+    with pytest.raises(ValueError, match="Every retrieved source"):
+        workflow.finalize_review(review["id"])
+    workflow.screen_source(review["id"], "https://example.org/article", "reviewer-b", "include", "The same population and outcome criteria are met.")
     finalized = workflow.finalize_review(review["id"])
     assert finalized["status"] == "screening_complete_synthesis_pending"
     assert finalized["final_summary"]["included"] == 1
     with pytest.raises(ValueError, match="already finalized"):
-        workflow.screen_source(review["id"], "https://example.org/article", "exclude", "Changed mind after finalization.")
+        workflow.screen_source(review["id"], "https://example.org/article", "reviewer-c", "exclude", "Changed mind after finalization.")
 
 
 def test_citation_check_requires_source_membership_and_exact_passage(tmp_path):
@@ -68,12 +71,20 @@ def test_citation_check_requires_source_membership_and_exact_passage(tmp_path):
             "https://other.example/paper",
             "This is a sufficiently long quoted passage to be checked.",
         )
+    first_review = workflow.adjudicate_citation(
+        result["id"], "reviewer-a", "supports",
+        "The passage directly states the outcome and population described in the claim."
+    )
+    assert first_review["review_status"] == "awaiting_second_reviewer"
+    assert first_review["human_decision"] is None
     adjudicated = workflow.adjudicate_citation(
-        result["id"], "supports", "The passage directly states the outcome and population described in the claim."
+        result["id"], "reviewer-b", "supports",
+        "Independent reading confirms the passage states the described outcome."
     )
     assert adjudicated["human_decision"] == "supports"
-    with pytest.raises(ValueError, match="already been adjudicated"):
-        workflow.adjudicate_citation(result["id"], "insufficient", "Second review attempt should not overwrite the first.")
+    assert adjudicated["review_status"] == "two_reviewer_agreement"
+    with pytest.raises(ValueError, match="already adjudicated"):
+        workflow.adjudicate_citation(result["id"], "reviewer-a", "insufficient", "This duplicate reviewer cannot overwrite the decision.")
 
 
 def test_csv_analysis_is_deterministic_and_saved_with_hash(tmp_path):
@@ -107,3 +118,38 @@ def test_csv_analysis_rejects_non_numeric_and_non_finite_data(tmp_path):
         workflow.analyze_csv("exp-invalid", b"value\nabc\n", ["value"])
     with pytest.raises(ValueError, match="Non-finite"):
         workflow.analyze_csv("exp-invalid", b"value\nNaN\n", ["value"])
+
+
+def test_systematic_review_disagreement_requires_distinct_adjudicator(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    workflow = AdvancedResearch(store)
+    review = workflow.create_systematic_review(
+        "Does intervention X improve outcome Y?",
+        ["Human studies"], ["Animal studies"],
+        {"databases": ["Crossref"], "queries": ["intervention X"], "searched_on": "2026-11-01"},
+    )
+    workflow.add_review_sources(review["id"], [sample_source()])
+    workflow.screen_source(review["id"], "https://example.org/article", "reviewer-a", "include", "The title and abstract meet the inclusion criteria.")
+    workflow.screen_source(review["id"], "https://example.org/article", "reviewer-b", "exclude", "The population does not match the inclusion criteria.")
+    review_state = store.get_systematic_review(review["id"])
+    assert review_state["sources"][0]["decision"] == "uncertain"
+    with pytest.raises(ValueError, match="distinct from screening reviewers"):
+        workflow.resolve_review_conflict(review["id"], "https://example.org/article", "reviewer-a", "include", "This is not a separate adjudicator.")
+    workflow.resolve_review_conflict(review["id"], "https://example.org/article", "adjudicator-c", "include", "Full text confirms the prespecified target population.")
+    finalized = workflow.finalize_review(review["id"])
+    assert finalized["final_summary"]["included"] == 1
+
+
+def test_citation_disagreement_is_not_silently_resolved(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    source = sample_source()
+    store.save_research_report("report-2", "query", "report", [{**source.to_dict(), "full_text": source.summary}])
+    workflow = AdvancedResearch(store)
+    evidence = workflow.check_citation_support(
+        "The treatment reduced response time in the studied group.",
+        "report-2", source.url, source.summary,
+    )
+    workflow.adjudicate_citation(evidence["id"], "reviewer-a", "supports", "The text states a reduction in response time.")
+    result = workflow.adjudicate_citation(evidence["id"], "reviewer-b", "contradicts", "The context qualifies the result and does not support the broader claim.")
+    assert result["human_decision"] is None
+    assert result["review_status"] == "reviewer_disagreement_requires_resolution"
