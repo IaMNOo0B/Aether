@@ -64,6 +64,7 @@ def test_citation_check_requires_source_membership_and_exact_passage(tmp_path):
         "The study found that the treatment reduced measured response time in the tested group.",
     )
     assert result["assessment"] == "candidate_support_requires_human_adjudication"
+    assert result["source_text_kind"] == "captured_full_text"
     assert result["normalized_character_offset"] >= 0
     with pytest.raises(ValueError, match="must belong"):
         workflow.check_citation_support(
@@ -267,3 +268,38 @@ def test_systematic_review_cannot_synthesize_with_unresolved_full_text_stage(tmp
     )
     with pytest.raises(ValueError, match="Full-text eligibility"):
         workflow.synthesize_review(review["id"])
+
+
+def test_general_web_search_returns_structured_sources_without_fetching_results(tmp_path, monkeypatch):
+    from aether.research import Researcher
+
+    researcher = Researcher(Store(tmp_path / "web.sqlite3"))
+    html = b"""
+      <div class="result">
+        <h2><a class="result__a" href="https://example.org/research">Research result</a></h2>
+        <a class="result__snippet">An untrusted search snippet.</a>
+      </div>
+    """
+    monkeypatch.setattr(researcher, "_get", lambda url: html)
+    sources = researcher.search_web("research topic", 3)
+    assert len(sources) == 1
+    assert sources[0].url == "https://example.org/research"
+    assert sources[0].evidence_type == "general-web-search-result"
+    assert sources[0].full_text == ""
+
+
+def test_snippet_only_quote_cannot_be_adjudicated_as_support(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    source = sample_source()
+    store.save_research_report("snippet-report", "query", "report", [source.to_dict()])
+    workflow = AdvancedResearch(store)
+    evidence = workflow.check_citation_support(
+        "The treatment reduced response time in the studied group.",
+        "snippet-report", source.url, source.summary,
+    )
+    assert evidence["source_text_kind"] == "abstract_or_search_snippet"
+    with pytest.raises(ValueError, match="captured full text"):
+        workflow.adjudicate_citation(
+            evidence["id"], "reviewer-a", "supports",
+            "The source summary appears to support the supplied claim wording."
+        )
