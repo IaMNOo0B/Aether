@@ -93,7 +93,10 @@
           "path": "."
         }
       }
-    ]
+    ],
+    "seed_files": {
+      "notes/seed.txt": "seed for dependency ordering"
+    }
   },
   {
     "id": "nested-write-list",
