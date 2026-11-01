@@ -115,6 +115,7 @@ class ResearchWorkflow:
             published="Date unavailable",
             evidence_type="full-text-web-document",
             summary=text[:12000],
+            full_text=text,
         )
 
     @staticmethod
