@@ -231,6 +231,7 @@ class Researcher:
         count = max(1, min(limit or self.max_results, self.max_results))
         provider_results: list[list[ResearchSource]] = []
         errors: list[str] = []
+        successful_providers = 0
         for label, operation, amount in (
             ("Web", self.search_web, min(4, count)),
             ("Crossref", self.search_crossref, max(2, count // 2)),
@@ -239,6 +240,7 @@ class Researcher:
         ):
             try:
                 provider_results.append(operation(text, amount))
+                successful_providers += 1
             except ResearchError as exc:
                 errors.append(f"{label}: {exc}")
                 logger.warning("%s search failed: %s", label, exc)
@@ -259,7 +261,7 @@ class Researcher:
                 key = source.url or source.title.casefold()
                 unique.setdefault(key, source)
         results = list(unique.values())[:count]
-        if not results and errors:
+        if not results and errors and successful_providers == 0:
             raise ResearchError("All research providers failed: " + "; ".join(errors))
         return results
 
