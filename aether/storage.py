@@ -1822,9 +1822,15 @@ class Store:
             ).fetchone()
         return json.loads(row["evidence_json"]) if row else None
 
+
     def adjudicate_citation_evidence(
-        self, evidence_id: str, decision: str, rationale: str,
+        self, evidence_id: str, reviewer_id: str, decision: str, rationale: str,
     ) -> None:
+        reviewer = reviewer_id.strip()
+        if not reviewer or len(reviewer) > 120:
+            raise ValueError("Reviewer ID must contain 1..120 characters")
+        if decision not in {"supports", "contradicts", "insufficient"}:
+            raise ValueError("Invalid citation adjudication")
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
@@ -1833,11 +1839,23 @@ class Store:
             if row is None:
                 raise KeyError(f"Unknown citation evidence: {evidence_id}")
             evidence = json.loads(row["evidence_json"])
-            if evidence.get("human_decision") is not None:
-                raise ValueError("Citation evidence has already been adjudicated")
-            evidence["human_decision"] = decision
-            evidence["human_rationale"] = rationale
-            evidence["human_adjudicated_at"] = utc_now()
+            reviews = evidence.setdefault("reviewer_decisions", [])
+            if any(item["reviewer_id"] == reviewer for item in reviews):
+                raise ValueError("Reviewer has already adjudicated this evidence")
+            reviews.append({
+                "reviewer_id": reviewer, "decision": decision,
+                "rationale": rationale, "adjudicated_at": utc_now(),
+            })
+            if len(reviews) < 2:
+                evidence["human_decision"] = None
+                evidence["review_status"] = "awaiting_second_reviewer"
+            else:
+                distinct = {item["decision"] for item in reviews}
+                evidence["human_decision"] = next(iter(distinct)) if len(distinct) == 1 else None
+                evidence["review_status"] = (
+                    "two_reviewer_agreement" if len(distinct) == 1
+                    else "reviewer_disagreement_requires_resolution"
+                )
             db.execute(
                 "UPDATE citation_evidence SET evidence_json=?, updated_at=? WHERE id=?",
                 (json.dumps(evidence), utc_now(), evidence_id),
