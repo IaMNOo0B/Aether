@@ -74,6 +74,7 @@ def main() -> int:
     print("          /correct-memory /memory-versions ID /memory-conflicts [ID]")
     print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
+    print("          /research QUERY|ingest|verify|score|review /experiment create|start|complete|cancel|list|show")
 
     while True:
         try:
