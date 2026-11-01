@@ -124,7 +124,6 @@ def test_autonomy_never_overwrites_existing_workspace_files(tmp_path):
     assert destination.read_text(encoding="utf-8") == "preserve me"
 
 
-
 def test_autonomy_sorts_dependency_graph_and_verifies_each_result(tmp_path):
     response = json.dumps({"steps": [
         {"id": "second", "depends_on": ["first"], "purpose": "List workspace after prerequisite",
@@ -141,7 +140,9 @@ def test_autonomy_sorts_dependency_graph_and_verifies_each_result(tmp_path):
     result = runner.run("Execute dependent workspace checks")
 
     assert result["status"] == "completed"
-    assert result["verified"] is True
+    assert result["tool_results_verified"] is True
+    assert result["verified"] is False
+    assert result["verification_scope"] == "tool_postconditions_only"
     assert result["completed_steps"] == ["first", "second"]
     assert [item["plan_step_id"] for item in result["receipts"]] == ["first", "second"]
     assert all(item["verification"]["passed"] for item in result["receipts"])
