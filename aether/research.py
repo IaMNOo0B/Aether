@@ -6,7 +6,7 @@ from html import unescape
 from html.parser import HTMLParser
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
 import json
@@ -51,6 +51,40 @@ class ResearchSource:
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
+
+
+
+class _SearchResultParser(HTMLParser):
+    """Extract result links/snippets from DuckDuckGo HTML results."""
+    def __init__(self) -> None:
+        super().__init__()
+        self.results = []
+        self.current = None
+        self.capture = None
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        classes = set((values.get("class") or "").split())
+        if tag == "a" and "result__a" in classes:
+            self.current = {"title": "", "url": values.get("href") or "", "snippet": ""}
+            self.capture = "title"
+        elif self.current is not None and tag in {"a", "div", "td"} and "result__snippet" in classes:
+            self.capture = "snippet"
+
+    def handle_data(self, data):
+        if self.current is not None and self.capture:
+            self.current[self.capture] += data
+
+    def handle_endtag(self, tag):
+        if self.current is not None and tag == "a" and self.capture == "title":
+            self.capture = None
+        if self.current is not None and tag in {"div", "td"} and self.capture == "snippet":
+            self.capture = None
+        if self.current is not None and tag == "div" and self.current["title"].strip():
+            if self.current["url"].strip():
+                self.results.append({key: " ".join(value.split()) for key, value in self.current.items()})
+                self.current = None
+                self.capture = None
 
 
 class Researcher:
@@ -150,6 +184,43 @@ class Researcher:
             ))
         return results
 
+
+    def search_web(self, query: str, limit: int = 5) -> list[ResearchSource]:
+        """Search public web results; result pages are not fetched or executed."""
+        text = query.strip()
+        if len(text) < 3 or len(text) > 500:
+            raise ValueError("Web search query must contain 3..500 characters")
+        params = urlencode({"q": text, "kl": "wt-wt"})
+        payload = self._get("https://html.duckduckgo.com/html/?" + params)
+        parser = _SearchResultParser()
+        parser.feed(payload.decode("utf-8", errors="replace"))
+        results = []
+        for item in parser.results:
+            raw_url = item["url"]
+            parsed = urlsplit(raw_url)
+            if parsed.hostname and parsed.hostname.casefold().endswith("duckduckgo.com"):
+                destination = parse_qs(parsed.query).get("uddg", [""])[0]
+                if destination:
+                    raw_url = unquote(destination)
+            target = urlsplit(raw_url)
+            if target.scheme not in {"http", "https"} or not target.hostname:
+                continue
+            host = target.hostname.casefold()
+            if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost"):
+                continue
+            title = item["title"][:500]
+            if not title:
+                continue
+            results.append(ResearchSource(
+                title=title, url=raw_url, publisher=host,
+                published="Date unavailable",
+                evidence_type="general-web-search-result",
+                summary=item["snippet"][:1400] or "Search result snippet unavailable; inspect the source before use.",
+            ))
+            if len(results) >= max(1, min(limit, 10)):
+                break
+        return results
+
     def search(self, query: str, limit: int | None = None) -> list[ResearchSource]:
         text = query.strip()
         if len(text) < 3:
@@ -163,6 +234,7 @@ class Researcher:
             ("Crossref", self.search_crossref, max(2, count // 2)),
             ("arXiv", self.search_arxiv, max(2, count // 2)),
             ("Wikipedia", self.search_wikipedia, min(2, count)),
+            ("Web", self.search_web, min(4, count)),
         ):
             try:
                 collected.extend(operation(text, amount))
