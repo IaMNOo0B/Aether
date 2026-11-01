@@ -58,7 +58,8 @@ Benchmark boundary: fixed lexical fixtures measure retrieval and draft-skill exc
 - [x] Persisted evidence-review inventory and protocol checklist; sources remain pending human screening and are never silently excluded.
 - [ ] General web-search provider integration beyond Crossref, arXiv and Wikipedia.
 - [ ] Structured inclusion/exclusion decisions, full-text claim extraction with page/section locators, and domain-specific risk-of-bias assessment.
-- [ ] Dedicated hypothesis/experiment lifecycle with preregistered predictions, observations, outcomes and reproducible analysis links.
+- [x] Preregistered experiment records linked to typed hypothesis claims, with required objective/method/success criteria, explicit start/complete/cancel transitions, evidence-backed outcomes and append-only lifecycle events.
+- [ ] Observation ingestion, analysis artifact linking, statistical analysis/reproducibility checks and hypothesis outcome updates.
 - [ ] End-to-end systematic review acceptance benchmark and independent citation-support verification.
 
 Stage 4 is partial: the new workflow improves source capture and evidence triage, but it is not a general crawler or completed systematic-review engine.
