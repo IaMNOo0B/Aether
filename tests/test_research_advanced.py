@@ -208,6 +208,7 @@ def _extraction(effect):
         "population": "Adults with condition X",
         "sample_size": 120,
         "outcome": "response time",
+        "findings": "Intervention group showed reduced response time.",
         "effect_measure": "mean_difference_ms",
         "effect_estimate": effect,
         "standard_error": 2.0,
@@ -344,4 +345,35 @@ def test_systematic_review_can_synthesize_zero_eligible_studies(tmp_path):
     result = workflow.synthesize_review(review["id"])
     assert result["status"] == "synthesized"
     assert result["final_summary"]["screening_flow"]["included_in_synthesis"] == 0
+    assert result["final_summary"]["meta_analysis_status"] == "not_performed_fewer_than_two_eligible_studies"
+
+
+def test_qualitative_systematic_review_synthesizes_without_forcing_meta_analysis(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    workflow = AdvancedResearch(store)
+    review = workflow.create_systematic_review(
+        "How do participants describe intervention X?",
+        ["Qualitative human studies"], ["Animal studies"],
+        {"databases": ["Crossref"], "queries": ["intervention X experience"], "searched_on": "2026-11-01"},
+    )
+    source = sample_source()
+    workflow.add_review_sources(review["id"], [source])
+    workflow.screen_source(review["id"], source.url, "screen-a", "include", "Abstract meets the qualitative population criteria.")
+    workflow.screen_source(review["id"], source.url, "screen-b", "include", "Independent screening confirms population eligibility.")
+    workflow.finalize_review(review["id"])
+    full = {"decision": "include", "rationale": "Full text contains eligible qualitative participant interviews.", "text_locator": "Findings section"}
+    risk = _risk_payload()
+    qualitative = {
+        "study_design": "qualitative interviews",
+        "population": "Adults with condition X",
+        "sample_size": 18,
+        "outcome": "participant experience",
+        "findings": "Participants described improved access and persistent usability barriers.",
+    }
+    for reviewer in ["review-a", "review-b"]:
+        workflow.record_review_stage(review["id"], source.url, "full_text", reviewer, full)
+        workflow.record_review_stage(review["id"], source.url, "risk_of_bias", reviewer, risk)
+        workflow.record_review_stage(review["id"], source.url, "extraction", reviewer, qualitative)
+    result = workflow.synthesize_review(review["id"])
+    assert result["final_summary"]["meta_analysis"] is None
     assert result["final_summary"]["meta_analysis_status"] == "not_performed_fewer_than_two_eligible_studies"
