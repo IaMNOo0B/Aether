@@ -99,6 +99,27 @@ class MemoryManager:
                 pass
         return memory_id
 
+    def remember_fact(
+        self, subject: str, predicate: str, object_value: str, *, note: str = "",
+    ) -> int:
+        """Store an explicitly structured fact so contradictions can be surfaced."""
+        subject = " ".join(subject.split())
+        predicate = " ".join(predicate.split())
+        object_value = " ".join(object_value.split())
+        if not subject or len(subject) > 250:
+            raise ValueError("Fact subject must contain 1..250 characters")
+        if not predicate or len(predicate) > 150:
+            raise ValueError("Fact predicate must contain 1..150 characters")
+        if not object_value or len(object_value) > 1000:
+            raise ValueError("Fact object must contain 1..1000 characters")
+        content = note.strip() or f"{subject} {predicate} {object_value}"
+        return self.remember(
+            content, source="user", kind="semantic", status="user-provided",
+            metadata={"facts": [{
+                "subject": subject, "predicate": predicate, "object": object_value,
+            }]},
+        )
+
     def index_pending(self, limit: int = 100) -> dict[str, Any]:
         if self.embedding_provider is None:
             raise ValueError("Semantic memory is disabled; configure an embedding provider first")
@@ -123,9 +144,9 @@ class MemoryManager:
         return {"indexed": indexed, "remaining": remaining, "error": None}
 
     def search(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
-        terms = _tokens(query)
-        if not terms or limit < 1:
+        if not isinstance(query, str) or not query.strip() or limit < 1:
             return []
+        terms = _tokens(query)
         records = [
             item for item in self.store.list_memories(self.corpus_limit)
             if item["status"] not in {"superseded", "rejected", "deleted"}
@@ -177,8 +198,13 @@ class MemoryManager:
                     )
                 }
             except EmbeddingUnavailable:
+                # An unavailable semantic backend must not reduce lexical recall.
                 query_vector = None
                 embedding_map = {}
+
+        # A query with no lexical tokens is valid when semantic retrieval is available.
+        if not terms and query_vector is None:
+            return []
 
         ranked = []
         for item, _, _ in documents:
@@ -190,7 +216,9 @@ class MemoryManager:
             if query_vector is None:
                 relevance = lexical
             elif semantic is None:
-                relevance = lexical_normalized * (1 - self.semantic_weight)
+                # Do not penalize records that have not yet been indexed or have
+                # incompatible vector dimensions; retain their full lexical score.
+                relevance = lexical_normalized
             else:
                 relevance = (
                     lexical_normalized * (1 - self.semantic_weight)
@@ -214,6 +242,62 @@ class MemoryManager:
             }
             for relevance, _, lexical, semantic, item in ranked[:limit]
         ]
+
+    def versions(self, memory_id: int) -> list[dict[str, Any]]:
+        """Return the correction lineage from the original memory to its latest version."""
+        return self.store.list_memory_versions(memory_id)
+
+    def find_contradictions(
+        self, memory_id: int | None = None, limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Surface disagreements in explicit fact slots; never infer truth from prose.
+
+        Memories may carry metadata['facts'] as [{subject, predicate, object}].
+        Only exact subject/predicate matches with different normalized objects are flagged.
+        """
+        if limit < 1:
+            return []
+        records = self.store.list_memories(self.corpus_limit)
+        active = [item for item in records
+                  if item["status"] not in {"superseded", "rejected", "deleted"}]
+        if memory_id is not None:
+            target = self.store.get_memory(memory_id)
+            if target is None:
+                raise KeyError(f"Unknown memory: {memory_id}")
+            if target["status"] in {"superseded", "rejected", "deleted"}:
+                return []
+        facts: dict[tuple[str, str], dict[str, list[dict[str, Any]]]] = {}
+        for item in active:
+            for fact in item["metadata"].get("facts", []):
+                if not isinstance(fact, dict):
+                    continue
+                subject = " ".join(str(fact.get("subject", "")).casefold().split())
+                predicate = " ".join(str(fact.get("predicate", "")).casefold().split())
+                value = " ".join(str(fact.get("object", "")).casefold().split())
+                if subject and predicate and value:
+                    facts.setdefault((subject, predicate), {}).setdefault(value, []).append(item)
+        conflicts = []
+        for (subject, predicate), value_groups in facts.items():
+            values = list(value_groups.items())
+            for index, (left_value, left_records) in enumerate(values):
+                for right_value, right_records in values[index + 1:]:
+                    if left_value == right_value:
+                        continue
+                    for left in left_records:
+                        for right in right_records:
+                            if left["id"] == right["id"]:
+                                continue
+                            if memory_id is not None and memory_id not in {left["id"], right["id"]}:
+                                continue
+                            conflicts.append({
+                                "subject": subject, "predicate": predicate,
+                                "left_memory_id": left["id"], "left_value": left_value,
+                                "right_memory_id": right["id"], "right_value": right_value,
+                                "resolution": "unresolved; explicit review required",
+                            })
+                            if len(conflicts) >= limit:
+                                return conflicts
+        return conflicts
 
     def correct(self, memory_id: int, corrected_content: str, reason: str) -> int:
         """Supersede a memory without deleting history or rewriting its provenance."""

@@ -143,3 +143,38 @@ def test_store_rejects_invalid_embedding_vectors(tmp_path):
     memory_id = store.add_memory("test")
     with pytest.raises(ValueError, match="finite numeric"):
         store.save_memory_embedding(memory_id, "bad-model", [0.1, float("nan")])
+
+
+
+class SemanticOnlyEmbedding:
+    model = "semantic-only-v1"
+
+    def embed(self, text):
+        if text.strip() == "!!!":
+            return [1.0, 0.0]
+        if "unindexed" in text.casefold():
+            return [0.0, 1.0]
+        return [1.0, 0.0]
+
+
+def test_hybrid_search_supports_queries_without_lexical_tokens(tmp_path):
+    manager = MemoryManager(
+        Store(tmp_path / "memory.sqlite3"),
+        embedding_provider=SemanticOnlyEmbedding(),
+        semantic_weight=1.0,
+    )
+    manager.remember("A cat is a domestic pet")
+    results = manager.search("!!!")
+    assert results
+    assert results[0]["content"] == "A cat is a domestic pet"
+    assert results[0]["semantic_similarity"] == 1.0
+
+
+def test_unindexed_memory_is_not_penalized_during_hybrid_search(tmp_path):
+    store = Store(tmp_path / "memory.sqlite3")
+    manager = MemoryManager(store, embedding_provider=SemanticOnlyEmbedding(), semantic_weight=0.8)
+    manager.remember("An unrelated indexed memory")
+    unindexed = store.add_memory("Unindexed ledger records", metadata={"kind": "semantic"})
+    results = manager.search("ledger")
+    assert results[0]["id"] == unindexed
+    assert results[0]["semantic_similarity"] is None

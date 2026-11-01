@@ -69,7 +69,9 @@ def main() -> int:
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
     print("Commands: /status /resources /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
-    print("          /remember /memory-search /memory-index /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
+    print("          /remember /remember-fact SUBJECT | PREDICATE | OBJECT | NOTE /memory-search /memory-index")
+    print("          /correct-memory /memory-versions ID /memory-conflicts [ID]")
+    print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
 
     while True:
@@ -607,6 +609,18 @@ def main() -> int:
                     print("AETHER > Usage: /remember information to save")
                 continue
 
+            if lower.startswith("/remember-fact "):
+                parts = user_text[len("/remember-fact "):].split("|", 3)
+                if len(parts) < 3:
+                    print("Usage: /remember-fact subject | predicate | object | optional note")
+                    continue
+                memory_id = engine.memory.remember_fact(
+                    parts[0].strip(), parts[1].strip(), parts[2].strip(),
+                    note=parts[3].strip() if len(parts) == 4 else "",
+                )
+                print(f"AETHER > Structured fact saved as memory #{memory_id}.")
+                continue
+
             if lower == "/memory-index":
                 engine.resources.check(
                     "memory embedding index", gpu_required=settings.memory.semantic_enabled
@@ -643,6 +657,48 @@ def main() -> int:
                     "The previous record is preserved as superseded."
                 )
                 continue
+
+            if lower.startswith("/memory-versions "):
+                memory_id = int(user_text[len("/memory-versions "):].strip())
+                print(json.dumps(engine.memory.versions(memory_id), indent=2, ensure_ascii=False))
+                continue
+
+            if lower.startswith("/memory-conflicts"):
+                suffix = user_text[len("/memory-conflicts"):].strip()
+                memory_id = int(suffix) if suffix else None
+                conflicts = engine.memory.find_contradictions(memory_id)
+                print(json.dumps(conflicts, indent=2, ensure_ascii=False))
+                if not conflicts:
+                    print("AETHER > No explicit fact-slot conflicts found.")
+                continue
+
+            if lower.startswith("/memory-backup "):
+                destination_text = user_text[len("/memory-backup "):].strip()
+                if not destination_text:
+                    print("Usage: /memory-backup destination-file")
+                    continue
+                destination = Path(destination_text).expanduser()
+                saved = store.backup_to(destination)
+                print(f"AETHER > Consistent database backup created: {saved}")
+                continue
+
+            if lower.startswith("/memory-restore "):
+                source_text = user_text[len("/memory-restore "):].strip()
+                if not source_text:
+                    print("Usage: /memory-restore backup-file")
+                    continue
+                source = Path(source_text).expanduser()
+                if not source.is_file():
+                    print(f"AETHER > Backup file not found: {source}")
+                    continue
+                print("WARNING: Restore replaces the entire AETHER database, not just memories.")
+                print("Stop every other AETHER process before continuing.")
+                if input("Type RESTORE to replace current data: ").strip() != "RESTORE":
+                    print("AETHER > Restore cancelled.")
+                    continue
+                store.restore_from(source)
+                print("AETHER > Database restored. Restart AETHER before continuing.")
+                break
 
             print(f"AETHER > {engine.respond(user_text)}\n")
         except (

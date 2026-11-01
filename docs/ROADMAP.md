@@ -23,12 +23,16 @@ A capability is marked complete only when its implementation and tests exist. Op
 ## Stage 2 — Reliable memory
 
 - [x] Persistent conversations and user memories.
-- [x] Basic lexical memory retrieval.
+- [x] BM25-style lexical retrieval with optional local embedding/cosine hybrid ranking.
 - [x] Persistent research reports, skills, and specialist-agent records.
 - [x] Only validated procedural skills are retrieved into conversation context.
-- [ ] Hybrid keyword/vector retrieval.
-- [ ] Memory correction, contradiction tracking, version history, backup/restore.
-- [ ] Retrieval and skill-retention benchmarks.
+- [x] Hybrid retrieval handles semantic-only queries and does not penalize unindexed memories on lexical matches.
+- [x] Memory corrections preserve immutable prior content and expose validated correction lineage.
+- [x] Explicit fact-slot contradiction candidates can be inspected without the system pretending to resolve truth automatically.
+- [x] SQLite online backup and integrity-checked staged restore, with explicit operator confirmation in the console.
+- [x] Deterministic retrieval and validated-skill retrievability benchmark (run with python -m aether.memory_benchmark).
+
+Benchmark boundary: fixed lexical fixtures measure retrieval and draft-skill exclusion. They do not establish semantic-model quality, long-term forgetting curves, procedural execution success, or generalization to unseen real-world tasks. Contradictions are detected only when structured metadata facts are explicitly supplied; AETHER does not infer arbitrary factual contradictions from free-form prose.
 
 ## Stage 3 — Planning and verification
 

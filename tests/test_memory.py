@@ -67,3 +67,63 @@ def test_superseded_memory_cannot_be_corrected_twice(tmp_path):
     manager.correct(original, "Corrected fact", "The original was inaccurate")
     with pytest.raises(ValueError, match="already been superseded"):
         manager.correct(original, "Another version", "Do not fork a correction chain")
+
+
+
+def test_memory_versions_return_full_ordered_correction_chain(tmp_path):
+    store = Store(tmp_path / "memory.sqlite3")
+    manager = MemoryManager(store)
+    first = manager.remember("The model is alpha")
+    second = manager.correct(first, "The model is beta", "Updated configuration")
+    third = manager.correct(second, "The model is gamma", "Newer configuration")
+
+    versions = manager.versions(first)
+    assert [item["id"] for item in versions] == [first, second, third]
+    assert [item["id"] for item in manager.versions(third)] == [first, second, third]
+
+
+def test_memory_conflicts_only_flag_explicit_fact_metadata(tmp_path):
+    manager = MemoryManager(Store(tmp_path / "memory.sqlite3"))
+    left = manager.remember(
+        "The deployment notes say one thing",
+        metadata={"facts": [{"subject": "AETHER", "predicate": "default model", "object": "alpha"}]},
+    )
+    right = manager.remember(
+        "A separate note says something else",
+        metadata={"facts": [{"subject": "aether", "predicate": "default model", "object": "beta"}]},
+    )
+    conflicts = manager.find_contradictions(right)
+    assert len(conflicts) == 1
+    assert {conflicts[0]["left_memory_id"], conflicts[0]["right_memory_id"]} == {left, right}
+    assert conflicts[0]["resolution"].startswith("unresolved")
+
+
+def test_memory_conflicts_ignore_superseded_versions(tmp_path):
+    manager = MemoryManager(Store(tmp_path / "memory.sqlite3"))
+    old = manager.remember(
+        "Old model note",
+        metadata={"facts": [{"subject": "AETHER", "predicate": "model", "object": "alpha"}]},
+    )
+    manager.remember(
+        "Current model note",
+        metadata={"facts": [{"subject": "AETHER", "predicate": "model", "object": "beta"}]},
+    )
+    manager.correct(old, "Corrected model note", "Old note was inaccurate")
+    assert manager.find_contradictions() == []
+
+
+
+def test_remember_fact_creates_structured_claim_for_conflict_review(tmp_path):
+    manager = MemoryManager(Store(tmp_path / "memory.sqlite3"))
+    first = manager.remember_fact("AETHER", "default model", "alpha")
+    second = manager.remember_fact("aether", "default model", "beta")
+    assert len(manager.find_contradictions(second)) == 1
+    assert [item["id"] for item in manager.versions(first)] == [first]
+
+
+def test_memory_conflict_results_are_bounded(tmp_path):
+    manager = MemoryManager(Store(tmp_path / "memory.sqlite3"))
+    manager.remember_fact("service", "region", "north")
+    manager.remember_fact("service", "region", "south")
+    manager.remember_fact("service", "region", "east")
+    assert len(manager.find_contradictions(limit=1)) == 1

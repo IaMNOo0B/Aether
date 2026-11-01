@@ -81,6 +81,10 @@ For a service requiring a key, set `api_key_env = "AETHER_API_KEY"` and provide 
 - Semantic indexing is off by default. To enable it, run `ollama pull nomic-embed-text`, set `[memory] semantic_enabled = true`, then run `/memory-index` to backfill existing memories. New memories are embedded automatically when the endpoint is available.
 - If the embedding model is unavailable, AETHER keeps the memory and falls back to lexical retrieval. It never downloads the embedding model automatically.
 - `/correct-memory id | corrected content | reason` preserves the old record and appends a correction.
+- `/memory-versions ID` displays the complete, link-validated correction chain.
+- `/remember-fact subject | predicate | object | optional note` stores an explicit structured fact. `/memory-conflicts [ID]` surfaces disagreements only between these fact slots; it does not infer contradictions from arbitrary prose or decide which claim is true.
+- `/memory-backup PATH` creates a consistent SQLite snapshot. `/memory-restore PATH` validates and stages a compatible backup, then requires typing `RESTORE` before replacing the full database. Stop all other AETHER processes first; restore replaces conversations, memories, tasks, skills, reports and other stored records, not just memories.
+- Run `python -m aether.memory_benchmark` for fixed-corpus memory retrieval and validated-skill retrievability checks. This is not a benchmark of procedure execution, long-term forgetting, embedding quality, or generalization.
 - Task state changes and checkpoints have an append-only event history. `/task-events <full-task-id>` inspects it.
 - On startup, tasks left running by a crash are marked interrupted/failed for manual review. AETHER does not blindly replay uncertain side effects.
 
