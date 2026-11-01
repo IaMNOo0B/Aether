@@ -48,6 +48,7 @@ class ResearchSource:
     published: str
     evidence_type: str
     summary: str
+    full_text: str = ""
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
@@ -231,10 +232,10 @@ class Researcher:
         collected: list[ResearchSource] = []
         errors: list[str] = []
         for label, operation, amount in (
+            ("Web", self.search_web, min(4, count)),
             ("Crossref", self.search_crossref, max(2, count // 2)),
             ("arXiv", self.search_arxiv, max(2, count // 2)),
             ("Wikipedia", self.search_wikipedia, min(2, count)),
-            ("Web", self.search_web, min(4, count)),
         ):
             try:
                 collected.extend(operation(text, amount))
