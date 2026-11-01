@@ -203,6 +203,32 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_knowledge_claim_events_claim
                     ON knowledge_claim_events(claim_id, sequence);
+                CREATE TABLE IF NOT EXISTS research_experiments (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    hypothesis_claim_id TEXT,
+                    protocol_json TEXT NOT NULL,
+                    outcome_json TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'planned'
+                        CHECK(status IN ('planned', 'running', 'completed', 'cancelled')),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    FOREIGN KEY(hypothesis_claim_id) REFERENCES knowledge_claims(id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_experiments_status
+                    ON research_experiments(status, updated_at);
+                CREATE TABLE IF NOT EXISTS research_experiment_events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    experiment_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(experiment_id) REFERENCES research_experiments(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_research_experiment_events
+                    ON research_experiment_events(experiment_id, sequence);
                 CREATE TABLE IF NOT EXISTS worlds (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -1456,6 +1482,133 @@ class Store:
                 (max(0, limit),),
             ).fetchall()
         return [dict(row) for row in rows]
+
+
+    def create_research_experiment(
+        self, experiment_id: str, title: str, hypothesis_claim_id: str | None,
+        protocol: dict[str, Any],
+    ) -> dict[str, Any]:
+        clean_title = title.strip()
+        if not clean_title or len(clean_title) > 300:
+            raise ValueError("Experiment title must contain 1..300 characters")
+        if not isinstance(protocol, dict) or not protocol:
+            raise ValueError("Experiment protocol must be a non-empty JSON object")
+        required = {"objective", "method", "success_criteria"}
+        if not required.issubset(protocol) or any(
+            not isinstance(protocol.get(key), str) or not protocol[key].strip()
+            for key in required
+        ):
+            raise ValueError("Protocol requires non-empty objective, method and success_criteria")
+        if hypothesis_claim_id:
+            claim = self.get_knowledge_claim(hypothesis_claim_id)
+            if claim is None or claim.get("claim_type") != "hypothesis":
+                raise ValueError("hypothesis_claim_id must identify an existing hypothesis claim")
+        now = utc_now()
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO research_experiments
+                   (id, title, hypothesis_claim_id, protocol_json, outcome_json,
+                    status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, '{}', 'planned', ?, ?)""",
+                (experiment_id, clean_title, hypothesis_claim_id,
+                 json.dumps(protocol), now, now),
+            )
+            db.execute(
+                """INSERT INTO research_experiment_events
+                   (experiment_id, event_type, payload_json, created_at)
+                   VALUES (?, 'created', ?, ?)""",
+                (experiment_id, json.dumps({"protocol_locked": True}), now),
+            )
+        return self.get_research_experiment(experiment_id)
+
+    def get_research_experiment(self, experiment_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM research_experiments WHERE id=?", (experiment_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        item["protocol"] = json.loads(item.pop("protocol_json"))
+        item["outcome"] = json.loads(item.pop("outcome_json"))
+        return item
+
+    def list_research_experiments(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT id FROM research_experiments ORDER BY updated_at DESC LIMIT ?",
+                (max(0, min(limit, 500)),),
+            ).fetchall()
+        return [
+            item for row in rows
+            if (item := self.get_research_experiment(row["id"])) is not None
+        ]
+
+    def transition_research_experiment(
+        self, experiment_id: str, target_status: str,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        allowed = {
+            "planned": {"running", "cancelled"},
+            "running": {"completed", "cancelled"},
+            "completed": set(),
+            "cancelled": set(),
+        }
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status FROM research_experiments WHERE id=?", (experiment_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown research experiment: {experiment_id}")
+            current = str(row["status"])
+            if target_status not in allowed.get(current, set()):
+                raise ValueError(
+                    f"Invalid experiment transition: {current} -> {target_status}"
+                )
+            details = payload or {}
+            if target_status == "completed":
+                if not details or not isinstance(details.get("result"), str) or not details["result"].strip():
+                    raise ValueError("Completing an experiment requires a non-empty result")
+                if not isinstance(details.get("evidence"), str) or not details["evidence"].strip():
+                    raise ValueError("Completing an experiment requires evidence")
+                db.execute(
+                    """UPDATE research_experiments SET status=?, outcome_json=?,
+                       completed_at=?, updated_at=? WHERE id=?""",
+                    (target_status, json.dumps(details), now, now, experiment_id),
+                )
+            elif target_status == "running":
+                db.execute(
+                    """UPDATE research_experiments SET status=?, started_at=?,
+                       updated_at=? WHERE id=?""",
+                    (target_status, now, now, experiment_id),
+                )
+            else:
+                db.execute(
+                    "UPDATE research_experiments SET status=?, updated_at=? WHERE id=?",
+                    (target_status, now, experiment_id),
+                )
+            db.execute(
+                """INSERT INTO research_experiment_events
+                   (experiment_id, event_type, payload_json, created_at)
+                   VALUES (?, ?, ?, ?)""",
+                (experiment_id, target_status, json.dumps(details), now),
+            )
+        return self.get_research_experiment(experiment_id)
+
+    def list_research_experiment_events(self, experiment_id: str) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT sequence, experiment_id, event_type, payload_json, created_at
+                   FROM research_experiment_events
+                   WHERE experiment_id=? ORDER BY sequence""",
+                (experiment_id,),
+            ).fetchall()
+        return [
+            {**dict(row), "payload": json.loads(row["payload_json"])}
+            for row in rows
+        ]
 
     def close(self) -> None:
         """Reserved for interface symmetry; SQLite connections are short-lived."""
