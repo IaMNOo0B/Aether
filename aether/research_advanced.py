@@ -164,8 +164,19 @@ class AdvancedResearch:
         review = self.store.get_systematic_review(review_id)
         if review is None:
             raise KeyError(f"Unknown systematic review: {review_id}")
-        if search_report_id is not None and self.store.get_research_report(search_report_id) is None:
+        search_report = (
+            self.store.get_research_report(search_report_id)
+            if search_report_id is not None else None
+        )
+        if search_report_id is not None and search_report is None:
             raise ValueError("search_report_id must identify an existing research report")
+        if search_report is not None:
+            valid_sources = {
+                (item.get("url", ""), item.get("title", ""))
+                for item in search_report["sources"]
+            }
+            if any((source.url, source.title) not in valid_sources for source in sources):
+                raise ValueError("Every imported source must belong to the linked research report")
         added = 0
         for source in sources:
             source_record = source.to_dict()
