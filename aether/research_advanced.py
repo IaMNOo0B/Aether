@@ -383,6 +383,12 @@ class AdvancedResearch:
                 "i_squared_percent": max(0.0, (q - df) / q * 100.0) if q > 0 else 0.0,
                 "assumption": "Supplied effect estimates and standard errors are comparable and independent; this is not checked automatically.",
             }
+        if len(included) < 2:
+            meta_analysis_status = "not_performed_fewer_than_two_eligible_studies"
+        elif len(effect_measures) != 1:
+            meta_analysis_status = "not_performed_incompatible_effect_measure_labels"
+        else:
+            meta_analysis_status = "performed"
         synthesis = {
             "review_id": review_id,
             "question": review["protocol"]["question"],
@@ -397,6 +403,7 @@ class AdvancedResearch:
             "full_text_excluded": full_text_excluded,
             "included_studies": included,
             "meta_analysis": meta_analysis,
+            "meta_analysis_status": meta_analysis_status,
             "narrative_synthesis": (
                 "No studies met full-text eligibility; no quantitative synthesis was possible."
                 if not included else
