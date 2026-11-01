@@ -463,12 +463,22 @@ class AutonomyRunner:
                     "completed_steps": completed_steps,
                     "current_step": index,
                 })
+            tool_results_verified = (
+                len(completed_steps) == len(steps)
+                and all(item["verification"]["passed"] for item in receipts)
+            )
+            test_receipts = [item for item in receipts if item["tool"] == "tests.run"]
             final_state = {
                 **preserved_state, "kind": "autonomy",
                 "plan": steps, "receipts": receipts,
                 "completed_steps": completed_steps,
-                "verified": len(completed_steps) == len(steps)
-                    and all(item["verification"]["passed"] for item in receipts),
+                "tool_results_verified": tool_results_verified,
+                "verified": tool_results_verified and bool(test_receipts)
+                    and all(item["result"].get("passed", False) for item in test_receipts),
+                "verification_scope": (
+                    "tool_postconditions_and_pytest"
+                    if test_receipts else "tool_postconditions_only"
+                ),
             }
             self.tasks.transition(task_id, "completed", final_state)
             return {"task_id": task_id, "status": "completed", **final_state}
