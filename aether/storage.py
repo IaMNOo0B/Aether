@@ -1734,7 +1734,7 @@ class Store:
             if review is None:
                 raise KeyError(f"Unknown systematic review: {review_id}")
             if review["status"] != "screening":
-                raise ValueError("Cannot change screening decisions after finalization")
+                raise ValueError("Systematic review is already finalized; screening decisions cannot be changed")
             row = db.execute(
                 """SELECT reviewer_decisions_json FROM systematic_review_sources
                    WHERE review_id=? AND source_key=?""",
