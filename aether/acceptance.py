@@ -47,15 +47,18 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "D", "name": "Planning",
-        "expected": "A multi-step task respects tool limits, records receipts and handles a failed step.",
+        "expected": "A multi-step task validates dependency graphs, executes in topological order, persists verified receipts, and applies only bounded safe replanning.",
         "nodes": [
             "tests/test_autonomy.py::test_autonomy_executes_approved_workspace_tools_and_persists_receipts",
             "tests/test_autonomy.py::test_autonomy_declined_write_is_cancelled_without_side_effect",
+            "tests/test_autonomy.py::test_autonomy_sorts_dependency_graph_and_verifies_each_result",
+            "tests/test_autonomy.py::test_autonomy_rejects_cyclic_plan_before_running_tools",
+            "tests/test_autonomy.py::test_autonomy_replans_once_after_safe_missing_workspace_read",
             "tests/test_task_recovery.py::test_checkpoint_only_allowed_while_running",
         ],
         "full_scope": False,
         "limitations": [
-            "Plans are bounded sequential steps, not a dependency-aware DAG planner with automatic replanning after arbitrary failures."
+            "Automatic replanning is intentionally limited to one missing workspace read/list target; arbitrary failures are not automatically replanned."
         ],
     },
     {
