@@ -1699,11 +1699,16 @@ class Store:
                 (utc_now(), review_id),
             )
 
+
     def screen_systematic_review_source(
-        self, review_id: str, source_key: str, decision: str, reason: str,
+        self, review_id: str, source_key: str, reviewer_id: str,
+        decision: str, reason: str,
     ) -> None:
-        if decision not in {"include", "exclude", "uncertain"}:
-            raise ValueError("Invalid systematic review screening decision")
+        reviewer = reviewer_id.strip()
+        if not reviewer or len(reviewer) > 120:
+            raise ValueError("Reviewer ID must contain 1..120 characters")
+        if decision not in {"include", "exclude"}:
+            raise ValueError("Reviewer decision must be include or exclude")
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             review = db.execute(
@@ -1713,14 +1718,70 @@ class Store:
                 raise KeyError(f"Unknown systematic review: {review_id}")
             if review["status"] != "screening":
                 raise ValueError("Cannot change screening decisions after finalization")
-            cursor = db.execute(
-                """UPDATE systematic_review_sources
-                   SET decision=?, reason=?, screened_at=?
+            row = db.execute(
+                """SELECT reviewer_decisions_json FROM systematic_review_sources
                    WHERE review_id=? AND source_key=?""",
-                (decision, reason, utc_now(), review_id, source_key),
-            )
-            if cursor.rowcount != 1:
+                (review_id, source_key),
+            ).fetchone()
+            if row is None:
                 raise KeyError("Source is not part of this systematic review")
+            decisions = json.loads(row["reviewer_decisions_json"])
+            if any(item["reviewer_id"] == reviewer for item in decisions):
+                raise ValueError("This reviewer has already screened this source")
+            decisions.append({
+                "reviewer_id": reviewer, "decision": decision,
+                "reason": reason, "screened_at": utc_now(),
+            })
+            distinct = {item["decision"] for item in decisions}
+            consensus = "pending" if len(decisions) < 2 else (
+                next(iter(distinct)) if len(distinct) == 1 else "uncertain"
+            )
+            db.execute(
+                """UPDATE systematic_review_sources
+                   SET reviewer_decisions_json=?, decision=?, reason=?, screened_at=?
+                   WHERE review_id=? AND source_key=?""",
+                (json.dumps(decisions), consensus, reason, utc_now(), review_id, source_key),
+            )
+            db.execute(
+                "UPDATE systematic_reviews SET updated_at=? WHERE id=?",
+                (utc_now(), review_id),
+            )
+
+    def resolve_systematic_review_conflict(
+        self, review_id: str, source_key: str, adjudicator_id: str,
+        decision: str, rationale: str,
+    ) -> None:
+        adjudicator = adjudicator_id.strip()
+        if not adjudicator or len(adjudicator) > 120:
+            raise ValueError("Adjudicator ID must contain 1..120 characters")
+        if decision not in {"include", "exclude"} or len(rationale.strip()) < 12:
+            raise ValueError("Resolution requires include/exclude and a rationale of at least 12 characters")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                """SELECT r.status, s.reviewer_decisions_json, s.decision
+                   FROM systematic_reviews r JOIN systematic_review_sources s
+                   ON s.review_id=r.id WHERE r.id=? AND s.source_key=?""",
+                (review_id, source_key),
+            ).fetchone()
+            if row is None:
+                raise KeyError("Review source not found")
+            if row["status"] != "screening" or row["decision"] != "uncertain":
+                raise ValueError("Only unresolved reviewer disagreements can be adjudicated")
+            decisions = json.loads(row["reviewer_decisions_json"])
+            if any(item["reviewer_id"] == adjudicator for item in decisions):
+                raise ValueError("Adjudicator must be distinct from screening reviewers")
+            decisions.append({
+                "reviewer_id": adjudicator, "decision": decision,
+                "reason": rationale.strip(), "role": "adjudicator",
+                "screened_at": utc_now(),
+            })
+            db.execute(
+                """UPDATE systematic_review_sources
+                   SET reviewer_decisions_json=?, decision=?, reason=?, screened_at=?
+                   WHERE review_id=? AND source_key=?""",
+                (json.dumps(decisions), decision, rationale.strip(), utc_now(), review_id, source_key),
+            )
 
     def finalize_systematic_review(self, review_id: str, summary: dict[str, Any]) -> None:
         with self._connect() as db:
