@@ -229,6 +229,32 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_research_experiment_events
                     ON research_experiment_events(experiment_id, sequence);
+                CREATE TABLE IF NOT EXISTS systematic_reviews (
+                    id TEXT PRIMARY KEY,
+                    protocol_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'screening'
+                        CHECK(status IN ('screening', 'screening_complete_synthesis_pending')),
+                    final_summary_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS systematic_review_sources (
+                    review_id TEXT NOT NULL,
+                    source_key TEXT NOT NULL,
+                    source_json TEXT NOT NULL,
+                    decision TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(decision IN ('pending', 'include', 'exclude', 'uncertain')),
+                    reason TEXT NOT NULL DEFAULT '',
+                    screened_at TEXT,
+                    PRIMARY KEY(review_id, source_key),
+                    FOREIGN KEY(review_id) REFERENCES systematic_reviews(id) ON DELETE CASCADE
+                );
+                CREATE TABLE IF NOT EXISTS citation_evidence (
+                    id TEXT PRIMARY KEY,
+                    evidence_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS worlds (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -1609,6 +1635,163 @@ class Store:
             {**dict(row), "payload": json.loads(row["payload_json"])}
             for row in rows
         ]
+
+
+    def create_systematic_review(self, review_id: str, protocol: dict[str, Any]) -> None:
+        now = utc_now()
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO systematic_reviews
+                   (id, protocol_json, status, final_summary_json, created_at, updated_at)
+                   VALUES (?, ?, 'screening', '{}', ?, ?)""",
+                (review_id, json.dumps(protocol), now, now),
+            )
+
+    def get_systematic_review(self, review_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT * FROM systematic_reviews WHERE id=?", (review_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            sources = db.execute(
+                """SELECT source_key, source_json, decision, reason, screened_at
+                   FROM systematic_review_sources WHERE review_id=? ORDER BY source_key""",
+                (review_id,),
+            ).fetchall()
+        item = dict(row)
+        item["protocol"] = json.loads(item.pop("protocol_json"))
+        item["final_summary"] = json.loads(item.pop("final_summary_json"))
+        item["sources"] = [
+            {**dict(source), "source": json.loads(source["source_json"])}
+            for source in sources
+        ]
+        for source in item["sources"]:
+            source.pop("source_json", None)
+        return item
+
+    def add_systematic_review_source(
+        self, review_id: str, source_key: str, source: dict[str, Any],
+    ) -> None:
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            review = db.execute(
+                "SELECT status FROM systematic_reviews WHERE id=?", (review_id,)
+            ).fetchone()
+            if review is None:
+                raise KeyError(f"Unknown systematic review: {review_id}")
+            if review["status"] != "screening":
+                raise ValueError("Cannot add sources after screening is finalized")
+            db.execute(
+                """INSERT OR IGNORE INTO systematic_review_sources
+                   (review_id, source_key, source_json, decision, reason)
+                   VALUES (?, ?, ?, 'pending', '')""",
+                (review_id, source_key, json.dumps(source)),
+            )
+            db.execute(
+                "UPDATE systematic_reviews SET updated_at=? WHERE id=?",
+                (utc_now(), review_id),
+            )
+
+    def screen_systematic_review_source(
+        self, review_id: str, source_key: str, decision: str, reason: str,
+    ) -> None:
+        if decision not in {"include", "exclude", "uncertain"}:
+            raise ValueError("Invalid systematic review screening decision")
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            review = db.execute(
+                "SELECT status FROM systematic_reviews WHERE id=?", (review_id,)
+            ).fetchone()
+            if review is None:
+                raise KeyError(f"Unknown systematic review: {review_id}")
+            if review["status"] != "screening":
+                raise ValueError("Cannot change screening decisions after finalization")
+            cursor = db.execute(
+                """UPDATE systematic_review_sources
+                   SET decision=?, reason=?, screened_at=?
+                   WHERE review_id=? AND source_key=?""",
+                (decision, reason, utc_now(), review_id, source_key),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError("Source is not part of this systematic review")
+
+    def finalize_systematic_review(self, review_id: str, summary: dict[str, Any]) -> None:
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status FROM systematic_reviews WHERE id=?", (review_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown systematic review: {review_id}")
+            if row["status"] != "screening":
+                raise ValueError("Systematic review screening is already finalized")
+            pending = db.execute(
+                """SELECT COUNT(*) AS n FROM systematic_review_sources
+                   WHERE review_id=? AND decision IN ('pending', 'uncertain')""",
+                (review_id,),
+            ).fetchone()["n"]
+            if pending:
+                raise ValueError("All sources must have include/exclude decisions")
+            db.execute(
+                """UPDATE systematic_reviews SET status='screening_complete_synthesis_pending',
+                   final_summary_json=?, updated_at=? WHERE id=?""",
+                (json.dumps(summary), utc_now(), review_id),
+            )
+
+    def save_citation_evidence(self, evidence: dict[str, Any]) -> None:
+        now = utc_now()
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO citation_evidence(id, evidence_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?)""",
+                (evidence["id"], json.dumps(evidence), now, now),
+            )
+
+    def get_citation_evidence(self, evidence_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT evidence_json FROM citation_evidence WHERE id=?", (evidence_id,)
+            ).fetchone()
+        return json.loads(row["evidence_json"]) if row else None
+
+    def adjudicate_citation_evidence(
+        self, evidence_id: str, decision: str, rationale: str,
+    ) -> None:
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT evidence_json FROM citation_evidence WHERE id=?", (evidence_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown citation evidence: {evidence_id}")
+            evidence = json.loads(row["evidence_json"])
+            if evidence.get("human_decision") is not None:
+                raise ValueError("Citation evidence has already been adjudicated")
+            evidence["human_decision"] = decision
+            evidence["human_rationale"] = rationale
+            evidence["human_adjudicated_at"] = utc_now()
+            db.execute(
+                "UPDATE citation_evidence SET evidence_json=?, updated_at=? WHERE id=?",
+                (json.dumps(evidence), utc_now(), evidence_id),
+            )
+
+    def append_research_experiment_event(
+        self, experiment_id: str, event_type: str, payload: dict[str, Any],
+    ) -> None:
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            exists = db.execute(
+                "SELECT 1 FROM research_experiments WHERE id=?", (experiment_id,)
+            ).fetchone()
+            if exists is None:
+                raise KeyError(f"Unknown research experiment: {experiment_id}")
+            db.execute(
+                """INSERT INTO research_experiment_events
+                   (experiment_id, event_type, payload_json, created_at)
+                   VALUES (?, ?, ?, ?)""",
+                (experiment_id, event_type, json.dumps(payload), utc_now()),
+            )
 
     def close(self) -> None:
         """Reserved for interface symmetry; SQLite connections are short-lived."""
