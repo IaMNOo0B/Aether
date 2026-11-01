@@ -25,7 +25,7 @@ from aether.research import ResearchError, ResearchSource
 from aether.storage import Store
 
 
-ANALYSIS_VERSION = "1.0"
+ANALYSIS_VERSION = "1.1"
 
 
 def _tokens(value: str) -> set[str]:
@@ -267,6 +267,18 @@ class AdvancedResearch:
         self.store.adjudicate_citation_evidence(evidence_id, reviewer_id, decision, rationale.strip())
         return self.store.get_citation_evidence(evidence_id)
 
+    def resolve_citation_conflict(
+        self, evidence_id: str, adjudicator_id: str, decision: str, rationale: str,
+    ) -> dict[str, Any]:
+        if decision not in {"supports", "contradicts", "insufficient"}:
+            raise ValueError("Resolution must be supports, contradicts or insufficient")
+        if len(rationale.strip()) < 12:
+            raise ValueError("Resolution requires a rationale of at least 12 characters")
+        self.store.resolve_citation_evidence(
+            evidence_id, adjudicator_id, decision, rationale.strip()
+        )
+        return self.store.get_citation_evidence(evidence_id)
+
     def analyze_csv(
         self, experiment_id: str, csv_bytes: bytes, numeric_columns: list[str],
         group_column: str | None = None, comparison_groups: list[str] | None = None,
@@ -326,6 +338,12 @@ class AdvancedResearch:
             })
             if len(groups) != 2 or groups[0] == groups[1]:
                 raise ValueError("Grouped comparison requires exactly two distinct group labels")
+            observed_groups = {
+                (row.get(group_column) or "").strip() for row in rows
+                if (row.get(group_column) or "").strip()
+            }
+            if observed_groups != set(groups):
+                raise ValueError("CSV contains group labels outside the requested two-group comparison")
             comparison = {}
             for column in requested:
                 grouped = {label: [] for label in groups}
