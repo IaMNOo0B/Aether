@@ -122,3 +122,76 @@ def test_autonomy_never_overwrites_existing_workspace_files(tmp_path):
     else:
         raise AssertionError("Existing workspace file must not be overwritten")
     assert destination.read_text(encoding="utf-8") == "preserve me"
+
+
+
+def test_autonomy_sorts_dependency_graph_and_verifies_each_result(tmp_path):
+    response = json.dumps({"steps": [
+        {"id": "second", "depends_on": ["first"], "purpose": "List workspace after prerequisite",
+         "tool": "workspace.list", "args": {"path": "."}},
+        {"id": "first", "purpose": "List workspace first",
+         "tool": "workspace.list", "args": {"path": "."}},
+    ]})
+    store = Store(tmp_path / "aether.sqlite3")
+    runner = AutonomyRunner(
+        FakeProvider(response), store, AutonomySettings(enabled=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+
+    result = runner.run("Execute dependent workspace checks")
+
+    assert result["status"] == "completed"
+    assert result["verified"] is True
+    assert result["completed_steps"] == ["first", "second"]
+    assert [item["plan_step_id"] for item in result["receipts"]] == ["first", "second"]
+    assert all(item["verification"]["passed"] for item in result["receipts"])
+
+
+def test_autonomy_rejects_cyclic_plan_before_running_tools(tmp_path):
+    response = json.dumps({"steps": [
+        {"id": "first", "depends_on": ["second"], "tool": "workspace.list", "args": {}},
+        {"id": "second", "depends_on": ["first"], "tool": "workspace.list", "args": {}},
+    ]})
+    store = Store(tmp_path / "aether.sqlite3")
+    runner = AutonomyRunner(
+        FakeProvider(response), store, AutonomySettings(enabled=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+
+    try:
+        runner.run("Reject a cyclic plan")
+    except ValueError as exc:
+        assert "cycle" in str(exc).casefold()
+    else:
+        raise AssertionError("Cyclic plans must be rejected")
+
+    failed = store.list_tasks(status="failed", limit=5)
+    assert len(failed) == 1
+    assert failed[0]["state"]["receipts"] == []
+
+
+def test_autonomy_does_not_complete_when_tool_postcondition_fails(tmp_path):
+    response = json.dumps({"steps": [
+        {"id": "read", "purpose": "Read a workspace file",
+         "tool": "workspace.read", "args": {"path": "missing.txt"}},
+    ]})
+    store = Store(tmp_path / "aether.sqlite3")
+    runner = AutonomyRunner(
+        FakeProvider(response), store, AutonomySettings(enabled=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+    runner.gateway.execute = lambda *args, **kwargs: {
+        "path": "different.txt", "content": "unverified"
+    }
+
+    try:
+        runner.run("Verify tool result")
+    except RuntimeError as exc:
+        assert "verification failed" in str(exc).casefold()
+    else:
+        raise AssertionError("An unverifiable tool result must not complete the task")
+
+    failed = store.list_tasks(status="failed", limit=5)
+    assert len(failed) == 1
+    receipt = failed[0]["state"]["receipts"][0]
+    assert receipt["verification"]["passed"] is False
