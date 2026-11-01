@@ -649,11 +649,18 @@ class AutonomyRunner:
         plan_ids = {step.get("id") for step in plan if isinstance(step, dict)}
         if not completed.issubset(plan_ids):
             raise RuntimeError("Interrupted task checkpoint has unknown completed step IDs")
+        verified_receipt_ids: set[str] = set()
         for receipt in receipts:
+            receipt_step_id = receipt.get("plan_step_id")
             if receipt.get("verification", {}).get("passed") is True:
-                completed.add(receipt.get("plan_step_id"))
-            elif receipt.get("plan_step_id"):
+                if receipt_step_id not in plan_ids:
+                    raise RuntimeError("Interrupted task receipt references an unknown plan step")
+                verified_receipt_ids.add(receipt_step_id)
+            else:
                 raise RuntimeError("Interrupted task contains an unverified receipt; manual review required")
+        if not completed.issubset(verified_receipt_ids):
+            raise RuntimeError("Interrupted task marks a step complete without a verified receipt")
+        completed.update(verified_receipt_ids)
         pending = next((step for step in plan if step.get("id") not in completed), None)
         safe_to_replay = {"workspace.read", "workspace.list", "world.state", "world.actions"}
         if pending is not None and pending.get("tool") not in safe_to_replay:
