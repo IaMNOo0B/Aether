@@ -215,6 +215,186 @@ class AdvancedResearch:
         self.store.finalize_systematic_review(review_id, summary)
         return self.store.get_systematic_review(review_id)
 
+
+    def _stage_consensus(self, review_id: str, source_key: str, stage: str) -> dict[str, Any]:
+        entries = self.store.list_systematic_review_assessments(review_id, source_key)
+        relevant = [item for item in entries if item["stage"] == stage]
+        adjudicator = next((item for item in reversed(relevant) if item["role"] == "adjudicator"), None)
+        reviewers = [item for item in relevant if item["role"] == "reviewer"]
+        if adjudicator:
+            return {"status": "adjudicated", "payload": adjudicator["payload"], "reviewers": reviewers}
+        if len(reviewers) < 2:
+            return {"status": "awaiting_second_reviewer", "payload": None, "reviewers": reviewers}
+        left, right = reviewers[-2]["payload"], reviewers[-1]["payload"]
+        if stage == "full_text":
+            agrees = left.get("decision") == right.get("decision")
+        else:
+            agrees = json.dumps(left, sort_keys=True) == json.dumps(right, sort_keys=True)
+        return {
+            "status": "agreed" if agrees else "disagreement",
+            "payload": left if agrees else None,
+            "reviewers": reviewers,
+        }
+
+    def record_review_stage(
+        self, review_id: str, source_key: str, stage: str,
+        reviewer_id: str, payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        review = self.store.get_systematic_review(review_id)
+        if review is None:
+            raise KeyError(f"Unknown systematic review: {review_id}")
+        if stage == "full_text":
+            if payload.get("decision") not in {"include", "exclude"}:
+                raise ValueError("Full-text assessment requires include or exclude")
+            if len(str(payload.get("rationale", "")).strip()) < 12:
+                raise ValueError("Full-text eligibility requires a detailed rationale")
+            if payload["decision"] == "include" and not str(payload.get("text_locator", "")).strip():
+                raise ValueError("Included full text requires a page, section or paragraph locator")
+        elif stage == "risk_of_bias":
+            domains = payload.get("domains")
+            required = {"randomization", "deviations", "missing_data", "outcome_measurement", "selective_reporting"}
+            if not isinstance(domains, dict) or not required.issubset(domains):
+                raise ValueError("Risk-of-bias assessment requires five prespecified domains")
+            valid = {"low", "some_concerns", "high", "not_applicable"}
+            for name in required:
+                item = domains[name]
+                if not isinstance(item, dict) or item.get("rating") not in valid or len(str(item.get("rationale", "")).strip()) < 12:
+                    raise ValueError(f"Risk-of-bias domain {name} requires a valid rating and rationale")
+        elif stage == "extraction":
+            required = {"study_design", "population", "sample_size", "outcome", "effect_measure", "effect_estimate", "standard_error"}
+            if not required.issubset(payload):
+                raise ValueError("Extraction requires study_design, population, sample_size, outcome, effect_measure, effect_estimate and standard_error")
+            if isinstance(payload["sample_size"], bool) or int(payload["sample_size"]) < 1:
+                raise ValueError("sample_size must be a positive integer")
+            estimate, standard_error = float(payload["effect_estimate"]), float(payload["standard_error"])
+            if not math.isfinite(estimate) or not math.isfinite(standard_error) or standard_error <= 0:
+                raise ValueError("effect_estimate must be finite and standard_error must be finite and positive")
+        else:
+            raise ValueError("Stage must be full_text, risk_of_bias or extraction")
+        self.store.record_systematic_review_assessment(
+            review_id, source_key, stage, reviewer_id, payload, "reviewer"
+        )
+        return self._stage_consensus(review_id, source_key, stage)
+
+    def resolve_review_stage(
+        self, review_id: str, source_key: str, stage: str,
+        adjudicator_id: str, payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        current = self._stage_consensus(review_id, source_key, stage)
+        if current["status"] != "disagreement":
+            raise ValueError("Stage has no unresolved two-reviewer disagreement")
+        # Reuse the same stage validators while keeping the adjudicator distinct.
+        if stage == "full_text":
+            if payload.get("decision") not in {"include", "exclude"} or len(str(payload.get("rationale", "")).strip()) < 12:
+                raise ValueError("Adjudication requires a decision and detailed rationale")
+            if payload["decision"] == "include" and not str(payload.get("text_locator", "")).strip():
+                raise ValueError("Included full text requires a text locator")
+        elif stage == "risk_of_bias":
+            self._validate_risk_domains(payload)
+        elif stage == "extraction":
+            required = {"study_design", "population", "sample_size", "outcome", "effect_measure", "effect_estimate", "standard_error"}
+            if not required.issubset(payload) or float(payload["standard_error"]) <= 0:
+                raise ValueError("Adjudicated extraction is missing required fields or has invalid standard error")
+        reviewers = {item["reviewer_id"] for item in current["reviewers"]}
+        if adjudicator_id in reviewers:
+            raise ValueError("Adjudicator must be distinct from both reviewers")
+        self.store.record_systematic_review_assessment(
+            review_id, source_key, stage, adjudicator_id, payload, "adjudicator"
+        )
+        return self._stage_consensus(review_id, source_key, stage)
+
+    @staticmethod
+    def _validate_risk_domains(payload: dict[str, Any]) -> None:
+        domains = payload.get("domains")
+        required = {"randomization", "deviations", "missing_data", "outcome_measurement", "selective_reporting"}
+        valid = {"low", "some_concerns", "high", "not_applicable"}
+        if not isinstance(domains, dict) or not required.issubset(domains):
+            raise ValueError("Risk-of-bias assessment requires five prespecified domains")
+        for name in required:
+            item = domains[name]
+            if not isinstance(item, dict) or item.get("rating") not in valid or len(str(item.get("rationale", "")).strip()) < 12:
+                raise ValueError(f"Risk-of-bias domain {name} requires a valid rating and rationale")
+
+    def synthesize_review(self, review_id: str) -> dict[str, Any]:
+        review = self.store.get_systematic_review(review_id)
+        if review is None:
+            raise KeyError(f"Unknown systematic review: {review_id}")
+        if review["status"] != "screening_complete_synthesis_pending":
+            raise ValueError("Complete title/abstract screening before synthesis")
+        included = []
+        full_text_excluded = []
+        for source in review["sources"]:
+            if source["decision"] != "include":
+                continue
+            key = source["source_key"]
+            full = self._stage_consensus(review_id, key, "full_text")
+            if full["status"] not in {"agreed", "adjudicated"}:
+                raise ValueError(f"Full-text eligibility for {key} is unresolved")
+            if full["payload"]["decision"] == "exclude":
+                full_text_excluded.append({"source": source["source"], "assessment": full["payload"]})
+                continue
+            risk = self._stage_consensus(review_id, key, "risk_of_bias")
+            extraction = self._stage_consensus(review_id, key, "extraction")
+            if risk["status"] not in {"agreed", "adjudicated"}:
+                raise ValueError(f"Risk-of-bias assessment for {key} is unresolved")
+            if extraction["status"] not in {"agreed", "adjudicated"}:
+                raise ValueError(f"Data extraction for {key} is unresolved")
+            included.append({
+                "source": source["source"],
+                "full_text_eligibility": full["payload"],
+                "risk_of_bias": risk["payload"],
+                "extraction": extraction["payload"],
+            })
+        if not included:
+            raise ValueError("No full-text eligible studies have complete risk-of-bias and extraction records")
+        effect_measures = {item["extraction"]["effect_measure"] for item in included}
+        meta_analysis = None
+        if len(included) >= 2 and len(effect_measures) == 1:
+            rows = [item["extraction"] for item in included]
+            estimates = [float(item["effect_estimate"]) for item in rows]
+            variances = [float(item["standard_error"]) ** 2 for item in rows]
+            weights = [1.0 / value for value in variances]
+            fixed = sum(w * x for w, x in zip(weights, estimates)) / sum(weights)
+            q = sum(w * (x - fixed) ** 2 for w, x in zip(weights, estimates))
+            df = len(rows) - 1
+            c_value = sum(weights) - sum(w * w for w in weights) / sum(weights)
+            tau_squared = max(0.0, (q - df) / c_value) if c_value > 0 else 0.0
+            random_weights = [1.0 / (value + tau_squared) for value in variances]
+            pooled = sum(w * x for w, x in zip(random_weights, estimates)) / sum(random_weights)
+            pooled_se = math.sqrt(1.0 / sum(random_weights))
+            meta_analysis = {
+                "model": "DerSimonian-Laird random effects",
+                "effect_measure": next(iter(effect_measures)),
+                "studies": len(rows),
+                "pooled_effect": pooled,
+                "standard_error": pooled_se,
+                "confidence_interval_95pct_normal_approximation": [pooled - 1.96 * pooled_se, pooled + 1.96 * pooled_se],
+                "cochran_q": q,
+                "degrees_of_freedom": df,
+                "tau_squared": tau_squared,
+                "i_squared_percent": max(0.0, (q - df) / q * 100.0) if q > 0 else 0.0,
+                "assumption": "Supplied effect estimates and standard errors are comparable and independent; this is not checked automatically.",
+            }
+        synthesis = {
+            "review_id": review_id,
+            "question": review["protocol"]["question"],
+            "status": "synthesized",
+            "title_abstract_included": sum(item["decision"] == "include" for item in review["sources"]),
+            "full_text_excluded": full_text_excluded,
+            "included_studies": included,
+            "meta_analysis": meta_analysis,
+            "narrative_synthesis": "Structured evidence table generated from independently reviewed extraction records. Interpret results alongside risk-of-bias ratings and protocol limitations.",
+            "limitations": [
+                "Reviewer IDs are operator-supplied labels, not authenticated identities.",
+                "Risk-of-bias domains are a generic structured template, not a validated tool for every study design.",
+                "Meta-analysis is performed only when at least two included studies share an effect-measure label and provide effect estimates with standard errors.",
+                "The normal-approximation confidence interval and DerSimonian-Laird model may be inappropriate for some outcomes or small study counts.",
+                "No publication-bias test, certainty-of-evidence grading or PRISMA compliance is claimed.",
+            ],
+        }
+        self.store.complete_systematic_review_synthesis(review_id, synthesis)
+        return self.store.get_systematic_review(review_id)
+
     def check_citation_support(
         self, claim_text: str, report_id: str, source_url: str, quoted_passage: str,
     ) -> dict[str, Any]:
