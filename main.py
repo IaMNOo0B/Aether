@@ -644,6 +644,43 @@ def main() -> int:
                 )
                 continue
 
+            if lower.startswith("/memory-versions "):
+                memory_id = int(user_text[len("/memory-versions "):].strip())
+                print(json.dumps(engine.memory.versions(memory_id), indent=2, ensure_ascii=False))
+                continue
+
+            if lower.startswith("/memory-conflicts"):
+                suffix = user_text[len("/memory-conflicts"):].strip()
+                memory_id = int(suffix) if suffix else None
+                conflicts = engine.memory.find_contradictions(memory_id)
+                print(json.dumps(conflicts, indent=2, ensure_ascii=False))
+                if not conflicts:
+                    print("AETHER > No explicit fact-slot conflicts found.")
+                continue
+
+            if lower.startswith("/memory-backup "):
+                destination = Path(user_text[len("/memory-backup "):].strip()).expanduser()
+                if not str(destination):
+                    print("Usage: /memory-backup destination-file")
+                    continue
+                saved = store.backup_to(destination)
+                print(f"AETHER > Consistent database backup created: {saved}")
+                continue
+
+            if lower.startswith("/memory-restore "):
+                source = Path(user_text[len("/memory-restore "):].strip()).expanduser()
+                if not source.is_file():
+                    print(f"AETHER > Backup file not found: {source}")
+                    continue
+                print("WARNING: Restore replaces the entire AETHER database, not just memories.")
+                print("Stop every other AETHER process before continuing.")
+                if input("Type RESTORE to replace current data: ").strip() != "RESTORE":
+                    print("AETHER > Restore cancelled.")
+                    continue
+                store.restore_from(source)
+                print("AETHER > Database restored. Restart AETHER before continuing.")
+                break
+
             print(f"AETHER > {engine.respond(user_text)}\n")
         except (
             ValueError, PermissionError, FileNotFoundError, ResearchError,
