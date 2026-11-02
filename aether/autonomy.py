@@ -6,6 +6,7 @@ from typing import Any, Callable
 from uuid import uuid4
 import json
 import subprocess
+import time
 import sys
 
 from aether.config import AutonomySettings, LimitSettings, ResearchSettings
@@ -15,6 +16,7 @@ from aether.storage import Store
 from aether.world_model import WorldModel
 from aether.resources import ResourceGuard, ResourceLimitExceeded
 from aether.tasks import Task, TaskManager
+from aether.goals import GoalManager
 
 
 class ToolDenied(PermissionError):
@@ -208,6 +210,7 @@ class AutonomyRunner:
         self.resource_guard = resource_guard
         self.gpu_required = gpu_required
         self.tasks = TaskManager(store)
+        self.goals = GoalManager(store)
         self.researcher = Researcher(
             store, research_settings.timeout_seconds, limits.max_research_results
         )
@@ -306,78 +309,183 @@ class AutonomyRunner:
             self.tasks.transition(task_id, "cancelled", {
                 **task_data["state"], "emergency_stop": True, "reason": reason,
             })
+            self.goals.sync_task_status(task_id, "cancelled")
             return {"task_id": task_id, "status": "cancelled", "reason": reason}
-        self.tasks.transition(task_id, "running")
-        receipts: list[dict[str, Any]] = []
+
+        state = dict(task_data["state"])
+        budget = state.get("resource_budget") or {
+            "max_runtime_seconds": 300, "max_tool_calls": self.limits.max_autonomy_steps,
+            "max_model_calls": 1,
+        }
+        max_runtime = min(int(budget.get("max_runtime_seconds", 300)), 86400)
+        max_tool_calls = min(int(budget.get("max_tool_calls", self.limits.max_autonomy_steps)), 100)
+        max_model_calls = min(int(budget.get("max_model_calls", 1)), 10)
+        started_at = float(state.get("started_at_epoch", time.time()))
+        state["started_at_epoch"] = started_at
+        state["budget"] = {
+            "max_runtime_seconds": max_runtime, "max_tool_calls": max_tool_calls,
+            "max_model_calls": max_model_calls,
+        }
+        self.tasks.transition(task_id, "running", state)
+        self.goals.sync_task_status(task_id, "running")
+
+        receipts: list[dict[str, Any]] = list(state.get("receipts", []))
         preserved_state = {
-            key: value for key, value in task_data["state"].items()
-            if key not in {"plan", "receipts", "current_step"}
+            key: value for key, value in state.items()
+            if key not in {"plan", "receipts", "current_step", "pause_requested",
+                           "cancel_requested", "pause_reason", "cancel_reason"}
         }
         try:
-            steps = self._make_plan(task_data["objective"])
+            steps = state.get("plan")
+            model_calls = int(state.get("model_calls", 0))
+            if not steps:
+                if model_calls >= max_model_calls:
+                    raise ResourceLimitExceeded("Autonomy model-call budget exhausted before planning")
+                steps = self._make_plan(task_data["objective"])
+                model_calls += 1
+            if not isinstance(steps, list) or not steps:
+                raise ValueError("Saved autonomy plan is empty or invalid")
+            if len(steps) > self.limits.max_autonomy_steps or len(steps) > max_tool_calls:
+                raise ResourceLimitExceeded("Plan exceeds the task's configured tool-call budget")
+            current_step = int(state.get("current_step", 0))
+            if current_step < 0 or current_step > len(steps):
+                raise ValueError("Saved autonomy checkpoint has an invalid current_step")
             self.tasks.checkpoint(task_id, {
-                **preserved_state, "kind": "autonomy",
-                "plan": steps, "receipts": receipts,
+                **preserved_state, "kind": "autonomy", "plan": steps,
+                "receipts": receipts, "current_step": current_step,
+                "model_calls": model_calls,
             })
-            for index, step in enumerate(steps, start=1):
+            for index in range(current_step, len(steps)):
+                latest = self.store.get_task(task_id)
+                if latest is None:
+                    raise KeyError(f"Task disappeared: {task_id}")
+                latest_state = latest["state"]
                 if self.store.emergency_stop_enabled():
                     raise EmergencyStop("AETHER emergency stop activated during task execution")
+                if latest_state.get("cancel_requested"):
+                    cancelled_state = {
+                        **preserved_state, "kind": "autonomy", "plan": steps,
+                        "receipts": receipts, "current_step": index,
+                        "cancel_reason": latest_state.get("cancel_reason", "Cancelled by user"),
+                    }
+                    self.tasks.transition(task_id, "cancelled", cancelled_state)
+                    self.goals.sync_task_status(task_id, "cancelled")
+                    self.store.create_notification(
+                        uuid4().hex, "task_cancelled", "Autonomy task cancelled",
+                        task_data["objective"], "warning", task_id,
+                    )
+                    return {"task_id": task_id, "status": "cancelled", **cancelled_state}
+                if latest_state.get("pause_requested"):
+                    paused_state = {
+                        **preserved_state, "kind": "autonomy", "plan": steps,
+                        "receipts": receipts, "current_step": index,
+                        "pause_reason": latest_state.get("pause_reason", "Paused by user"),
+                    }
+                    self.tasks.transition(task_id, "paused", paused_state)
+                    self.goals.sync_task_status(task_id, "paused")
+                    self.store.create_notification(
+                        uuid4().hex, "task_paused", "Autonomy task paused",
+                        task_data["objective"], "info", task_id,
+                    )
+                    return {"task_id": task_id, "status": "paused", **paused_state}
+                elapsed = time.time() - started_at
+                if elapsed >= max_runtime:
+                    raise ResourceLimitExceeded(
+                        f"Task runtime budget exhausted ({elapsed:.1f}s / {max_runtime}s)"
+                    )
+                if len(receipts) >= max_tool_calls:
+                    raise ResourceLimitExceeded(
+                        f"Task tool-call budget exhausted ({len(receipts)} / {max_tool_calls})"
+                    )
                 if self.resource_guard is not None:
-                    self.resource_guard.check(f"autonomy tool {step['tool']}")
+                    self.resource_guard.check(f"autonomy tool {steps[index]['tool']}")
+                step = steps[index]
                 result = self.gateway.execute(
                     step["tool"], step.get("args", {}), self._guard_approval(approval)
                 )
                 receipts.append({
-                    "step": index, "tool": step["tool"], "purpose": step.get("purpose"),
+                    "step": index + 1, "tool": step["tool"], "purpose": step.get("purpose"),
                     "human_approved": step["tool"] in {"workspace.write", "tests.run"},
-                    "result": result,
+                    "result": result, "completed_at": time.time(),
                 })
                 self.tasks.checkpoint(task_id, {
-                    **preserved_state, "kind": "autonomy",
-                    "plan": steps, "receipts": receipts,
-                    "current_step": index,
+                    **preserved_state, "kind": "autonomy", "plan": steps,
+                    "receipts": receipts, "current_step": index + 1,
+                    "model_calls": model_calls, "started_at_epoch": started_at,
+                    "budget": state["budget"],
                 })
                 if step["tool"] == "tests.run" and not result.get("passed", False):
                     raise RuntimeError("Independent test suite failed; autonomy task rejected")
+
             test_receipts = [item for item in receipts if item["tool"] == "tests.run"]
             final_state = {
-                **preserved_state, "kind": "autonomy",
-                "plan": steps, "receipts": receipts,
+                **preserved_state, "kind": "autonomy", "plan": steps,
+                "receipts": receipts, "current_step": len(steps),
+                "model_calls": model_calls,
                 "verified": bool(test_receipts) and all(
                     item["result"].get("passed", False) for item in test_receipts
                 ),
+                "completion_criteria_recorded": state.get("completion_criteria", []),
+                "stop_condition": state.get("stop_condition", "All planned steps completed."),
             }
             self.tasks.transition(task_id, "completed", final_state)
+            self.goals.sync_task_status(task_id, "completed")
+            self.store.create_notification(
+                uuid4().hex, "task_completed", "Autonomy task completed",
+                task_data["objective"], "success", task_id,
+            )
             return {"task_id": task_id, "status": "completed", **final_state}
         except ResourceLimitExceeded as exc:
-            self.tasks.transition(task_id, "cancelled", {
-                **preserved_state, "kind": "autonomy",
+            final = {
+                **preserved_state, "kind": "autonomy", "plan": state.get("plan", []),
                 "receipts": receipts, "resource_limit": str(exc),
-            })
-            return {
-                "task_id": task_id, "status": "cancelled",
-                "receipts": receipts, "reason": str(exc),
+                "stop_condition_triggered": "resource_budget_exhausted",
             }
+            self.tasks.transition(task_id, "cancelled", final)
+            self.goals.sync_task_status(task_id, "cancelled")
+            self.store.create_notification(
+                uuid4().hex, "resource_budget_exhausted", "Autonomy stopped by resource budget",
+                str(exc), "warning", task_id,
+            )
+            return {"task_id": task_id, "status": "cancelled", "receipts": receipts, "reason": str(exc)}
         except EmergencyStop as exc:
-            self.tasks.transition(task_id, "cancelled", {
-                **preserved_state, "kind": "autonomy",
+            final = {
+                **preserved_state, "kind": "autonomy", "plan": state.get("plan", []),
                 "receipts": receipts, "emergency_stop": True, "reason": str(exc),
-            })
-            return {
-                "task_id": task_id, "status": "cancelled",
-                "receipts": receipts, "reason": str(exc),
+                "stop_condition_triggered": "emergency_stop",
             }
+            self.tasks.transition(task_id, "cancelled", final)
+            self.goals.sync_task_status(task_id, "cancelled")
+            self.store.create_notification(
+                uuid4().hex, "emergency_stop", "Autonomy stopped",
+                str(exc), "warning", task_id,
+            )
+            return {"task_id": task_id, "status": "cancelled", "receipts": receipts, "reason": str(exc)}
         except ActionDeclined as exc:
-            self.tasks.transition(task_id, "cancelled", {
-                **preserved_state, "kind": "autonomy",
+            final = {
+                **preserved_state, "kind": "autonomy", "plan": state.get("plan", []),
                 "receipts": receipts, "reason": str(exc),
-            })
+                "stop_condition_triggered": "approval_declined",
+            }
+            self.tasks.transition(task_id, "cancelled", final)
+            self.goals.sync_task_status(task_id, "cancelled")
+            self.store.create_notification(
+                uuid4().hex, "approval_declined", "Autonomy action declined",
+                str(exc), "warning", task_id,
+            )
             return {"task_id": task_id, "status": "cancelled", "receipts": receipts, "reason": str(exc)}
         except Exception as exc:
-            self.tasks.transition(task_id, "failed", {
-                **preserved_state, "kind": "autonomy", "receipts": receipts,
-                "error_type": type(exc).__name__, "error": str(exc)[:1000],
-            })
+            final = {
+                **preserved_state, "kind": "autonomy", "plan": state.get("plan", []),
+                "receipts": receipts, "error_type": type(exc).__name__,
+                "error": str(exc)[:1000],
+            }
+            self.tasks.transition(task_id, "failed", final)
+            self.goals.sync_task_status(task_id, "failed")
+            self.store.create_notification(
+                uuid4().hex, "task_failed", "Autonomy task failed",
+                str(exc)[:1000], "error", task_id,
+            )
             raise
 
     def run_pending(
