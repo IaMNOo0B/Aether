@@ -114,16 +114,18 @@ class ResearchCompletion:
         for domain, item in ratings.items():
             if item.get("rating") not in valid or len(item.get("rationale", "").strip()) < 12:
                 raise ValueError(f"{domain} requires a valid rating and rationale")
-        payload = {"instrument": f"AETHER-structured-{design}-v1", "design": design, "domains": ratings,
-                   "limitation": "Structured domain checklist; not a validated RoB 2, ROBINS-I, CASP or JBI instrument."}
-        event_id = uuid4().hex
-        # Persist as a provenance-bearing research report; review_id/source_key are explicit metadata.
-        self.store.save_research_report(
-            event_id, f"risk-of-bias:{review_id}:{source_key}",
-            json.dumps(payload, sort_keys=True), [{"title": source_key, "url": source_key,
-                "evidence_type": "operator-risk-of-bias-assessment", "summary": json.dumps(payload)}],
+        payload = {
+            "instrument": f"AETHER-structured-{design}-v1",
+            "design": design,
+            "domains": ratings,
+            "limitation": "Structured domain checklist; not a validated RoB 2, ROBINS-I, CASP or JBI instrument.",
+        }
+        # Keep design-specific assessments in the same dual-reviewed evidence pipeline.
+        from aether.research_advanced import AdvancedResearch
+        consensus = AdvancedResearch(self.store).record_review_stage(
+            review_id, source_key, "risk_of_bias", reviewer_id, payload, password=password,
         )
-        return {"id": event_id, **payload}
+        return {"instrument": payload["instrument"], "design": design, **consensus}
 
     def grade_certainty(
         self, review_id: str, outcome: str, starting_level: str,
