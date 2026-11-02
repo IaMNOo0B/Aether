@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -45,7 +46,7 @@ def load_image_payload(path: str | Path, *, max_bytes: int = MAX_IMAGE_BYTES) ->
         "mime_type": mime_type,
         "data": base64.b64encode(data).decode("ascii"),
         "filename": image_path.name,
-        "sha256": __import__("hashlib").sha256(data).hexdigest(),
+        "sha256": hashlib.sha256(data).hexdigest(),
     }
 
 
