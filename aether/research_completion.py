@@ -220,7 +220,12 @@ class ResearchCompletion:
         summary = review.get("final_summary") or {}
         studies = summary.get("included_studies", [])
         effects = [x["extraction"] for x in studies if {"effect_estimate", "standard_error"} <= x.get("extraction", {}).keys()]
-        measures = {item.get("effect_measure") for item in effects}\n        if len(measures) > 1:\n            return {"review_id": review_id, "status": "not_tested_incompatible_effect_measures",\n                    "effect_measures": sorted(str(item) for item in measures),\n                    "limitation": "Egger regression is not run across mixed effect measures."}\n        result = self.egger_publication_bias(effects)
+        measures = {item.get("effect_measure") for item in effects}
+        if len(measures) > 1:
+            return {"review_id": review_id, "status": "not_tested_incompatible_effect_measures",
+                    "effect_measures": sorted(str(item) for item in measures),
+                    "limitation": "Egger regression is not run across mixed effect measures."}
+        result = self.egger_publication_bias(effects)
         result["review_id"] = review_id
         result["effect_measure"] = studies[0]["extraction"].get("effect_measure") if studies else None
         return result
@@ -272,6 +277,7 @@ class ResearchCompletion:
             "effect_measure": "raw_mean_difference",
             "limitations": "Raw rows are summarized using an independent-groups Welch standard error. Pairing, clustering, repeated measures, missingness mechanisms and causal identification are not inferred.",
         }
-        event = {"type": "raw_observations_ingested", "dataset_encoding": "base64-utf8-csv",\n                 "raw_dataset_base64": base64.b64encode(csv_bytes).decode("ascii"), **artifact}
+        event = {"type": "raw_observations_ingested", "dataset_encoding": "base64-utf8-csv",
+                 "raw_dataset_base64": base64.b64encode(csv_bytes).decode("ascii"), **artifact}
         self.store.append_research_experiment_event(experiment_id, "raw_observations_ingested", event)
         return artifact
