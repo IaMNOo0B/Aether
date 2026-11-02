@@ -43,6 +43,7 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_research_completion.py::test_registered_reviewer_authentication_is_enforced_for_all_review_decisions",
             "tests/test_research_completion.py::test_authenticated_stage_and_citation_actions_reject_wrong_credentials",
             "tests/test_research_advanced.py::test_quantitative_extraction_validates_exact_source_quote_and_numeric_values",
+            "tests/test_research_advanced.py::test_full_text_not_retrieved_is_counted_in_prisma_flow",
         ],
         "full_scope": True,
         "limitations": [
