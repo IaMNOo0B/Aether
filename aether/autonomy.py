@@ -385,6 +385,7 @@ class AutonomyRunner:
                         **preserved_state, "kind": "autonomy", "plan": steps,
                         "receipts": receipts, "current_step": index,
                         "pause_reason": latest_state.get("pause_reason", "Paused by user"),
+                        "model_calls": model_calls,
                         "active_elapsed_seconds": active_elapsed + (time.time() - started_at),
                     }
                     self.tasks.transition(task_id, "paused", paused_state)
