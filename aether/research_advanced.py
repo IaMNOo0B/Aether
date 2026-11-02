@@ -223,9 +223,18 @@ class AdvancedResearch:
         if any(item["decision"] in {"pending", "uncertain"} for item in sources):
             raise ValueError("Every retrieved source must have an include/exclude decision before finalization")
         included = [item for item in sources if item["decision"] == "include"]
+        quantitative_evidence = [
+            item["extraction"].get("effect_evidence_status", "not_independently_checked_no_effect_quote")
+            for item in included if "effect_estimate" in item["extraction"]
+        ]
         summary = {
             "review_id": review_id,
             "question": review["protocol"]["question"],
+            "effect_evidence_validation": {
+                "exact_quote_and_numeric_values_found": quantitative_evidence.count("exact_quote_and_numeric_values_found"),
+                "not_independently_checked_no_effect_quote": quantitative_evidence.count("not_independently_checked_no_effect_quote"),
+                "limitation": "Exact quotation and numeric-token checks do not prove correct extraction, context, units, or study-design validity.",
+            },
             "retrieved": len(sources),
             "included": len(included),
             "excluded": len(sources) - len(included),
@@ -318,6 +327,30 @@ class AdvancedResearch:
                     raise ValueError(f"Risk-of-bias domain {name} requires a valid rating and rationale")
         elif stage == "extraction":
             self._validate_extraction_payload(payload)
+            quantitative = {"effect_estimate", "standard_error"} <= set(payload)
+            if quantitative and payload.get("effect_evidence_quote"):
+                source_record = next(item.get("source", {}) for item in review["sources"]
+                                     if item.get("source_key") == source_key)
+                full_text = str(source_record.get("full_text") or "")
+                quote = " ".join(str(payload["effect_evidence_quote"]).casefold().split())
+                captured = " ".join(full_text.casefold().split())
+                if not payload.get("effect_text_locator", "").strip():
+                    raise ValueError("Quantitative evidence quote requires an exact page/section/paragraph locator")
+                if not full_text or quote not in captured:
+                    raise ValueError("Quantitative effect quote must match captured full text exactly")
+                numeric_values = [float(value) for value in re.findall(
+                    r"[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?", quote
+                )]
+                estimate, standard_error = float(payload["effect_estimate"]), float(payload["standard_error"])
+                if not any(math.isclose(value, estimate, rel_tol=1e-9, abs_tol=1e-12) for value in numeric_values):
+                    raise ValueError("Effect estimate is not present in the quoted source passage")
+                if not any(math.isclose(value, standard_error, rel_tol=1e-9, abs_tol=1e-12) for value in numeric_values):
+                    raise ValueError("Standard error is not present in the quoted source passage")
+                payload["effect_evidence_status"] = "exact_quote_and_numeric_values_found"
+            elif quantitative:
+                payload["effect_evidence_status"] = "not_independently_checked_no_effect_quote"
+            else:
+                payload["effect_evidence_status"] = "qualitative_extraction_no_effect_size"
         else:
             raise ValueError("Stage must be full_text, risk_of_bias or extraction")
         self.store.record_systematic_review_assessment(
