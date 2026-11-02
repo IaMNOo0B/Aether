@@ -433,3 +433,28 @@ def test_quantitative_extraction_validates_exact_source_quote_and_numeric_values
     assert result["status"] == "awaiting_second_reviewer"
     assert result["reviewers"][0]["payload"]["effect_evidence_status"] == "exact_quote_and_numeric_values_found"
 
+
+def test_full_text_not_retrieved_is_counted_in_prisma_flow(tmp_path):
+    from aether.research_completion import ResearchCompletion
+
+    store = Store(tmp_path / "research.sqlite3")
+    workflow = AdvancedResearch(store)
+    review = workflow.create_systematic_review(
+        "Does intervention X improve outcome Y?",
+        ["Human studies"], ["Animal studies"],
+        {"databases": ["Crossref"], "queries": ["intervention X"], "searched_on": "2026-11-02"},
+    )
+    source = sample_source()
+    workflow.add_review_sources(review["id"], [source])
+    workflow.screen_source(review["id"], source.url, "screen-a", "include", "The abstract meets the eligibility criteria.")
+    workflow.screen_source(review["id"], source.url, "screen-b", "include", "Independent screening confirms eligibility.")
+    workflow.finalize_review(review["id"])
+    unavailable = {"decision": "not_retrieved", "rationale": "The full text could not be obtained after reasonable attempts."}
+    workflow.record_review_stage(review["id"], source.url, "full_text", "review-a", unavailable)
+    workflow.record_review_stage(review["id"], source.url, "full_text", "review-b", unavailable)
+    result = workflow.synthesize_review(review["id"])
+    assert len(result["final_summary"]["full_text_not_retrieved"]) == 1
+    flow = ResearchCompletion(store).prisma_flow(review["id"])
+    assert flow["eligibility"]["reports_not_retrieved"] == 1
+    assert flow["eligibility"]["full_text_assessed"] == 0
+
