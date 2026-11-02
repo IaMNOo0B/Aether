@@ -102,6 +102,7 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_emergency_stop.py::test_scheduler_does_not_enqueue_when_emergency_stop_is_active",
             "tests/test_phase06_goals.py::test_goal_discovery_creates_proposal_without_auto_approval_or_execution",
             "tests/test_phase06_goals.py::test_capability_gap_discovery_creates_system_goal_proposal",
+            "tests/test_phase06_goals.py::test_acceptance_gap_discovery_uses_persisted_report_as_signal",
             "tests/test_phase06_goals.py::test_scheduler_executes_only_approved_goal_and_emits_notifications",
             "tests/test_phase06_goals.py::test_pause_resume_continues_from_checkpoint_without_replanning_or_repeating_step",
             "tests/test_phase06_goals.py::test_running_task_cancel_is_cooperative_and_audited",
