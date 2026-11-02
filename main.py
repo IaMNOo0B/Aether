@@ -387,12 +387,15 @@ def main() -> int:
                     print(json.dumps(result, indent=2))
                     continue
                 if action == "grade":
-                    fields = argument.split("|", 4)
-                    if len(fields) != 5:
-                        print("Usage: /review-method grade REVIEW_ID | OUTCOME | STARTING_LEVEL | DOMAINS_JSON | RATIONALE")
+                    fields = argument.split("|", 5)
+                    if len(fields) != 6:
+                        print("Usage: /review-method grade REVIEW_ID | OUTCOME | STARTING_LEVEL | DOMAINS_JSON | REVIEWER_ID | RATIONALE")
                         continue
-                    result = completion.grade_certainty(fields[0].strip(), fields[1].strip(),
-                        fields[2].strip(), json.loads(fields[3]), fields[4])
+                    password = getpass("Reviewer password: ") if completion.authentication_enabled() else None
+                    result = completion.grade_certainty(
+                        fields[0].strip(), fields[1].strip(), fields[2].strip(),
+                        json.loads(fields[3]), fields[5], reviewer_id=fields[4].strip(), password=password,
+                    )
                     print(json.dumps(result, indent=2))
                     continue
                 if action == "rob":
