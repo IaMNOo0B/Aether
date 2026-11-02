@@ -113,15 +113,22 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
     },
     {
         "id": "H", "name": "Autonomy",
-        "expected": "An approved low-risk task runs without a new user command after a persisted schedule becomes due.",
+        "expected": "AETHER discovers auditable local opportunities, ranks goal proposals, requires explicit approval, and runs approved low-risk work in the background with pause, resume, cancellation, resource checks and receipts.",
         "nodes": [
+            "tests/test_goals.py::test_goal_discovery_creates_proposals_but_never_approves_them",
+            "tests/test_goals.py::test_dependencies_block_auto_queue_until_parent_completes",
+            "tests/test_goals.py::test_scheduler_runs_only_approved_low_risk_goals_and_records_receipts",
+            "tests/test_goals.py::test_scheduler_discovers_but_does_not_auto_approve_goals",
+            "tests/test_goals.py::test_task_cancellation_is_cooperative_and_stops_at_step_boundary",
             "tests/test_scheduler.py::test_scheduler_runs_persisted_goal_with_read_only_tools",
             "tests/test_scheduler.py::test_scheduler_never_approves_workspace_writes",
             "tests/test_emergency_stop.py::test_scheduler_does_not_enqueue_when_emergency_stop_is_active",
         ],
         "full_scope": False,
         "limitations": [
-            "The scheduler executes user-defined scheduled goals; autonomous goal discovery and unattended task selection are not implemented."
+            "Discovery currently uses local failed-task and self-model capability-gap records; external calendars, issue trackers, filesystem watchers and performance-monitor signals are not integrated.",
+            "Background execution is restricted to explicitly approved low-risk goals and read-only tools. Higher-risk goals require an operator-initiated run with per-action approval.",
+            "Resource budgets are preflight guards, not hard operating-system quotas."
         ],
     },
     {
