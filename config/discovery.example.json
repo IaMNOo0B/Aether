@@ -1,0 +1,12 @@
+{
+  "topics": [
+    {
+      "query": "reinforcement learning for calibrated decisions",
+      "interval_hours": 24
+    },
+    {
+      "query": "local multimodal models for resource constrained computers",
+      "interval_hours": 72
+    }
+  ]
+}
