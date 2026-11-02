@@ -54,7 +54,7 @@ class GoalManager:
             "id": uuid4().hex, "title": title.strip(), "purpose": purpose.strip(),
             "source": source.strip(), "source_key": source_key.strip(),
             "expected_benefit": expected_benefit.strip(), "priority": priority,
-            "complexity": complexity, "resource_budget": resource_budget or dict(DEFAULT_BUDGET),
+            "complexity": complexity, "resource_budget": {**DEFAULT_BUDGET, **(resource_budget or {})},
             "risks": risks or [], "deadline_at": deadline_at,
             "dependencies": dependencies or [], "completion_criteria": completion_criteria or [],
             "stop_condition": stop_condition.strip(), "status": "proposed",
