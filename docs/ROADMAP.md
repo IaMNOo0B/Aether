@@ -80,7 +80,7 @@ Stage 4 remains partial until the end-to-end acceptance benchmark passes. Search
 - [x] Deterministic held-out calibration benchmark with fixed seed, dataset SHA-256, disjoint train/test records and Brier/log-loss/ECE/AURC reporting.
 - [x] Read-only runtime dashboard covering provider status, resource telemetry, capability evidence states, research inventory, decisions, tasks and saved acceptance results.
 - [x] Bounded local image intake and vision-provider routing for PNG/JPEG/GIF/WebP, with size/signature checks and explicit consent before remote upload.
-- [ ] Held-out benchmark on a sufficiently large, independently curated real-world dataset.
+- [ ] Held-out benchmark on a sufficiently large, independently curated real-world dataset. A provenance/manifest validator and frozen train/dev/test evaluator now exist (`aether.rlcd_dataset`); actual independent records and adjudication remain outstanding.
 - [x] Opt-in, rate-limited scheduled research source refresh with persisted provenance reports and explicit pending-human-review state (`python -m aether.discovery --once` or `--watch`).
 - [ ] Independent evidence review, authenticated reviewers, and reproducible validation of discovered capabilities; scheduled discovery does not verify truth or promote capabilities automatically.
 - [x] Bounded local video sampling, sampled-frame vision API, Tesseract OCR integration, and local YAMNet-compatible ONNX audio-event classification pipeline (`aether.media_perception`).
