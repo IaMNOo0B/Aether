@@ -87,13 +87,14 @@ AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX
 - [x] Workspace writes and test execution require feature flags and per-action human approval.
 - [x] Workspace path containment, file-size caps, step limits, execution timeouts and resource preflight checks.
 - [x] Durable goal records with source provenance, hierarchy, dependencies, priority, complexity, risk score, resource budget, deadline, completion criteria and stop condition.
-- [x] Bounded goal discovery from failed local autonomy tasks and unverified/degraded self-model capabilities. Discovery creates proposals only; it never self-approves.
+- [x] Bounded goal discovery from failed local autonomy tasks, unverified knowledge claims and unverified/degraded self-model capabilities. Discovery creates proposals only; it never self-approves.
 - [x] Transparent priority heuristic with deadline urgency, benefit, complexity and risk factors.
 - [x] Explicit approve/reject flow; dependencies block execution until satisfied.
 - [x] Background scheduler executes only explicitly approved low-risk goals and only through read-only tools.
 - [x] Higher-risk goals require operator-initiated execution and per-action approval.
 - [x] Cooperative pause, resume and cancel at safe step boundaries; checkpoints preserve receipts and completed DAG steps.
 - [x] Goal/task reconciliation after restart, with notifications and auditable goal/task event histories.
+- [x] Completed tool execution is separated from goal completion: an operator reviews evidence against completion criteria before dependent goals are unblocked.
 - [ ] Integrations for external issue trackers, calendars, filesystem watchers, error streams and performance-regression signals.
 - [ ] OS-level sandbox for arbitrary code (not provided by the current copy-based candidate workflow).
 
