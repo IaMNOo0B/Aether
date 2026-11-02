@@ -115,6 +115,18 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_autonomy_goals_status_priority
                     ON autonomy_goals(status, priority DESC, deadline_at);
+                CREATE TABLE IF NOT EXISTS autonomy_goal_events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    goal_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    from_status TEXT,
+                    to_status TEXT,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(goal_id) REFERENCES autonomy_goals(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_autonomy_goal_events_goal
+                    ON autonomy_goal_events(goal_id, sequence);
                 CREATE TABLE IF NOT EXISTS notifications (
                     id TEXT PRIMARY KEY,
                     kind TEXT NOT NULL,
@@ -1216,6 +1228,12 @@ class Store:
                     goal["stop_condition"], goal.get("status", "proposed"), now, now,
                 ),
             )
+            db.execute(
+                """INSERT INTO autonomy_goal_events
+                   (goal_id, event_type, from_status, to_status, payload_json, created_at)
+                   VALUES (?, 'created', NULL, 'proposed', ?, ?)""",
+                (goal["id"], json.dumps({"source": goal["source"], "goal_level": goal.get("goal_level", "immediate")}), now),
+            )
         return goal["id"]
 
     def get_autonomy_goal(self, goal_id: str) -> dict[str, Any] | None:
@@ -1269,9 +1287,31 @@ class Store:
                    updated_at=? WHERE id=?""",
                 (new_status, task_id, now, goal_id),
             )
+            db.execute(
+                """INSERT INTO autonomy_goal_events
+                   (goal_id, event_type, from_status, to_status, payload_json, created_at)
+                   VALUES (?, 'status_changed', ?, ?, ?, ?)""",
+                (goal_id, row["status"], new_status, json.dumps({"task_id": task_id}), now),
+            )
         result = self.get_autonomy_goal(goal_id)
         assert result is not None
         return result
+
+    def autonomy_goal_events(self, goal_id: str, limit: int = 200) -> list[dict[str, Any]]:
+        if self.get_autonomy_goal(goal_id) is None:
+            raise KeyError(f"Unknown autonomy goal: {goal_id}")
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT sequence, event_type, from_status, to_status, payload_json, created_at
+                   FROM autonomy_goal_events WHERE goal_id=? ORDER BY sequence LIMIT ?""",
+                (goal_id, max(0, min(limit, 1000))),
+            ).fetchall()
+        return [
+            {"sequence": row["sequence"], "event_type": row["event_type"],
+             "from_status": row["from_status"], "to_status": row["to_status"],
+             "payload": json.loads(row["payload_json"]), "created_at": row["created_at"]}
+            for row in rows
+        ]
 
     def create_notification(
         self, notification_id: str, kind: str, title: str, message: str,
