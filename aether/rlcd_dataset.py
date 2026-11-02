@@ -8,6 +8,7 @@ import json
 import math
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from aether.calibration import evaluate_binary_decisions
 from aether.rlcd_evaluation import DecisionExample, HistogramCalibrator, _metric_dict
@@ -55,13 +56,17 @@ def _manifest(path: Path, digest: str) -> dict[str, Any]:
         if not isinstance(value[field], str) or not value[field].strip():
             raise DatasetValidationError(f"Manifest field {field} must be a non-empty string")
     url = value["source_url"]
-    if not isinstance(url, str) or not url.startswith("https://"):
-        raise DatasetValidationError("source_url must be an HTTPS URL")
+    parsed_url = urlsplit(url) if isinstance(url, str) else None
+    if (parsed_url is None or parsed_url.scheme != "https" or not parsed_url.hostname
+            or parsed_url.username or parsed_url.password):
+        raise DatasetValidationError("source_url must be a valid HTTPS URL without embedded credentials")
     if value["prediction_precedes_outcome"] is not True or value["partitions_are_disjoint"] is not True:
         raise DatasetValidationError("Manifest must attest temporal ordering and disjoint partitions")
     adjudicators = value["adjudicators"]
-    if not isinstance(adjudicators, list) or len(set(map(str, adjudicators))) < 2:
-        raise DatasetValidationError("At least two distinct adjudicator identifiers are required")
+    if (not isinstance(adjudicators, list)
+            or any(not isinstance(item, str) or not item.strip() for item in adjudicators)
+            or len(set(adjudicators)) < 2):
+        raise DatasetValidationError("At least two distinct non-empty adjudicator identifiers are required")
     start = _timestamp(value["collection_start"], "collection_start")
     end = _timestamp(value["collection_end"], "collection_end")
     if end < start:
@@ -102,14 +107,14 @@ def load_dataset(data_path: str | Path, manifest_path: str | Path) -> tuple[list
             probability = row.get("probability")
             if isinstance(probability, bool) or not isinstance(probability, (int, float)) or not math.isfinite(probability) or not 0 <= probability <= 1:
                 raise DatasetValidationError(f"Row {line_number} has an invalid probability")
-            if row.get("outcome") not in (0, 1):
+            if isinstance(row.get("outcome"), bool) or row.get("outcome") not in (0, 1):
                 raise DatasetValidationError(f"Row {line_number} outcome must be 0 or 1")
             if not isinstance(row.get("domain"), str) or not row["domain"].strip():
                 raise DatasetValidationError(f"Row {line_number} requires a domain")
             if not isinstance(row.get("source_ref"), str) or not row["source_ref"].strip():
                 raise DatasetValidationError(f"Row {line_number} requires source_ref")
             split = row.get("split")
-            if split not in {"train", "dev", "test"}:
+            if not isinstance(split, str) or split not in {"train", "dev", "test"}:
                 raise DatasetValidationError(f"Row {line_number} split must be train, dev or test")
             prior_split = source_splits.setdefault(row["source_ref"], split)
             if prior_split != split:
@@ -118,6 +123,10 @@ def load_dataset(data_path: str | Path, manifest_path: str | Path) -> tuple[list
             observed = _timestamp(row.get("outcome_time"), f"row {line_number} outcome_time")
             if predicted >= observed:
                 raise DatasetValidationError(f"Row {line_number} prediction must precede observed outcome")
+            collection_start = _timestamp(manifest["collection_start"], "collection_start")
+            collection_end = _timestamp(manifest["collection_end"], "collection_end")
+            if predicted < collection_start or observed > collection_end:
+                raise DatasetValidationError(f"Row {line_number} timestamps fall outside the manifest collection window")
             records.append(row)
     if len(records) < 15:
         raise DatasetValidationError("At least 15 records are required (five per split)")
