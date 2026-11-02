@@ -17,7 +17,7 @@ def test_acceptance_suite_records_expected_actual_and_partial_scope(tmp_path):
     assert len(report["results"]) == 12
     assert len(calls) == 12
     assert report["counts"] == {
-        "PASS": 3, "PARTIAL": 9, "FAIL": 0, "BLOCKED": 0
+        "PASS": 4, "PARTIAL": 8, "FAIL": 0, "BLOCKED": 0
     }
     assert report["complete"] is False
     for result in report["results"]:
