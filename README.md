@@ -150,7 +150,7 @@ Run a deterministic held-out calibration benchmark against resolved outcomes:
 .venv\Scripts\python -m aether.rlcd_evaluation --database data/aether.sqlite3 --domain world-model --seed 42 --train-fraction 0.7 --bins 10 --output reports/rlcd/held-out.json
 ```
 
-The benchmark fits a small Laplace-smoothed histogram calibrator on the training split and reports Brier score, log loss, ECE and AURC on a disjoint held-out split. It includes a dataset SHA-256 and fixed seed for reproducibility. This is a post-hoc calibration baseline, **not OpenJev-RLCD training**, not a model-weight update, and not evidence of generalization beyond the evaluated data. Full RLCD reproduction remains deferred: the target RTX 2060 6 GB is below the paper's reported 48 GB GPU setup.
+The benchmark requires at least five training and five held-out resolved decisions (the default 70/30 split therefore needs at least 17 records). It refuses to mix multiple decision domains; pass `--domain` when more than one domain is present. The benchmark fits a small Laplace-smoothed histogram calibrator on the training split and reports Brier score, log loss, ECE and AURC on a disjoint held-out split. It includes a dataset SHA-256 and fixed seed for reproducibility. This is a post-hoc calibration baseline, **not OpenJev-RLCD training**, not a model-weight update, and not evidence of generalization beyond the evaluated data. Full RLCD reproduction remains deferred: the target RTX 2060 6 GB is below the paper's reported 48 GB GPU setup.
 
 ### Multimodal image analysis (Phase 5)
 
