@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
+import time
 
 from aether.storage import Store
 
@@ -82,6 +83,48 @@ class TaskManager:
         state.pop("cancel_requested", None)
         state.pop("cancel_reason", None)
         return self.transition(task_id, "queued", state)
+
+    def replan(self, task_id: str, new_objective: str | None = None) -> Task:
+        current = self.store.get_task(task_id)
+        if current is None:
+            raise KeyError(f"Unknown task: {task_id}")
+        if current["status"] != "paused":
+            raise ValueError(f"Only paused tasks can be replanned; found {current['status']}")
+        receipts = current["state"].get("receipts", [])
+        safe_tools = {
+            "research.search", "workspace.list", "workspace.read",
+            "world.state", "world.actions", "world.simulate", "world.compare",
+        }
+        unsafe = [
+            item.get("tool") for item in receipts
+            if item.get("tool") not in safe_tools
+        ]
+        if unsafe:
+            raise PermissionError(
+                "Replanning is blocked because prior steps may have caused side effects: "
+                + ", ".join(str(item) for item in unsafe)
+            )
+        objective = (new_objective or current["objective"]).strip()
+        if not objective:
+            raise ValueError("Replanned objective cannot be empty")
+        state = dict(current["state"])
+        history = list(state.get("replan_history", []))
+        history.append({
+            "objective": current["objective"],
+            "plan": state.get("plan", []),
+            "receipts": receipts,
+            "replanned_at_epoch": time.time(),
+        })
+        state["replan_history"] = history
+        state["plan"] = []
+        state["receipts"] = []
+        state["current_step"] = 0
+        state["model_calls"] = 0
+        state["started_at_epoch"] = time.time()
+        for key in ("pause_requested", "pause_reason", "cancel_requested", "cancel_reason"):
+            state.pop(key, None)
+        updated = self.store.replan_paused_task(task_id, objective, state)
+        return Task(updated["id"], updated["objective"], updated["status"], updated["state"])
 
     def cancel(self, task_id: str, reason: str = "Cancelled by user") -> Task:
         current = self.store.get_task(task_id)
