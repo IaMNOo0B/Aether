@@ -192,3 +192,30 @@ def test_goal_and_notification_events_are_persistent(tmp_path):
     notification = reopened.list_notifications()[0]
     reopened.mark_notification_read(notification["id"])
     assert reopened.list_notifications(unread_only=True) == []
+
+def test_scheduler_enforces_per_goal_step_budget(tmp_path):
+    store = Store(tmp_path / "goals.sqlite3")
+    manager = GoalManager(store)
+    goal = make_goal(
+        manager, resource_budget={"max_steps": 1, "max_runtime_seconds": 30, "max_model_calls": 2}
+    )
+    manager.approve(goal["id"])
+    task_id = store.enqueue_approved_autonomy_goal(goal["id"], "budget-task")
+    manager.transition(goal["id"], "running", {"task_id": task_id}, task_id)
+    provider = FakeProvider(json.dumps({"steps": [
+        {"id": "one", "depends_on": [], "tool": "workspace.list", "args": {"path": "."}},
+        {"id": "two", "depends_on": ["one"], "tool": "workspace.list", "args": {"path": "."}},
+    ]}))
+    runner = AutonomyRunner(
+        provider, store, AutonomySettings(enabled=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+
+    result = runner.run_task(task_id)
+
+    assert result["status"] == "cancelled"
+    assert "budget allows 1" in result["reason"]
+    saved = store.get_task(task_id)
+    assert saved["status"] == "cancelled"
+    assert saved["state"]["plan"]
+    assert saved["state"]["resource_limit"]
