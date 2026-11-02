@@ -79,10 +79,10 @@ def main(argv: list[str] | None = None) -> int:
     if not settings.models.enabled:
         raise ModelUnavailable("Enable [models].enabled before image analysis")
     remote_endpoints = []
-    if settings.models.provider == "openai_compatible" and not _is_loopback_url(settings.models.base_url):
+    if settings.models.provider.strip().casefold() == "openai_compatible" and not _is_loopback_url(settings.models.base_url):
         remote_endpoints.append(settings.models.base_url)
     for fallback in settings.models.fallbacks:
-        if fallback.provider == "openai_compatible" and not _is_loopback_url(fallback.base_url):
+        if fallback.provider.strip().casefold() == "openai_compatible" and not _is_loopback_url(fallback.base_url):
             remote_endpoints.append(fallback.base_url)
     if remote_endpoints and not args.allow_remote:
         raise PermissionError(
