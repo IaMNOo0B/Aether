@@ -154,7 +154,10 @@ class GoalManager:
                     return goal
         if goal["status"] not in {"proposed", "approved", "queued", "running", "paused"}:
             raise ValueError(f"Goal cannot be cancelled from status {goal['status']}")
-        return self.store.update_autonomy_goal(goal_id, goal["status"], "cancelled")
+        result = self.store.update_autonomy_goal(goal_id, goal["status"], "cancelled")
+        self.notify("goal_cancelled", "Autonomy goal cancelled", result["title"], "warning",
+                    result.get("task_id"))
+        return result
 
     def prioritize(self, goals: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
         candidates = goals if goals is not None else self.store.list_autonomy_goals()
