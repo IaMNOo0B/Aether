@@ -86,7 +86,7 @@ class GoalDiscovery:
         self, event_type: str, summary: str, source_ref: str = "",
     ) -> str:
         """Persist an externally observed event as untrusted data; never execute it."""
-        kind, text, source = _clean(event_type, 80), _clean(summary, 1000), _clean(source_ref, 500)
+        kind, text, source = _clean(event_type, 80), _clean(summary, 700), _clean(source_ref, 500)
         if not kind or not text:
             raise ValueError("External event type and summary are required")
         event_id = uuid4().hex
