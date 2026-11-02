@@ -329,6 +329,16 @@ Not implemented: autonomous goal discovery, unrestricted/background project auto
 - Preserve `data/` and review candidate patches before use.
 
 
+### Real-world calibration dataset validation (Phase 5)
+
+AETHER can validate an independently curated JSONL dataset and manifest before evaluating fixed train/dev/test partitions:
+
+```powershell
+python -m aether.rlcd_dataset --data benchmarks/phase5/records.jsonl --manifest benchmarks/phase5/manifest.json --output reports/phase5/calibration.json
+```
+
+Each row must include a pre-outcome probability, independently observed binary outcome, domain, source reference, timezone-aware prediction/outcome timestamps, and a frozen `train`/`dev`/`test` split. The manifest must include source/license/protocol/adjudicator metadata and the dataset SHA-256. The validator rejects temporal leakage, cross-split source leakage, hash mismatches and under-sized partitions. It fits the histogram baseline on train only and reports dev/test separately. The manifest's adjudicator identities are still operator-supplied and not authenticated. No real dataset is bundled or fabricated; the benchmark remains pending until real evidence is supplied.
+
 ### Scheduled research discovery (Phase 5)
 
 Copy `config/discovery.example.json` to `config/discovery.json`, edit the topics, then run:
