@@ -259,6 +259,40 @@ class GoalManager:
             queued.append(self.store.get_autonomy_goal(goal["id"]))
         return queued
 
+    def reconcile(self) -> list[dict[str, Any]]:
+        """Synchronize goal records with durable task state after restarts or scheduler failures."""
+        reconciled = []
+        for goal in self.store.list_autonomy_goals(limit=1000):
+            task_id = goal.get("task_id")
+            if not task_id or goal["status"] in {"completed", "cancelled", "rejected"}:
+                continue
+            task = self.store.get_task(task_id)
+            if task is None:
+                continue
+            target = task["status"]
+            current = goal["status"]
+            if target == "running" and current == "queued":
+                reconciled.append(self.transition(goal["id"], "running", {"recovered_from_task": task_id}, task_id))
+            elif target == "paused" and current in {"queued", "running"}:
+                reconciled.append(self.transition(goal["id"], "paused", {"recovered_from_task": task_id}, task_id))
+            elif target == "failed" and current in {"queued", "running", "paused"}:
+                reconciled.append(self.transition(goal["id"], "failed", {
+                    "recovered_from_task": task_id, "reason": "Task is failed; inspect receipts before resuming."
+                }, task_id))
+            elif target == "cancelled" and current in {"queued", "running", "paused"}:
+                reconciled.append(self.transition(goal["id"], "cancelled", {
+                    "recovered_from_task": task_id
+                }, task_id))
+            elif target == "completed" and current in {"queued", "running"}:
+                if current == "queued":
+                    self.transition(goal["id"], "running", {"recovered_from_task": task_id}, task_id)
+                reconciled.append(self.transition(goal["id"], "completed", {
+                    "recovered_from_task": task_id,
+                    "tool_results_verified": task["state"].get("tool_results_verified", False),
+                    "objective_verified": task["state"].get("verified", False),
+                }, task_id))
+        return reconciled
+
     def sync_task_result(self, goal_id: str, result: dict[str, Any]) -> dict[str, Any]:
         goal = self.store.get_autonomy_goal(goal_id)
         if goal is None:
