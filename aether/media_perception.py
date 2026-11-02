@@ -114,6 +114,30 @@ def ocr_image(path: str | Path, *, language: str = "eng", timeout: int = 30) -> 
             "text": raw.decode("utf-8", errors="replace").strip()}
 
 
+def analyze_video(
+    provider: Any, path: str | Path, prompt: str, *,
+    interval_seconds: float = 5.0, max_frames: int = 8,
+) -> dict[str, Any]:
+    """Describe sampled frames with a configured local/consented vision provider."""
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError("A non-empty video-analysis prompt is required")
+    from aether.multimodal import analyze_image
+    frames = extract_video_frames(path, interval_seconds=interval_seconds, max_frames=max_frames)
+    try:
+        observations = []
+        for index, frame in enumerate(frames):
+            observations.append({
+                "frame": index,
+                "observation": analyze_image(provider, frame, prompt.strip()),
+            })
+        return {"video": str(Path(path).expanduser().resolve()),
+                "sampled_frames": len(observations), "observations": observations,
+                "warning": "Only sampled frames were analyzed; motion between frames may be missed."}
+    finally:
+        if frames:
+            shutil.rmtree(frames[0].parent, ignore_errors=True)
+
+
 def ocr_video(
     path: str | Path, *, interval_seconds: float = 5.0,
     max_frames: int = 12, language: str = "eng",
@@ -186,14 +210,20 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     video = sub.add_parser("video"); video.add_argument("--input", required=True)
     video.add_argument("--interval", type=float, default=5.0); video.add_argument("--frames", type=int, default=12)
+    video.add_argument("--ocr", action="store_true", help="Run Tesseract OCR on sampled frames")
+    video.add_argument("--language", default="eng")
     ocr = sub.add_parser("ocr"); ocr.add_argument("--input", required=True); ocr.add_argument("--language", default="eng")
     events = sub.add_parser("audio-events"); events.add_argument("--input", required=True)
     events.add_argument("--model", required=True); events.add_argument("--labels", required=True)
     events.add_argument("--top-k", type=int, default=5)
     args = parser.parse_args(argv)
     if args.command == "video":
-        result = {"metadata": probe_video(args.input),
-                  "frames": [str(p) for p in extract_video_frames(args.input, interval_seconds=args.interval, max_frames=args.frames)]}
+        result = probe_video(args.input)
+        if args.ocr:
+            result["ocr"] = ocr_video(args.input, interval_seconds=args.interval,
+                                      max_frames=args.frames, language=args.language)
+        else:
+            result["note"] = "Use the Python analyze_video(provider, ...) API for frame-level vision-model descriptions."
     elif args.command == "ocr":
         result = ocr_image(args.input, language=args.language)
     else:
