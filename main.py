@@ -204,6 +204,11 @@ def main() -> int:
                 elif action == "cancel" and argument.strip():
                     goal = goals.cancel(argument.strip())
                     print(f"AETHER > Goal cancelled: {goal['id']}")
+                elif action == "events" and argument.strip():
+                    events = store.autonomy_goal_events(argument.strip())
+                    for event in events:
+                        print(f"#{event['sequence']} {event['created_at']} | {event['from_status']} -> {event['to_status']} | {event['event_type']}")
+                        print(json.dumps(event["payload"], indent=2))
                 elif action == "queue":
                     if not settings.autonomy.enabled:
                         print("AETHER > Autonomy is disabled in config/settings.toml.")
@@ -218,7 +223,7 @@ def main() -> int:
                         result = runner.run_task(task_id, ask_approval)
                         print(f"AETHER > {task_id} | {result['status']}")
                 else:
-                    print("Usage: /goal list|discover|add ...|approve ID|cancel ID|queue")
+                    print("Usage: /goal list|discover|add ...|approve ID|cancel ID|events ID|queue")
                 continue
 
             if lower == "/notifications":
