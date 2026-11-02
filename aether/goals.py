@@ -125,8 +125,15 @@ class GoalManager:
             try:
                 if report_path.stat().st_size <= 1_000_000:
                     report = json.loads(report_path.read_text(encoding="utf-8"))
+                    if not isinstance(report, dict):
+                        report = {}
                     generated_at = str(report.get("generated_at", "unknown"))
-                    for item in report.get("results", []):
+                    report_items = report.get("results", [])
+                    if not isinstance(report_items, list):
+                        report_items = []
+                    for item in report_items:
+                        if not isinstance(item, dict):
+                            continue
                         if len(discovered) >= discovery_limit:
                             break
                         status = item.get("acceptance_status")
@@ -157,7 +164,7 @@ class GoalManager:
                             stop_condition="Stop if the report is stale, evidence cannot be reproduced, or the fix requires unsafe permissions.",
                         )
                         discovered.append(goal)
-            except (OSError, ValueError, TypeError):
+            except (OSError, ValueError, TypeError, AttributeError):
                 pass
         # Unverified/degraded capabilities are knowledge gaps, not permission to mutate code.
         profile = SelfModel(self.store.path).snapshot()
