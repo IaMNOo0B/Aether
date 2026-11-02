@@ -76,3 +76,24 @@ def test_rejects_prediction_after_outcome(tmp_path):
     manifest.write_text(json.dumps(metadata))
     with pytest.raises(DatasetValidationError, match="precede"):
         load_dataset(data, manifest)
+
+
+def test_rejects_boolean_probability_and_outcome(tmp_path):
+    data, manifest = _write_fixture(tmp_path)
+    rows = [json.loads(line) for line in data.read_text().splitlines()]
+    rows[0]["probability"] = True
+    data.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    metadata = json.loads(manifest.read_text())
+    metadata["dataset_sha256"] = hashlib.sha256(data.read_bytes()).hexdigest()
+    manifest.write_text(json.dumps(metadata))
+    with pytest.raises(DatasetValidationError, match="probability"):
+        load_dataset(data, manifest)
+
+
+def test_rejects_unauthenticated_adjudicator_placeholder_shape(tmp_path):
+    data, manifest = _write_fixture(tmp_path)
+    metadata = json.loads(manifest.read_text())
+    metadata["adjudicators"] = ["reviewer-a", ""]
+    manifest.write_text(json.dumps(metadata))
+    with pytest.raises(DatasetValidationError, match="adjudicator"):
+        load_dataset(data, manifest)
