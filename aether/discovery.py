@@ -13,7 +13,6 @@ import logging
 import os
 from pathlib import Path
 import threading
-import time
 from typing import Any
 
 from aether.research import Researcher
@@ -85,6 +84,8 @@ class ResearchDiscovery:
             raise DiscoveryError(f"Discovery state is invalid: {exc}") from exc
         if not isinstance(state, dict) or not isinstance(state.get("last_run", {}), dict):
             raise DiscoveryError("Discovery state has an invalid schema")
+        if not isinstance(state.get("pending_review", []), list):
+            raise DiscoveryError("Discovery pending_review state must be a list")
         state.setdefault("pending_review", [])
         return state
 
