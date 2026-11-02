@@ -39,13 +39,16 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_research_advanced.py::test_systematic_review_disagreement_requires_distinct_adjudicator",
             "tests/test_research_advanced.py::test_citation_disagreement_is_not_silently_resolved",
             "tests/test_research_advanced.py::test_grouped_experiment_analysis_is_reproducible",
+            "tests/test_research_phase4_acceptance.py::test_phase4_end_to_end_synthetic_acceptance",
+            "tests/test_research_completion.py::test_registered_reviewer_authentication_is_enforced_for_all_review_decisions",
+            "tests/test_research_completion.py::test_authenticated_stage_and_citation_actions_reject_wrong_credentials",
         ],
         "full_scope": False,
         "limitations": [
-            "Reviewer IDs are operator-supplied and not authenticated; external web search results are not independently ranked for truth.",
+            "Registered local reviewer identities are authenticated for screening, adjudication, full-text eligibility, risk-of-bias, extraction and citation decisions; no external identity provider or multi-machine identity federation is included. External web search results are not independently ranked for truth.",
             "Citation checking uses exact quote matching and lexical overlap, not semantic entailment.",
             "Risk-of-bias domains are generic; statistical synthesis assumes comparable independent effects and supplied standard errors.",
-            "Publication-bias analysis, certainty-of-evidence grading and PRISMA compliance are not claimed.",
+            "Egger regression, GRADE-inspired certainty grading and PRISMA-style flow reporting are implemented, but are not substitutes for full PRISMA compliance, official GRADEpro workflows or publication-bias correction models.",
         ],
     },
     {
