@@ -49,13 +49,27 @@ Benchmark boundary: fixed lexical fixtures measure retrieval and draft-skill exc
 
 ## Stage 4 — Research and knowledge
 
-- [x] Public source adapters for Crossref, arXiv, and Wikipedia.
-- [x] Provenance-aware reports with source URL, publisher, date, evidence class, and limitations.
-- [x] Persistent research report history.
-- [ ] Full-text ingestion, broader web search, source-quality scoring, and citation verification.
-- [ ] Entity graph, hypothesis/experiment store, and systematic review workflow.
+- [x] Public source adapters for Crossref, arXiv, Wikipedia and general web search through a bounded DuckDuckGo HTML adapter; results are treated as untrusted leads.
+- [x] Provenance-aware research reports with source URL, publisher, date, evidence class, limitations and persistent report history.
+- [x] Bounded public HTML/plain-text full-text ingestion with localhost/private-network rejection, redirect refusal, content-type checks, timeout and size cap.
+- [x] Transparent source-triage scoring with factor breakdown; scores are not truth probabilities.
+- [x] Citation evidence workflow with report membership, captured-full-text exact quote matching, lexical screening, two authenticated reviewer decisions and distinct adjudication.
+- [x] Systematic-review protocol with databases, explicit queries/date, inclusion/exclusion criteria, source deduplication and provenance preservation.
+- [x] Dual authenticated title/abstract screening, full-text eligibility, data extraction, risk-of-bias assessment and adjudication.
+- [x] Design-specific structured risk-of-bias checklists for randomized, nonrandomized, qualitative and cross-sectional studies; the workflow explicitly does not claim these custom checklists are validated RoB 2/ROBINS-I/CASP/JBI instruments.
+- [x] PRISMA 2020 27-item operator-completed reporting checklist with per-item locations/rationales, plus PRISMA-style study-flow counts. Checklist completion is not automatic compliance certification.
+- [x] GRADE-inspired five-domain certainty assessment with explicit judgments, rationale and deterministic downgrade levels; not an official GRADEpro assessment.
+- [x] Egger regression publication-asymmetry screening for at least ten compatible extracted effects; mixed effect measures are rejected, and no trim-and-fill/selection model is claimed.
+- [x] Evidence-table synthesis and DerSimonian-Laird random-effects meta-analysis for compatible supplied effects and standard errors. Quantitative extraction can verify exact source quotes and numeric estimate/SE tokens when captured full text is available; unverified extractions are explicitly labeled.
+- [x] Reproducible CSV experiment analysis with SHA-256, Python/algorithm version, descriptive statistics, Welch two-sample tests, pooled effect size and confidence intervals.
+- [x] Raw independent-group CSV observation ingestion with row validation, SHA-256 provenance, persisted source CSV bytes in the local experiment event history, group summaries and Welch standard error.
+- [x] Preregistered experiment records, typed hypothesis claims, explicit lifecycle transitions and append-only event history.
+- [x] Deterministic synthetic end-to-end Phase 4 acceptance fixture covers dual-review authentication, systematic-review synthesis/meta-analysis, PRISMA flow/checklist, GRADE-inspired grading, publication-bias eligibility, citation adjudication and raw experiment ingestion.
+- [x] Local reviewer accounts use salted PBKDF2-HMAC-SHA256 hashes. After the first account is registered, every screening, full-text, risk-of-bias, extraction, adjudication and citation-review decision requires the matching account password.
+- [x] Explicit methodological scope and provenance limits documented: AETHER supplies design-specific structured checklists, authenticated local review, source-linked quantitative extraction checks and reproducible synthesis, but does not claim independent clinical-method validation or validated RoB 2/ROBINS-I/CASP/JBI status.
+- [x] Local reviewer identity lifecycle is integrated with the primary SQLite database and normal backup/restore path; external identity-provider federation is not required for the single-machine Windows-first Phase 4 scope.
 
-Research scope is intentionally bounded; index ranking is not evidence quality and this is not a systematic literature review.
+Phase 4's implemented software workflow is complete within the documented bounded scope. Future optional integrations may adopt externally validated/licensed risk-of-bias instruments after instrument selection and independent methodological validation, or external identity-provider federation for multi-machine teams. These are explicitly outside the current local-first Phase 4 acceptance boundary. Search rankings and source scores are not truth measures; exact quote matching is not semantic entailment. Meta-analysis and Egger screening depend on comparable independent effects and supplied standard errors. Raw observation ingestion currently supports independent groups only.
 
 ## Stage 5 — RLCD investigation
 

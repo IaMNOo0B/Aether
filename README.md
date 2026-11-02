@@ -41,10 +41,22 @@ AETHER never downloads models automatically. Phi-3 Mini's 4K context and model c
 ### Research
 
 - `/research <question>` searches Crossref scholarly records, arXiv preprints, and Wikipedia summaries.
-- Research reports retain source URLs, publisher, date, evidence class, and limitations in SQLite.
+- Research reports retain source URLs, publisher, date, evidence class, summaries and (for operator-ingested documents) bounded full text in SQLite.
+- `/research QUERY` searches general web results plus Crossref, arXiv and Wikipedia. `/research web QUERY` runs the general web provider directly. Search results are untrusted leads, not verified evidence.
+- `/research ingest URL` captures public HTML/plain text up to 2 MB, retaining extracted full text for exact passage checks. Redirects are not followed; inspect and ingest the destination URL separately.
+- `/research score REPORT_ID` shows transparent source-triage factors/caveats. Scores are not truth probabilities.
+- `/research verify REPORT_ID` checks URL reachability only; it does not verify claim support.
+- `/citation-check CLAIM | REPORT_ID | SOURCE_URL | EXACT_QUOTED_PASSAGE` checks source membership, exact quote presence and lexical alignment. It is a deterministic candidate check, not semantic entailment.
+- `/citation-review EVIDENCE_ID | REVIEWER_ID | supports/contradicts/insufficient | RATIONALE` records independent reviewer decisions. Two distinct reviewer IDs must agree; disagreement requires `/citation-resolve EVIDENCE_ID | ADJUDICATOR_ID | DECISION | RATIONALE`. IDs are operator-supplied labels, not authenticated identities.
+- `/review create QUESTION | INCLUSION_JSON_ARRAY | EXCLUSION_JSON_ARRAY | SEARCH_STRATEGY_JSON` creates a protocol with named databases, queries and search date.
+- `/review add REVIEW_ID | RESEARCH_REPORT_ID` imports retrieved sources. `/review screen REVIEW_ID | SOURCE_URL | REVIEWER_ID | include/exclude | REASON` performs dual title/abstract screening; disagreements use `/review resolve REVIEW_ID | SOURCE_URL | ADJUDICATOR_ID | include/exclude | RATIONALE`.
+- `/review finalize REVIEW_ID` locks title/abstract screening. Then use `/review stage REVIEW_ID | SOURCE_URL | full_text/risk_of_bias/extraction | REVIEWER_ID | PAYLOAD_JSON` for two-reviewer full-text eligibility, structured risk-of-bias domains and data extraction. `/review adjudicate-stage REVIEW_ID | SOURCE_URL | STAGE | ADJUDICATOR_ID | PAYLOAD_JSON` resolves disagreements, and `/review synthesize REVIEW_ID` produces the evidence table and, where compatible effect estimates/standard errors exist, a DerSimonian-Laird random-effects meta-analysis.
+- `/experiment create TITLE | HYPOTHESIS_CLAIM_ID(optional) | PROTOCOL_JSON` preregisters an experiment. Protocol JSON requires `objective`, `method`, and `success_criteria`.
+- `/experiment analyze ID | CSV_PATH | NUMERIC_COLUMNS_JSON | OPTIONAL_GROUP_CONFIG_JSON` records input SHA-256, Python/algorithm versions, descriptive statistics and optional two-group Welch tests, effect size and confidence interval. Example group config: `{"group_column":"arm","comparison_groups":["treatment","control"]}`. Artifacts are saved as research reports and linked in the experiment event history.
+- `/experiment start ID`, `/experiment complete ID | OUTCOME_JSON`, `/experiment cancel ID`, `/experiment list`, and `/experiment show ID` manage the lifecycle.
 - `/reports` lists saved reports.
 
-This is a bounded source adapter, not a general-purpose web crawler or a systematic literature review. Search ranking is not evidence quality.
+Research fetching rejects localhost/private-network targets, non-HTTP schemes, embedded credentials, non-standard ports, redirects, unsupported content types, and responses above 2 MB. General web search does not fetch arbitrary result pages automatically. Citation matching is exact-quote plus lexical screening; it cannot infer entailment, negation or causal validity. Systematic review reviewer IDs are not authenticated, and the generic risk-of-bias template is not a substitute for a validated domain-specific instrument. The meta-analysis requires comparable independent effects and standard errors supplied by reviewers; AETHER cannot validate those assumptions, publication bias, certainty of evidence or PRISMA compliance. Welch and meta-analysis confidence intervals use normal approximations.
 
 ### Bounded autonomous execution
 
@@ -172,6 +184,20 @@ AETHER supports cooperative pause requests at safe step boundaries through `Task
 Automatic replanning is deliberately narrow: one replan is permitted after a missing workspace read/list target. Completed tool+argument pairs cannot be repeated by the replacement plan. Other failures remain fail-closed.
 
 Run the five-scenario executor benchmark with `python -m aether.benchmark`. It uses fixed reference plans to measure orchestration and tool postconditions; it does not measure the LLM's natural-language planning ability or establish general intelligence.
+
+
+### Extended evidence methods (operator-reviewed)
+
+- `/reviewer register REVIEWER_ID` creates a local reviewer identity. Passwords are salted and PBKDF2-HMAC-SHA256 hashed in a dedicated table in the primary AETHER SQLite database, so normal database backups include reviewer accounts; passwords are never stored in plaintext.
+- `/review-method prisma REVIEW_ID` emits PRISMA-style flow counts.
+- `/review-method prisma-checklist REVIEW_ID | RESPONSES_JSON` validates and persists all 27 PRISMA 2020 checklist items with manuscript locations and rationales. It does not certify compliance. Checklist source: https://www.prisma-statement.org/prisma-2020 (CC BY 4.0; Page et al., BMJ 2021).
+- `/review-method publication-bias REVIEW_ID` runs Egger regression only when at least 10 compatible extracted effects are available. The p-value is a normal approximation; asymmetry is not proof of publication bias.
+- `/review-method grade REVIEW_ID | OUTCOME | STARTING_LEVEL | DOMAINS_JSON | REVIEWER_ID | RATIONALE` records a transparent GRADE-inspired downgrade assessment. The operator must judge all five domains; this is not an official GRADEpro assessment.
+- `/review-method rob REVIEW_ID | SOURCE_URL | DESIGN | REVIEWER_ID | DOMAIN_RATINGS_JSON` records a dual-reviewed authenticated structured domain assessment for `randomized`, `nonrandomized`, `qualitative`, or `cross_sectional` designs. These are AETHER checklists, not validated RoB 2, ROBINS-I, CASP, or JBI instruments.
+- Quantitative systematic-review extraction can include `effect_evidence_quote` and `effect_text_locator`. If supplied, AETHER checks that the exact quote occurs in captured full text and that the extracted estimate and standard error appear numerically in the passage; otherwise it labels the effect as not independently checked. This is not semantic or methodological verification.
+- `/experiment ingest-raw ID | CSV_PATH | GROUP_COLUMN | OUTCOME_COLUMN | TREATMENT_LABEL | CONTROL_LABEL` ingests raw independent-group observations, validates rows, computes group means, a Welch standard error, and records the input hash in experiment history.
+
+Once at least one reviewer account is registered, authentication is enforced across title/abstract screening, conflict resolution, full-text eligibility, risk-of-bias assessment, extraction, adjudication and citation decisions. Register a separate account for each reviewer; passwords are requested interactively and never placed in command history. The PRISMA checklist is operator-completed and does not independently verify content or certify compliance. Raw CSV bytes are stored in the local experiment event history as base64 alongside their SHA-256 hash; treat the AETHER database as containing the original potentially sensitive data. Raw analysis assumes independent groups and does not infer paired, clustered, repeated-measures, missingness mechanisms or causal designs. Egger regression is a screening test, not a correction model.
 
 ### Resource telemetry and execution budgets
 

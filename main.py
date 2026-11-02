@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from getpass import getpass
 import logging
 from pathlib import Path
 from threading import Event, Thread
@@ -16,7 +17,10 @@ from aether.desktop import DesktopController
 from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.learning import SkillLearner
-from aether.research import ResearchError, Researcher
+from aether.research import ResearchError, ResearchSource, Researcher
+from aether.research_quality import ResearchWorkflow
+from aether.research_advanced import AdvancedResearch
+from aether.research_completion import ResearchCompletion
 from aether.resources import ResourceLimitExceeded
 from aether.scheduler import AutonomyScheduler
 from aether.self_engineering import SelfEngineer
@@ -73,6 +77,8 @@ def main() -> int:
     print("          /correct-memory /memory-versions ID /memory-conflicts [ID]")
     print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
+    print("          /research QUERY|ingest|verify|score|review /experiment create|start|complete|cancel|list|show")
+    print("          /review create|add|screen|resolve|finalize|stage|adjudicate-stage|synthesize|show /citation-check /citation-review /citation-resolve /experiment analyze|ingest-raw /reviewer register /review-method")
 
     while True:
         try:
@@ -342,6 +348,148 @@ def main() -> int:
                 print("Usage: /world create|list|state|action|actions|simulate|compare|observe|history")
                 continue
 
+            if lower.startswith("/reviewer "):
+                parts = user_text[len("/reviewer "):].split(maxsplit=1)
+                if len(parts) != 2 or parts[0].casefold() != "register":
+                    print("Usage: /reviewer register REVIEWER_ID")
+                    continue
+                password = getpass("New reviewer password (minimum 12 characters): ")
+                if password != getpass("Confirm password: "):
+                    print("AETHER > Passwords did not match.")
+                    continue
+                identity = ResearchCompletion(store).register_reviewer(parts[1].strip(), password)
+                print(f"AETHER > Reviewer identity registered: {identity['reviewer_id']}")
+                continue
+
+            if lower.startswith("/review-method "):
+                parts = user_text[len("/review-method "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                completion = ResearchCompletion(store)
+                if action == "prisma" and argument:
+                    print(json.dumps(completion.prisma_flow(argument.strip()), indent=2))
+                    continue
+                if action == "prisma-checklist":
+                    fields = argument.split("|", 1)
+                    if len(fields) != 2:
+                        print("Usage: /review-method prisma-checklist REVIEW_ID | RESPONSES_JSON")
+                        continue
+                    result = completion.record_prisma_checklist(fields[0].strip(), json.loads(fields[1]))
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "publication-bias" and argument:
+                    result = completion.publication_bias_for_review(argument.strip())
+                    report_id = uuid4().hex
+                    store.save_research_report(report_id, f"publication-bias:{argument.strip()}",
+                        json.dumps(result, indent=2), [{"title": "Publication bias analysis", "url": "",
+                        "evidence_type": "publication-bias-analysis", "summary": result.get("status", "")}])
+                    result["report_id"] = report_id
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "grade":
+                    fields = argument.split("|", 5)
+                    if len(fields) != 6:
+                        print("Usage: /review-method grade REVIEW_ID | OUTCOME | STARTING_LEVEL | DOMAINS_JSON | REVIEWER_ID | RATIONALE")
+                        continue
+                    password = getpass("Reviewer password: ") if completion.authentication_enabled() else None
+                    result = completion.grade_certainty(
+                        fields[0].strip(), fields[1].strip(), fields[2].strip(),
+                        json.loads(fields[3]), fields[5], reviewer_id=fields[4].strip(), password=password,
+                    )
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "rob":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review-method rob REVIEW_ID | SOURCE_URL | DESIGN | REVIEWER_ID | DOMAIN_RATINGS_JSON")
+                        continue
+                    password = getpass("Reviewer password: ")
+                    result = completion.record_risk_of_bias(fields[0].strip(), fields[1].strip(),
+                        fields[2].strip(), fields[3].strip(), password, json.loads(fields[4]))
+                    print(json.dumps(result, indent=2))
+                    continue
+                print("Usage: /review-method prisma REVIEW_ID | prisma-checklist REVIEW_ID | JSON | publication-bias REVIEW_ID | grade ... | rob ...")
+                continue
+
+            if lower.startswith("/experiment "):
+                parts = user_text[len("/experiment "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                if action == "create":
+                    fields = argument.split("|", 2)
+                    if len(fields) != 3:
+                        print("Usage: /experiment create TITLE | HYPOTHESIS_CLAIM_ID(optional) | PROTOCOL_JSON")
+                        continue
+                    hypothesis_id = fields[1].strip() or None
+                    experiment = store.create_research_experiment(
+                        uuid4().hex, fields[0].strip(), hypothesis_id,
+                        json.loads(fields[2].strip()),
+                    )
+                    print(f"AETHER > Preregistered experiment created: {experiment['id']} | planned")
+                    continue
+                if action in {"start", "cancel"} and argument.strip():
+                    target = "running" if action == "start" else "cancelled"
+                    experiment = store.transition_research_experiment(
+                        argument.strip(), target,
+                        {"reason": "Cancelled by operator"} if target == "cancelled" else {},
+                    )
+                    print(f"AETHER > Experiment {experiment['id']}: {experiment['status']}")
+                    continue
+                if action == "complete":
+                    fields = argument.split("|", 1)
+                    if len(fields) != 2:
+                        print("Usage: /experiment complete ID | OUTCOME_JSON")
+                        continue
+                    experiment = store.transition_research_experiment(
+                        fields[0].strip(), "completed", json.loads(fields[1].strip())
+                    )
+                    print(f"AETHER > Experiment completed and outcome recorded: {experiment['id']}")
+                    continue
+                if action == "analyze":
+                    fields = argument.split("|", 3)
+                    if len(fields) not in {3, 4}:
+                        print("Usage: /experiment analyze ID | CSV_PATH | NUMERIC_COLUMNS_JSON | OPTIONAL_GROUP_CONFIG_JSON")
+                        continue
+                    csv_path = Path(fields[1].strip())
+                    if not csv_path.is_file():
+                        print("AETHER > CSV file not found.")
+                        continue
+                    group_config = json.loads(fields[3]) if len(fields) == 4 else {}
+                    artifact = AdvancedResearch(store).analyze_csv(
+                        fields[0].strip(), csv_path.read_bytes(), json.loads(fields[2]),
+                        group_config.get("group_column"), group_config.get("comparison_groups")
+                    )
+                    print(json.dumps(artifact, indent=2))
+                    continue
+                if action == "ingest-raw":
+                    fields = argument.split("|", 5)
+                    if len(fields) != 6:
+                        print("Usage: /experiment ingest-raw ID | CSV_PATH | GROUP_COLUMN | OUTCOME_COLUMN | TREATMENT_LABEL | CONTROL_LABEL")
+                        continue
+                    csv_path = Path(fields[1].strip())
+                    if not csv_path.is_file():
+                        print("AETHER > CSV file not found.")
+                        continue
+                    result = ResearchCompletion(store).ingest_raw_observations(
+                        fields[0].strip(), csv_path.read_bytes(), fields[2].strip(),
+                        fields[3].strip(), fields[4].strip(), fields[5].strip(),
+                    )
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "list":
+                    print(json.dumps(store.list_research_experiments(), indent=2))
+                    continue
+                if action == "show" and argument.strip():
+                    experiment = store.get_research_experiment(argument.strip())
+                    if experiment is None:
+                        print("AETHER > Experiment not found.")
+                    else:
+                        experiment["events"] = store.list_research_experiment_events(argument.strip())
+                        print(json.dumps(experiment, indent=2))
+                    continue
+                print("Usage: /experiment create TITLE | HYPOTHESIS_CLAIM_ID(optional) | PROTOCOL_JSON | start ID | complete ID | OUTCOME_JSON | cancel ID | list | show ID")
+                continue
+
             if lower.startswith("/knowledge "):
                 parts = user_text[len("/knowledge "):].split(maxsplit=1)
                 action = parts[0].casefold()
@@ -424,15 +572,185 @@ def main() -> int:
                 if not settings.research.enabled:
                     print("AETHER > Research is disabled in config/settings.toml.")
                     continue
-                query = user_text[len("/research "):].strip()
+                argument = user_text[len("/research "):].strip()
+                workflow = ResearchWorkflow(store, settings.research.timeout_seconds)
                 researcher = Researcher(
                     store, settings.research.timeout_seconds,
                     settings.limits.max_research_results,
                 )
-                sources = researcher.search(query)
-                report = researcher.create_report(query, sources)
+                action, _, value = argument.partition(" ")
+                if action.casefold() == "web" and value.strip():
+                    sources = researcher.search_web(value.strip(), settings.limits.max_research_results)
+                    report = researcher.create_report(value.strip(), sources)
+                    print(f"AETHER > General web search report saved. ID: {report['id']}")
+                    print(report["content"])
+                    continue
+                if action.casefold() == "ingest" and value.strip():
+                    source = workflow.ingest_url(value.strip())
+                    report = researcher.create_report(
+                        f"manually ingested source: {source.title}", [source]
+                    )
+                    print(f"AETHER > Full-text source ingested. Report ID: {report['id']}")
+                    print(json.dumps(workflow.assess_source(source).to_dict(), indent=2))
+                    continue
+                if action.casefold() == "verify" and value.strip():
+                    print(json.dumps(workflow.verify_citations(value.strip()), indent=2))
+                    continue
+                if action.casefold() == "score" and value.strip():
+                    saved = store.get_research_report(value.strip())
+                    if saved is None:
+                        print("AETHER > Research report not found.")
+                    else:
+                        scored = []
+                        for item in saved["sources"]:
+                            source = ResearchSource(**{
+                                key: item.get(key, "") for key in
+                                ("title", "url", "publisher", "published", "evidence_type", "summary")
+                            })
+                            scored.append({
+                                "title": source.title,
+                                **workflow.assess_source(source).to_dict(),
+                            })
+                        print(json.dumps(scored, indent=2))
+                    continue
+                if action.casefold() == "review" and value.strip():
+                    sources = researcher.search(value.strip())
+                    review = workflow.create_review_protocol(value.strip(), sources)
+                    print(f"AETHER > Evidence inventory saved. ID: {review['id']}")
+                    print(review["content"])
+                    continue
+                sources = researcher.search(argument)
+                report = researcher.create_report(argument, sources)
                 print(f"AETHER > Research report saved. ID: {report['id']}")
                 print(report["content"])
+                continue
+
+
+            if lower.startswith("/review "):
+                parts = user_text[len("/review "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                advanced = AdvancedResearch(store)
+                if action == "create":
+                    fields = argument.split("|", 3)
+                    if len(fields) != 4:
+                        print("Usage: /review create QUESTION | INCLUSION_JSON_ARRAY | EXCLUSION_JSON_ARRAY | SEARCH_STRATEGY_JSON")
+                        continue
+                    review = advanced.create_systematic_review(
+                        fields[0].strip(), json.loads(fields[1]), json.loads(fields[2]), json.loads(fields[3])
+                    )
+                    print(f"AETHER > Systematic review protocol created: {review['id']}")
+                    continue
+                if action == "add":
+                    fields = argument.split("|", 1)
+                    if len(fields) != 2:
+                        print("Usage: /review add REVIEW_ID | RESEARCH_REPORT_ID")
+                        continue
+                    report = store.get_research_report(fields[1].strip())
+                    if report is None:
+                        print("AETHER > Research report not found.")
+                        continue
+                    print(json.dumps(advanced.add_review_sources(
+                        fields[0].strip(),
+                        [ResearchSource(**{key: item.get(key, "") for key in
+                            ("title", "url", "publisher", "published", "evidence_type", "summary", "full_text")})
+                         for item in report["sources"]],
+                        search_report_id=fields[1].strip(),
+                    ), indent=2))
+                    continue
+                if action == "screen":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review screen REVIEW_ID | SOURCE_URL | REVIEWER_ID | include/exclude | REASON")
+                        continue
+                    reviewer_id = fields[2].strip()
+                    password = getpass("Reviewer password: ") if ResearchCompletion(store).authentication_enabled() else None
+                    review = advanced.screen_source(*[field.strip() for field in fields], password=password)
+                    print(f"AETHER > Screening saved. Two distinct reviewers are required for consensus.")
+                    continue
+                if action == "resolve":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review resolve REVIEW_ID | SOURCE_URL | ADJUDICATOR_ID | include/exclude | RATIONALE")
+                        continue
+                    adjudicator_id = fields[2].strip()
+                    password = getpass("Adjudicator password: ") if ResearchCompletion(store).authentication_enabled() else None
+                    review = advanced.resolve_review_conflict(*[field.strip() for field in fields], password=password)
+                    print("AETHER > Screening disagreement adjudicated.")
+                    continue
+                if action == "stage":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review stage REVIEW_ID | SOURCE_URL | full_text/risk_of_bias/extraction | REVIEWER_ID | PAYLOAD_JSON")
+                        continue
+                    result = advanced.record_review_stage(
+                        fields[0].strip(), fields[1].strip(), fields[2].strip(),
+                        fields[3].strip(), json.loads(fields[4]),
+                        password=getpass("Reviewer password: ") if ResearchCompletion(store).authentication_enabled() else None,
+                    )
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "adjudicate-stage":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review adjudicate-stage REVIEW_ID | SOURCE_URL | STAGE | ADJUDICATOR_ID | PAYLOAD_JSON")
+                        continue
+                    result = advanced.resolve_review_stage(
+                        fields[0].strip(), fields[1].strip(), fields[2].strip(),
+                        fields[3].strip(), json.loads(fields[4]),
+                        password=getpass("Adjudicator password: ") if ResearchCompletion(store).authentication_enabled() else None,
+                    )
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "synthesize" and argument.strip():
+                    review = advanced.synthesize_review(argument.strip())
+                    print(json.dumps(review["final_summary"], indent=2))
+                    continue
+                if action == "finalize" and argument.strip():
+                    review = advanced.finalize_review(argument.strip())
+                    print(json.dumps(review["final_summary"], indent=2))
+                    continue
+                if action == "show" and argument.strip():
+                    review = store.get_systematic_review(argument.strip())
+                    print(json.dumps(review, indent=2) if review else "AETHER > Review not found.")
+                    continue
+                print("Usage: /review create|add|screen|finalize|show")
+                continue
+
+            if lower.startswith("/citation-check "):
+                fields = user_text[len("/citation-check "):].split("|", 3)
+                if len(fields) != 4:
+                    print("Usage: /citation-check CLAIM_TEXT | REPORT_ID | SOURCE_URL | EXACT_QUOTED_PASSAGE")
+                    continue
+                result = AdvancedResearch(store).check_citation_support(
+                    fields[0], fields[1].strip(), fields[2].strip(), fields[3]
+                )
+                print(json.dumps(result, indent=2))
+                continue
+
+            if lower.startswith("/citation-review "):
+                fields = user_text[len("/citation-review "):].split("|", 3)
+                if len(fields) != 4:
+                    print("Usage: /citation-review EVIDENCE_ID | REVIEWER_ID | supports/contradicts/insufficient | RATIONALE")
+                    continue
+                result = AdvancedResearch(store).adjudicate_citation(
+                    fields[0].strip(), fields[1].strip(), fields[2].strip(), fields[3],
+                    password=getpass("Reviewer password: ") if ResearchCompletion(store).authentication_enabled() else None,
+                )
+                print(json.dumps(result, indent=2))
+                print("AETHER > Two distinct reviewer IDs are required for agreement; reviewer accounts are authenticated when registered.")
+                continue
+
+            if lower.startswith("/citation-resolve "):
+                fields = user_text[len("/citation-resolve "):].split("|", 3)
+                if len(fields) != 4:
+                    print("Usage: /citation-resolve EVIDENCE_ID | ADJUDICATOR_ID | supports/contradicts/insufficient | RATIONALE")
+                    continue
+                result = AdvancedResearch(store).resolve_citation_conflict(
+                    fields[0].strip(), fields[1].strip(), fields[2].strip(), fields[3],
+                    password=getpass("Adjudicator password: ") if ResearchCompletion(store).authentication_enabled() else None,
+                )
+                print(json.dumps(result, indent=2))
                 continue
 
             if lower == "/reports":
