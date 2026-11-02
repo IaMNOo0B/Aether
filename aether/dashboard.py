@@ -45,7 +45,7 @@ def build_dashboard(engine: Any, store: Any, acceptance_path: str | Path = "repo
             "unverified_ids": [
                 item.get("capability_id", item.get("id", "unknown"))
                 for item in capabilities
-                if item.get("state") in {"implemented_unverified", "partial", "planned"}
+                if item.get("state") in {"implemented_unverified", "partial", "planned", "degraded", "unavailable"}
             ],
         },
         "research": {
