@@ -46,6 +46,16 @@ class GoalManager:
             value = goal.get(key, [])
             if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
                 raise ValueError(f"Goal {key} must be an array of non-empty strings")
+        deadline = goal.get("deadline_at")
+        if deadline is not None:
+            if not isinstance(deadline, str) or not deadline.strip():
+                raise ValueError("Goal deadline_at must be an ISO-8601 timestamp or null")
+            try:
+                parsed_deadline = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("Goal deadline_at must be a valid ISO-8601 timestamp") from exc
+            if parsed_deadline.tzinfo is None:
+                raise ValueError("Goal deadline_at must include a timezone")
 
     def propose(
         self, *, title: str, purpose: str, source: str, source_key: str,
