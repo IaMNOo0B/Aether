@@ -119,36 +119,6 @@ class GoalManager:
                 stop_condition="Stop and request human review if prior side effects cannot be established.",
             )
             discovered.append(goal)
-        # Unverified/degraded capabilities are knowledge gaps, not permission to mutate code.
-        profile = SelfModel(self.store.path).snapshot()
-        for capability in profile["capabilities"]:
-            if len(discovered) >= discovery_limit:
-                break
-            if capability["state"] == "verified":
-                continue
-            goal = self.propose(
-                title=f"Verify capability: {capability['name']}",
-                purpose=(
-                    f"Inspect the implementation and tests for capability {capability['id']}; "
-                    "run safe validation and record concrete evidence. Do not modify production code."
-                ),
-                source="capability_gap",
-                source_key=f"capability:{capability['id']}:{capability['state']}",
-                expected_benefit="Replace assumed capability status with test-backed evidence.",
-                priority=0.45 if capability["state"] == "planned" else 0.6,
-                complexity=2, goal_level="system",
-                risks=["A module may exist without being operational on this machine."],
-                completion_criteria=[
-                    "Inspect the actual implementation and relevant tests.",
-                    "Run a reproducible, non-destructive validation.",
-                    "Record the exact test result or leave the capability unverified.",
-                ],
-                stop_condition="Stop if required hardware, credentials, or user approval are unavailable.",
-            )
-            discovered.append(goal)
-            if len(discovered) >= discovery_limit:
-                break
-
         # Acceptance reports are durable signals of known capability gaps and regressions.
         report_path = self.project_root / "reports" / "acceptance" / "latest.json"
         if len(discovered) < discovery_limit and report_path.is_file():
@@ -189,6 +159,36 @@ class GoalManager:
                         discovered.append(goal)
             except (OSError, ValueError, TypeError):
                 pass
+        # Unverified/degraded capabilities are knowledge gaps, not permission to mutate code.
+        profile = SelfModel(self.store.path).snapshot()
+        for capability in profile["capabilities"]:
+            if len(discovered) >= discovery_limit:
+                break
+            if capability["state"] == "verified":
+                continue
+            goal = self.propose(
+                title=f"Verify capability: {capability['name']}",
+                purpose=(
+                    f"Inspect the implementation and tests for capability {capability['id']}; "
+                    "run safe validation and record concrete evidence. Do not modify production code."
+                ),
+                source="capability_gap",
+                source_key=f"capability:{capability['id']}:{capability['state']}",
+                expected_benefit="Replace assumed capability status with test-backed evidence.",
+                priority=0.45 if capability["state"] == "planned" else 0.6,
+                complexity=2, goal_level="system",
+                risks=["A module may exist without being operational on this machine."],
+                completion_criteria=[
+                    "Inspect the actual implementation and relevant tests.",
+                    "Run a reproducible, non-destructive validation.",
+                    "Record the exact test result or leave the capability unverified.",
+                ],
+                stop_condition="Stop if required hardware, credentials, or user approval are unavailable.",
+            )
+            discovered.append(goal)
+            if len(discovered) >= discovery_limit:
+                break
+
         return discovered
 
     def approve(self, goal_id: str) -> dict[str, Any]:
