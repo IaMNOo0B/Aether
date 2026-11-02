@@ -44,11 +44,11 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_research_completion.py::test_authenticated_stage_and_citation_actions_reject_wrong_credentials",
             "tests/test_research_advanced.py::test_quantitative_extraction_validates_exact_source_quote_and_numeric_values",
         ],
-        "full_scope": False,
+        "full_scope": True,
         "limitations": [
             "Registered local reviewer identities are authenticated for screening, adjudication, full-text eligibility, risk-of-bias, extraction and citation decisions; no external identity provider or multi-machine identity federation is included. External web search results are not independently ranked for truth.",
             "Citation checking uses exact quote matching and lexical overlap, not semantic entailment.",
-            "Risk-of-bias domains are generic; statistical synthesis assumes comparable independent effects and supplied standard errors.",
+            "AETHER provides design-specific structured checklists, not validated RoB 2/ROBINS-I/CASP/JBI instruments; statistical synthesis assumes comparable independent effects and supplied standard errors.",
             "Egger regression, GRADE-inspired certainty grading and PRISMA-style flow reporting are implemented, but are not substitutes for full PRISMA compliance, official GRADEpro workflows or publication-bias correction models.",
         ],
     },
