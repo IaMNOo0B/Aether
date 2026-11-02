@@ -291,6 +291,34 @@ class AdvancedResearch:
             if not math.isfinite(estimate) or not math.isfinite(standard_error) or standard_error <= 0:
                 raise ValueError("effect_estimate must be finite and standard_error must be finite and positive")
 
+    @staticmethod
+    def _validate_effect_evidence(review: dict[str, Any], source_key: str, payload: dict[str, Any]) -> None:
+        quantitative = {"effect_estimate", "standard_error"} <= set(payload)
+        if not quantitative:
+            payload["effect_evidence_status"] = "qualitative_extraction_no_effect_size"
+            return
+        if not payload.get("effect_evidence_quote"):
+            payload["effect_evidence_status"] = "not_independently_checked_no_effect_quote"
+            return
+        source_record = next(item.get("source", {}) for item in review["sources"]
+                             if item.get("source_key") == source_key)
+        full_text = str(source_record.get("full_text") or "")
+        quote = " ".join(str(payload["effect_evidence_quote"]).casefold().split())
+        captured = " ".join(full_text.casefold().split())
+        if not payload.get("effect_text_locator", "").strip():
+            raise ValueError("Quantitative evidence quote requires an exact page/section/paragraph locator")
+        if not full_text or quote not in captured:
+            raise ValueError("Quantitative effect quote must match captured full text exactly")
+        numeric_values = [float(value) for value in re.findall(
+            r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", quote
+        )]
+        estimate, standard_error = float(payload["effect_estimate"]), float(payload["standard_error"])
+        if not any(math.isclose(value, estimate, rel_tol=1e-9, abs_tol=1e-12) for value in numeric_values):
+            raise ValueError("Effect estimate is not present in the quoted source passage")
+        if not any(math.isclose(value, standard_error, rel_tol=1e-9, abs_tol=1e-12) for value in numeric_values):
+            raise ValueError("Standard error is not present in the quoted source passage")
+        payload["effect_evidence_status"] = "exact_quote_and_numeric_values_found"
+
     def record_review_stage(
         self, review_id: str, source_key: str, stage: str,
         reviewer_id: str, payload: dict[str, Any], password: str | None = None,
@@ -327,30 +355,7 @@ class AdvancedResearch:
                     raise ValueError(f"Risk-of-bias domain {name} requires a valid rating and rationale")
         elif stage == "extraction":
             self._validate_extraction_payload(payload)
-            quantitative = {"effect_estimate", "standard_error"} <= set(payload)
-            if quantitative and payload.get("effect_evidence_quote"):
-                source_record = next(item.get("source", {}) for item in review["sources"]
-                                     if item.get("source_key") == source_key)
-                full_text = str(source_record.get("full_text") or "")
-                quote = " ".join(str(payload["effect_evidence_quote"]).casefold().split())
-                captured = " ".join(full_text.casefold().split())
-                if not payload.get("effect_text_locator", "").strip():
-                    raise ValueError("Quantitative evidence quote requires an exact page/section/paragraph locator")
-                if not full_text or quote not in captured:
-                    raise ValueError("Quantitative effect quote must match captured full text exactly")
-                numeric_values = [float(value) for value in re.findall(
-                    r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", quote
-                )]
-                estimate, standard_error = float(payload["effect_estimate"]), float(payload["standard_error"])
-                if not any(math.isclose(value, estimate, rel_tol=1e-9, abs_tol=1e-12) for value in numeric_values):
-                    raise ValueError("Effect estimate is not present in the quoted source passage")
-                if not any(math.isclose(value, standard_error, rel_tol=1e-9, abs_tol=1e-12) for value in numeric_values):
-                    raise ValueError("Standard error is not present in the quoted source passage")
-                payload["effect_evidence_status"] = "exact_quote_and_numeric_values_found"
-            elif quantitative:
-                payload["effect_evidence_status"] = "not_independently_checked_no_effect_quote"
-            else:
-                payload["effect_evidence_status"] = "qualitative_extraction_no_effect_size"
+            self._validate_effect_evidence(review, source_key, payload)
         else:
             raise ValueError("Stage must be full_text, risk_of_bias or extraction")
         self.store.record_systematic_review_assessment(
@@ -376,6 +381,8 @@ class AdvancedResearch:
             self._validate_risk_domains(payload)
         elif stage == "extraction":
             self._validate_extraction_payload(payload)
+            review = self.store.get_systematic_review(review_id)
+            self._validate_effect_evidence(review, source_key, payload)
         reviewers = {item["reviewer_id"] for item in current["reviewers"]}
         if adjudicator_id in reviewers:
             raise ValueError("Adjudicator must be distinct from both reviewers")
