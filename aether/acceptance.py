@@ -126,6 +126,7 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_goals.py::test_goal_resource_budgets_have_hard_upper_bounds",
             "tests/test_goals.py::test_goal_replanning_rejects_dependency_cycles",
             "tests/test_goals.py::test_scheduler_uses_one_combined_tick_budget_for_goals_and_schedules",
+            "tests/test_goals.py::test_scheduler_does_not_queue_approved_goals_when_autonomy_is_disabled",
             "tests/test_scheduler.py::test_scheduler_runs_persisted_goal_with_read_only_tools",
             "tests/test_scheduler.py::test_scheduler_never_approves_workspace_writes",
             "tests/test_emergency_stop.py::test_scheduler_does_not_enqueue_when_emergency_stop_is_active",
