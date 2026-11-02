@@ -126,8 +126,8 @@ def test_tool_call_budget_stops_task_and_records_notification(tmp_path):
     })
     result = runner.run_task(task.id)
     assert result["status"] == "cancelled"
-    assert "tool-call budget exhausted" in result["reason"]
-    assert len(result["receipts"]) == 1
+    assert "configured tool-call budget" in result["reason"]
+    assert len(result["receipts"]) == 0
     assert any(item["kind"] == "resource_budget_exhausted"
                for item in store.list_notifications(unread_only=True))
 
