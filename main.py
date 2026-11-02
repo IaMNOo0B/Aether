@@ -82,6 +82,8 @@ def main() -> int:
     print("          /remember /remember-fact SUBJECT | PREDICATE | OBJECT | NOTE /memory-search /memory-index")
     print("          /correct-memory /memory-versions ID /memory-conflicts [ID]")
     print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
+    print("          /goal discover|list|show|create|approve|reject|run|pause|resume|cancel|replan")
+    print("          /notifications /notification read ID")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
     print("          /research QUERY|ingest|verify|score|review /experiment create|start|complete|cancel|list|show")
     print("          /review create|add|screen|resolve|finalize|stage|adjudicate-stage|synthesize|show /citation-check /citation-review /citation-resolve /experiment analyze")
