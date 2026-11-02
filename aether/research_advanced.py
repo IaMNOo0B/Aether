@@ -223,25 +223,16 @@ class AdvancedResearch:
         if any(item["decision"] in {"pending", "uncertain"} for item in sources):
             raise ValueError("Every retrieved source must have an include/exclude decision before finalization")
         included = [item for item in sources if item["decision"] == "include"]
-        quantitative_evidence = [
-            item["extraction"].get("effect_evidence_status", "not_independently_checked_no_effect_quote")
-            for item in included if "effect_estimate" in item["extraction"]
-        ]
         summary = {
             "review_id": review_id,
             "question": review["protocol"]["question"],
-            "effect_evidence_validation": {
-                "exact_quote_and_numeric_values_found": quantitative_evidence.count("exact_quote_and_numeric_values_found"),
-                "not_independently_checked_no_effect_quote": quantitative_evidence.count("not_independently_checked_no_effect_quote"),
-                "limitation": "Exact quotation and numeric-token checks do not prove correct extraction, context, units, or study-design validity.",
-            },
             "retrieved": len(sources),
             "included": len(included),
             "excluded": len(sources) - len(included),
             "included_sources": [item["source"] for item in included],
             "status": "screening_complete_synthesis_pending",
             "limitations": [
-                "Title/abstract screening requires two distinct operator-supplied reviewer IDs; those IDs are not authenticated identities.",
+                "When local reviewer accounts are registered, screening and review decisions require authenticated credentials; otherwise legacy operator-supplied labels remain available.",
                 "Full-text eligibility, risk-of-bias assessment, extraction and synthesis require separate explicit records.",
                 "No PRISMA compliance or meta-analysis is claimed.",
             ],
@@ -433,6 +424,15 @@ class AdvancedResearch:
                 "risk_of_bias": risk["payload"],
                 "extraction": extraction["payload"],
             })
+        quantitative_evidence = [
+            item["extraction"].get("effect_evidence_status", "not_independently_checked_no_effect_quote")
+            for item in included if "effect_estimate" in item["extraction"]
+        ]
+        effect_evidence_validation = {
+            "exact_quote_and_numeric_values_found": quantitative_evidence.count("exact_quote_and_numeric_values_found"),
+            "not_independently_checked_no_effect_quote": quantitative_evidence.count("not_independently_checked_no_effect_quote"),
+            "limitation": "Exact quotation and numeric-token checks do not prove correct extraction, context, units, or study-design validity.",
+        }
         quantitative_complete = all(
             {"effect_measure", "effect_estimate", "standard_error"}.issubset(item["extraction"])
             for item in included
@@ -489,6 +489,7 @@ class AdvancedResearch:
             },
             "full_text_excluded": full_text_excluded,
             "included_studies": included,
+            "effect_evidence_validation": effect_evidence_validation,
             "meta_analysis": meta_analysis,
             "meta_analysis_status": meta_analysis_status,
             "narrative_synthesis": (
@@ -497,11 +498,11 @@ class AdvancedResearch:
                 "Structured evidence table generated from independently reviewed extraction records. Interpret results alongside risk-of-bias ratings and protocol limitations."
             ),
             "limitations": [
-                "Reviewer IDs are operator-supplied labels, not authenticated identities.",
+                "When local reviewer accounts are registered, every screening, full-text, extraction, risk-of-bias and citation decision is authenticated locally; otherwise legacy operator-supplied labels remain available.",
                 "Risk-of-bias domains are a generic structured template, not a validated tool for every study design.",
                 "Meta-analysis is performed only when at least two included studies share an effect-measure label and provide effect estimates with standard errors.",
                 "The normal-approximation confidence interval and DerSimonian-Laird model may be inappropriate for some outcomes or small study counts.",
-                "No publication-bias test, certainty-of-evidence grading or PRISMA compliance is claimed.",
+                "Publication-bias screening, GRADE-inspired certainty and PRISMA 2020 reporting are separate operator workflows; none automatically certifies methodological or reporting compliance.",
             ],
         }
         self.store.complete_systematic_review_synthesis(review_id, synthesis)
