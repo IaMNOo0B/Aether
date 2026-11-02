@@ -81,6 +81,7 @@ Stage 4 remains partial until the end-to-end acceptance benchmark passes. Search
 - [x] Read-only runtime dashboard covering provider status, resource telemetry, capability evidence states, research inventory, decisions, tasks and saved acceptance results.
 - [x] Bounded local image intake and vision-provider routing for PNG/JPEG/GIF/WebP, with size/signature checks and explicit consent before remote upload.
 - [ ] Held-out benchmark on a sufficiently large, independently curated real-world dataset.
+- [ ] Continuous research/capability discovery with scheduled source refresh, independent evidence review and reproducible validation; the current dashboard is an inventory, not an autonomous discovery agent.
 - [ ] Video understanding, OCR validation, and audio-event perception beyond the existing offline speech-to-text path.
 - [ ] RLCD training reproduction on suitable GPU resources.
 
