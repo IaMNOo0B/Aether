@@ -176,6 +176,21 @@ Run a read-only snapshot of runtime/provider status, CPU/RAM/GPU telemetry, capa
 
 Use `--json` for machine-readable output. The dashboard does not start research, modify capability states, or execute autonomous tasks. It labels unverified capabilities rather than presenting them as completed.
 
+### Bounded goal discovery
+
+Goal discovery is separate from task execution and is opt-in by invocation:
+
+```powershell
+.venv\Scripts\python -m aether.goal_discovery
+.venv\Scripts\python -m aether.goal_discovery --list
+```
+
+It inspects metadata from failed tasks, saved research reports, tracked Git changes, and explicitly submitted external events. It stores deduplicated, prioritized proposals in the existing SQLite database. External event content is treated as untrusted input; Git discovery reads status/path metadata only.
+
+The Python API is `GoalDiscovery(database_path, project_root)` with `record_external_event(...)`, `discover()`, `list_proposals()`, `approve(proposal_id, reason)`, and `reject(proposal_id, reason)`. Approval is recorded with an audit event, but **does not enqueue or execute the goal**. The operator must explicitly pass the approved objective to the autonomy runner. Failed tasks create diagnosis proposals, never automatic retries.
+
+The existing scheduler remains disabled by default and only runs explicitly configured schedules through the read-only tool policy. Goal discovery does not silently create schedules or grant permissions.
+
 ### Emergency stop
 
 - `/emergency-stop` immediately records a persistent stop flag in SQLite.

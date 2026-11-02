@@ -37,6 +37,7 @@ BUILTIN_CAPABILITIES = (
     ("research.citation_support_review", "Citation passage support review", "Exact passage matching, lexical screening and two-reviewer adjudication; reviewer identities are not authenticated."),
     ("research.reproducible_analysis", "Reproducible experiment analysis", "Hashed CSV inputs, deterministic statistics, Welch comparisons and DerSimonian-Laird synthesis artifacts with stated assumptions."),
     ("autonomy.bounded_tools", "Bounded autonomous tools", "Fixed tool registry with workspace containment and per-action approval."),
+    ("autonomy.goal_discovery", "Bounded goal discovery", "Deduplicated, prioritized proposals from failed tasks, saved research reports, tracked project-change metadata and submitted events; human approval is required and never auto-enqueues execution."),
     ("desktop.allowlisted", "Allowlisted desktop control", "Limited Windows application launch and approval-gated input."),
     ("voice.offline_push_to_talk", "Offline push-to-talk voice", "Optional Vosk speech recognition and local speech output."),
     ("multimodal.image_analysis", "Vision-model image analysis", "Bounded local image intake with explicit remote-upload consent and configured vision-provider routing."),

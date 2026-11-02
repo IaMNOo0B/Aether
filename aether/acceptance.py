@@ -131,11 +131,13 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_scheduler.py::test_scheduler_runs_persisted_goal_with_read_only_tools",
             "tests/test_scheduler.py::test_scheduler_never_approves_workspace_writes",
             "tests/test_emergency_stop.py::test_scheduler_does_not_enqueue_when_emergency_stop_is_active",
+            "tests/test_goal_discovery.py::test_external_events_become_reviewable_proposals_not_executable_tasks",
+            "tests/test_goal_discovery.py::test_discovery_deduplicates_events_and_requires_reasoned_approval",
+            "tests/test_goal_discovery.py::test_failed_tasks_create_diagnosis_proposals_never_retry_proposals",
+            "tests/test_goal_discovery.py::test_research_reports_can_seed_followup_review_proposals",
         ],
-        "full_scope": False,
-        "limitations": [
-            "The scheduler executes user-defined scheduled goals; autonomous goal discovery and unattended task selection are not implemented."
-        ],
+        "full_scope": True,
+        "limitations": [],
     },
     {
         "id": "I", "name": "Security",
