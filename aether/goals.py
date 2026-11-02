@@ -20,7 +20,7 @@ GOAL_TRANSITIONS = {
     "paused": {"proposed", "approved", "queued", "cancelled", "blocked"},
     "blocked": {"proposed", "approved", "cancelled"},
     "failed": {"proposed", "cancelled"},
-    "completed": set(),
+    "completed": {"failed"},
     "cancelled": set(),
     "rejected": set(),
 }
@@ -251,11 +251,17 @@ class GoalManager:
     def dependencies_satisfied(self, goal: dict[str, Any]) -> bool:
         for dependency_id in goal["dependencies"]:
             dependency = self.store.get_autonomy_goal(dependency_id)
-            if dependency is None or dependency["status"] != "completed":
+            if (
+                dependency is None
+                or dependency["status"] != "completed"
+                or dependency.get("completion_review_status") != "verified"
+            ):
                 return False
         if goal.get("parent_goal_id"):
             parent = self.store.get_autonomy_goal(goal["parent_goal_id"])
             if parent is None or parent["status"] not in {"approved", "queued", "running", "completed"}:
+                return False
+            if parent["status"] == "completed" and parent.get("completion_review_status") != "verified":
                 return False
         return True
 
@@ -285,6 +291,15 @@ class GoalManager:
             self.store.enqueue_approved_autonomy_goal(goal["id"], task_id)
             queued.append(self.store.get_autonomy_goal(goal["id"]))
         return queued
+
+    def review_completion(self, goal_id: str, passed: bool, evidence: str) -> dict[str, Any]:
+        result = self.store.review_autonomy_goal_completion(goal_id, passed, evidence)
+        self._notify(
+            "goal_completion_verified" if passed else "goal_completion_rejected",
+            "Goal completion verified" if passed else "Goal completion not accepted",
+            evidence[:500], "success" if passed else "warning", result.get("task_id"), goal_id,
+        )
+        return result
 
     def reconcile(self) -> list[dict[str, Any]]:
         """Synchronize goal records with durable task state after restarts or scheduler failures."""
@@ -325,9 +340,12 @@ class GoalManager:
         if goal is None:
             raise KeyError(f"Unknown goal: {goal_id}")
         status = result.get("status")
-        if status == "completed":
+        if status == "completed" and result.get("tool_results_verified", False):
             new_status = "completed"
-            severity = "success"
+            severity = "warning"
+        elif status == "completed":
+            new_status = "failed"
+            severity = "error"
         elif status == "paused":
             new_status = "paused"
             severity = "warning"
