@@ -137,6 +137,8 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_resources.py::test_resource_guard_checks_vram_only_for_gpu_required_operations",
             "tests/test_resources.py::test_windows_resource_monitor_reads_system_cpu_and_ram",
             "tests/test_phase06_goals.py::test_tool_call_budget_stops_task_and_records_notification",
+            "tests/test_phase06_goals.py::test_active_runtime_budget_stops_before_model_or_tool_call",
+            "tests/test_phase06_goals.py::test_model_call_budget_stops_before_planning",
             "tests/test_phase06_goals.py::test_goal_approval_queues_with_resource_budget_and_dependency_gate",
         ],
         "full_scope": False,
