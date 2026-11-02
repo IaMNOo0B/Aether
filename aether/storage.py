@@ -93,6 +93,8 @@ class Store:
                 CREATE TABLE IF NOT EXISTS autonomy_goals (
                     id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
+                    goal_level TEXT NOT NULL DEFAULT 'immediate' CHECK(goal_level IN
+                        ('immediate','project','system','research','exploration')),
                     purpose TEXT NOT NULL,
                     source TEXT NOT NULL,
                     source_key TEXT NOT NULL UNIQUE,
@@ -1199,13 +1201,14 @@ class Store:
         with self._connect() as db:
             db.execute(
                 """INSERT INTO autonomy_goals
-                   (id, title, purpose, source, source_key, expected_benefit, priority,
+                   (id, title, goal_level, purpose, source, source_key, expected_benefit, priority,
                     complexity, resource_budget_json, risks_json, deadline_at,
                     dependencies_json, completion_criteria_json, stop_condition,
                     status, task_id, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)""",
                 (
-                    goal["id"], goal["title"], goal["purpose"], goal["source"],
+                    goal["id"], goal["title"], goal.get("goal_level", "immediate"),
+                    goal["purpose"], goal["source"],
                     goal["source_key"], goal["expected_benefit"], goal["priority"],
                     goal["complexity"], json.dumps(goal["resource_budget"]),
                     json.dumps(goal["risks"]), goal.get("deadline_at"),
