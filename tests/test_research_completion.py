@@ -19,6 +19,16 @@ def test_reviewer_password_authentication_and_duplicate_identity(tmp_path):
 def test_design_specific_risk_of_bias_requires_exact_domains(tmp_path):
     workflow = ResearchCompletion(Store(tmp_path / "aether.sqlite3"))
     workflow.register_reviewer("reviewer-1", "correct horse battery")
+    workflow.register_reviewer("reviewer-2", "another correct battery")
+    from aether.research import ResearchSource
+    from aether.research_advanced import AdvancedResearch
+    advanced = AdvancedResearch(workflow.store)
+    review = advanced.create_systematic_review(
+        "Does intervention X improve outcome Y?", ["Human studies"], ["Animal studies"],
+        {"databases": ["Crossref"], "queries": ["intervention X"], "searched_on": "2026-11-02"},
+    )
+    source = ResearchSource(title="Study", url="https://example.org/study", summary="Study summary.")
+    advanced.add_review_sources(review["id"], [source])
     domains = {
         name: {"rating": "low", "rationale": "The paper provides sufficient detail for this domain."}
         for name in (
@@ -27,14 +37,20 @@ def test_design_specific_risk_of_bias_requires_exact_domains(tmp_path):
         )
     }
     result = workflow.record_risk_of_bias(
-        "review-1", "https://example.org/study", "randomized",
+        review["id"], "https://example.org/study", "randomized",
         "reviewer-1", "correct horse battery", domains,
     )
     assert result["instrument"] == "AETHER-structured-randomized-v1"
-    assert "not a validated" in result["limitation"]
+    assert result["status"] == "awaiting_second_reviewer"
+    assert "not a validated" in result["payload"]["limitation"]
+    second = workflow.record_risk_of_bias(
+        review["id"], "https://example.org/study", "randomized",
+        "reviewer-2", "another correct battery", domains,
+    )
+    assert second["status"] == "agreed"
     with pytest.raises(PermissionError):
         workflow.record_risk_of_bias(
-            "review-1", "https://example.org/study", "randomized",
+            review["id"], "https://example.org/study", "randomized",
             "reviewer-1", "bad password", domains,
         )
 
