@@ -15,6 +15,7 @@ from aether.config import load_settings
 from aether.desktop import DesktopController
 from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
+from aether.goals import GoalManager
 from aether.learning import SkillLearner
 from aether.research import ResearchError, Researcher
 from aether.resources import ResourceLimitExceeded
@@ -68,7 +69,7 @@ def main() -> int:
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
-    print("Commands: /status /resources /self-model /tasks /task-events ID /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
+    print("Commands: /status /resources /self-model /tasks /task-events ID /task pause|resume|cancel ID /goal /notifications /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /remember /memory-search /memory-index /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
 
@@ -146,6 +147,83 @@ def main() -> int:
                     )
                     if event["payload"]:
                         print(json.dumps(event["payload"], indent=2))
+                continue
+
+            if lower.startswith("/task "):
+                parts = user_text.split(maxsplit=2)
+                if len(parts) != 3 or parts[1].casefold() not in {"pause", "resume", "cancel"}:
+                    print("Usage: /task pause|resume|cancel TASK_ID")
+                    continue
+                action, task_id = parts[1].casefold(), parts[2].strip()
+                if action == "pause":
+                    task = engine.tasks.pause(task_id)
+                elif action == "resume":
+                    task = engine.tasks.resume(task_id)
+                else:
+                    task = engine.tasks.cancel(task_id)
+                print(f"AETHER > Task {task.id}: {task.status}")
+                continue
+
+            if lower.startswith("/goal"):
+                parts = user_text.split(maxsplit=2)
+                action = parts[1].casefold() if len(parts) > 1 else "list"
+                argument = parts[2] if len(parts) > 2 else ""
+                goals = GoalManager(store)
+                if action == "discover":
+                    found = goals.discover()
+                    print(f"AETHER > Discovered {len(found)} recovery proposal(s); none were auto-approved.")
+                    for goal in found:
+                        print(f"{goal['id']} | {goal['status']} | {goal['title']}")
+                elif action == "list":
+                    for goal in goals.prioritize():
+                        print(f"{goal['id']} | {goal['status']} | priority={goal['priority']:.2f} | {goal['title']}")
+                elif action == "add":
+                    fields = argument.split("|", 3)
+                    if len(fields) < 3:
+                        print("Usage: /goal add TITLE | PURPOSE | EXPECTED BENEFIT | PRIORITY(optional 0..1)")
+                        continue
+                    priority = float(fields[3].strip()) if len(fields) == 4 else 0.5
+                    goal = goals.propose(
+                        title=fields[0].strip(), purpose=fields[1].strip(),
+                        expected_benefit=fields[2].strip(), priority=priority,
+                        source="user", source_key=f"user:{uuid4().hex}",
+                    )
+                    print(f"AETHER > Goal proposal saved: {goal['id']} (approval required)")
+                elif action == "approve" and argument.strip():
+                    goal = goals.approve(argument.strip())
+                    print(f"AETHER > Approved: {goal['title']}. It will run only when the scheduler or /goal queue is used.")
+                elif action == "cancel" and argument.strip():
+                    goal = goals.cancel(argument.strip())
+                    print(f"AETHER > Goal cancelled: {goal['id']}")
+                elif action == "queue":
+                    if not settings.autonomy.enabled:
+                        print("AETHER > Autonomy is disabled in config/settings.toml.")
+                        continue
+                    queued_ids = goals.queue_approved(limit=settings.scheduler.max_tasks_per_tick)
+                    runner = AutonomyRunner(
+                        engine.provider(), store, settings.autonomy, settings.limits,
+                        settings.research, Path.cwd(), resource_guard=engine.resources,
+                        gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
+                    )
+                    for task_id in queued_ids:
+                        result = runner.run_task(task_id, ask_approval)
+                        print(f"AETHER > {task_id} | {result['status']}")
+                else:
+                    print("Usage: /goal list|discover|add ...|approve ID|cancel ID|queue")
+                continue
+
+            if lower == "/notifications":
+                items = store.list_notifications(unread_only=True, limit=50)
+                if not items:
+                    print("AETHER > No unread notifications.")
+                for item in items:
+                    print(f"{item['id']} | {item['severity'].upper()} | {item['title']} | {item['message']}")
+                continue
+
+            if lower.startswith("/notification-read "):
+                notification_id = user_text[len("/notification-read "):].strip()
+                store.mark_notification_read(notification_id)
+                print("AETHER > Notification marked as read.")
                 continue
 
             if lower == "/diagnostics":
