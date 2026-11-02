@@ -163,7 +163,7 @@ AETHER can pass a local PNG, JPEG, GIF or WebP image to a configured vision-capa
 - The image is read locally, limited to 8 MiB, signature-checked and never stored in AETHER's database.
 - SVG and unknown formats are rejected.
 - Ollama routing is limited to model names recognized as vision-capable; OpenAI-compatible endpoints may accept vision payloads but the endpoint/model must actually support them.
-- Sending an image to a non-local OpenAI-compatible endpoint requires the explicit `--allow-remote` flag.
+- Sending an image to any non-local model endpoint requires the explicit `--allow-remote` flag.
 - Voice remains the existing offline push-to-talk path. Video understanding, OCR guarantees, and audio-event perception are not claimed.
 
 ### System dashboard (Phase 5)
