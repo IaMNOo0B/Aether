@@ -402,6 +402,25 @@ class AutonomyRunner:
 
         return guarded
 
+    def _cancel_at_boundary(
+        self, task_id: str, receipts: list[dict[str, Any]],
+        completed_steps: list[str],
+    ) -> dict[str, Any] | None:
+        latest = self.store.get_task(task_id)
+        if not latest or not latest["state"].get("cancel_requested"):
+            return None
+        state = dict(latest["state"])
+        reason = state.pop("cancel_reason", "Cancellation requested")
+        state.pop("cancel_requested", None)
+        state["cancelled_at_safe_boundary"] = True
+        state["cancelled_reason"] = reason
+        self.tasks.transition(task_id, "cancelled", state)
+        return {
+            "task_id": task_id, "status": "cancelled",
+            "receipts": receipts, "completed_steps": completed_steps,
+            "reason": reason,
+        }
+
     def run_task(
         self, task_id: str, approval: ApprovalCallback | None = None
     ) -> dict[str, Any]:
@@ -451,6 +470,12 @@ class AutonomyRunner:
                 if step["id"] in completed_steps:
                     index += 1
                     continue
+                cancelled = self._cancel_at_boundary(task_id, receipts, completed_steps)
+                if cancelled is not None:
+                    return cancelled
+                cancelled = self._cancel_at_boundary(task_id, receipts, completed_steps)
+                if cancelled is not None:
+                    return cancelled
                 latest = self.store.get_task(task_id)
                 if latest and latest["state"].get("pause_requested"):
                     paused_state = dict(latest["state"])
