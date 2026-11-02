@@ -27,7 +27,7 @@ def test_design_specific_risk_of_bias_requires_exact_domains(tmp_path):
         "Does intervention X improve outcome Y?", ["Human studies"], ["Animal studies"],
         {"databases": ["Crossref"], "queries": ["intervention X"], "searched_on": "2026-11-02"},
     )
-    source = ResearchSource(title="Study", url="https://example.org/study", summary="Study summary.")
+    source = ResearchSource(title="Study", url="https://example.org/study", publisher="Journal", published="2026", evidence_type="article", summary="Study summary.")
     advanced.add_review_sources(review["id"], [source])
     domains = {
         name: {"rating": "low", "rationale": "The paper provides sufficient detail for this domain."}
