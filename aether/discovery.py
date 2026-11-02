@@ -86,6 +86,7 @@ class ResearchDiscovery:
             raise DiscoveryError("Discovery state has an invalid schema")
         if not isinstance(state.get("pending_review", []), list):
             raise DiscoveryError("Discovery pending_review state must be a list")
+        state.setdefault("last_run", {})
         state.setdefault("pending_review", [])
         return state
 
