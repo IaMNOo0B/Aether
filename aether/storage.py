@@ -122,6 +122,8 @@ class Store:
                     dependencies_json TEXT NOT NULL,
                     completion_criteria_json TEXT NOT NULL,
                     stop_condition TEXT NOT NULL,
+                    completion_review_status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK(completion_review_status IN ('pending','pending_review','verified','rejected')),
                     status TEXT NOT NULL CHECK(status IN
                         ('proposed','approved','queued','running','paused','completed','failed','cancelled','blocked','rejected')),
                     task_id TEXT,
@@ -1449,16 +1451,54 @@ class Store:
                 raise ValueError(
                     f"Goal status changed concurrently: expected {expected_status}, found {row['status']}"
                 )
+            review_status = "pending_review" if new_status == "completed" else None
             db.execute(
                 """UPDATE autonomy_goals SET status=?, task_id=COALESCE(?, task_id),
+                   completion_review_status=COALESCE(?, completion_review_status),
                    updated_at=? WHERE id=?""",
-                (new_status, task_id, now, goal_id),
+                (new_status, task_id, review_status, now, goal_id),
             )
             db.execute(
                 """INSERT INTO autonomy_goal_events
                    (goal_id, event_type, from_status, to_status, payload_json, created_at)
                    VALUES (?, 'transition', ?, ?, ?, ?)""",
                 (goal_id, expected_status, new_status, json.dumps(payload or {}), now),
+            )
+        result = self.get_autonomy_goal(goal_id)
+        assert result is not None
+        return result
+
+    def review_autonomy_goal_completion(
+        self, goal_id: str, passed: bool, evidence: str,
+    ) -> dict[str, Any]:
+        evidence = evidence.strip()
+        if not evidence:
+            raise ValueError("Goal completion review requires evidence")
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status, completion_review_status FROM autonomy_goals WHERE id=?",
+                (goal_id,),
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown autonomy goal: {goal_id}")
+            if row["status"] != "completed" or row["completion_review_status"] != "pending_review":
+                raise ValueError("Only completed goals awaiting operator review can be verified")
+            review_status = "verified" if passed else "rejected"
+            new_status = "completed" if passed else "failed"
+            db.execute(
+                """UPDATE autonomy_goals SET status=?, completion_review_status=?, updated_at=?
+                   WHERE id=?""",
+                (new_status, review_status, now, goal_id),
+            )
+            db.execute(
+                """INSERT INTO autonomy_goal_events
+                   (goal_id, event_type, from_status, to_status, payload_json, created_at)
+                   VALUES (?, 'completion_review', 'completed', ?, ?, ?)""",
+                (goal_id, new_status, json.dumps({
+                    "review_status": review_status, "evidence": evidence[:2000]
+                }), now),
             )
         result = self.get_autonomy_goal(goal_id)
         assert result is not None
