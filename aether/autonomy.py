@@ -496,9 +496,6 @@ class AutonomyRunner:
                 cancelled = self._cancel_at_boundary(task_id, receipts, completed_steps)
                 if cancelled is not None:
                     return cancelled
-                cancelled = self._cancel_at_boundary(task_id, receipts, completed_steps)
-                if cancelled is not None:
-                    return cancelled
                 latest = self.store.get_task(task_id)
                 if latest and latest["state"].get("pause_requested"):
                     paused_state = dict(latest["state"])
@@ -559,8 +556,8 @@ class AutonomyRunner:
                     failed_key = action_key(step)
                     if any(action_key(candidate) == failed_key for candidate in replanned):
                         raise RuntimeError("Replan repeated the failed action without changing it; rejected")
-                    if index + len(replanned) > self.limits.max_autonomy_steps:
-                        raise RuntimeError("Replanned task exceeds the configured total step limit")
+                    if index + len(replanned) > min(self.limits.max_autonomy_steps, max_goal_steps):
+                        raise ResourceLimitExceeded("Replanned task exceeds the goal step budget")
                     id_map = {
                         candidate["id"]: f"replan-{replan_attempts + 1}-{candidate['id']}"
                         for candidate in replanned
@@ -583,10 +580,9 @@ class AutonomyRunner:
                         **preserved_state, "kind": "autonomy",
                         "plan": steps, "receipts": receipts,
                         "completed_steps": completed_steps,
-                        "replan_history": replan_history,
+                        "replan_history": replan_history, "model_calls": model_calls,
                     })
                     continue
-                enforce_goal_budget()
                 verification = self._verify_result(step["tool"], step.get("args", {}), result)
                 receipt = {
                     "step": len(receipts) + 1,
@@ -617,8 +613,9 @@ class AutonomyRunner:
                     "plan": steps, "receipts": receipts,
                     "completed_steps": completed_steps,
                     "current_step": index + 1,
-                    "replan_history": replan_history,
+                    "replan_history": replan_history, "model_calls": model_calls,
                 })
+                enforce_goal_budget()
                 latest = self.store.get_task(task_id)
                 if latest and latest["state"].get("pause_requested"):
                     paused_state = dict(latest["state"])
