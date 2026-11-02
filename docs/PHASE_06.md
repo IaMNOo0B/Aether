@@ -33,7 +33,7 @@ Goals are persisted in SQLite with:
 - Resource budget: maximum active runtime, model calls and tool calls.
 - Status and an append-only lifecycle event history.
 
-Goal discovery currently proposes recovery work from failed autonomy tasks and verification work for unverified/degraded capability records. A proposal is not authorization. A human must approve it before the scheduler can queue it.
+Goal discovery currently proposes recovery work from failed autonomy tasks, verification work for unverified/degraded capability records, and engineering objectives from persisted OMEGA acceptance gaps. It also supports explicit user-entered goals and recurring schedules. A proposal is not authorization. A human must approve it before the scheduler can queue it.
 
 ## Console commands
 
@@ -71,4 +71,4 @@ These are cooperative pre-action checks, not hard real-time OS quotas. They do n
 
 ## Goal discovery limitations
 
-Discovery is intentionally conservative. It currently covers persisted failed autonomy tasks and unverified/degraded capability records, plus explicit user-entered goals and recurring schedules. It does not yet infer every project dependency, external-system event, research opportunity or performance regression. Discovered goals never self-approve.
+Discovery is intentionally conservative. It currently covers persisted failed autonomy tasks, unverified/degraded capability records, and failed/partial cases in the latest saved OMEGA acceptance report, plus explicit user-entered goals and recurring schedules. It does not yet infer every project dependency, external-system event or research opportunity. Discovered goals never self-approve.
