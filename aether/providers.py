@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
-from typing import Protocol
+from typing import Any, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -66,6 +66,23 @@ class OllamaProvider:
     def chat(self, messages: list[dict[str, str]]) -> str:
         return self.client.chat(messages)
 
+    @property
+    def supports_vision(self) -> bool:
+        model = self.model.casefold()
+        return any(token in model for token in (
+            "llava", "llama3.2-vision", "qwen2.5vl", "qwen2.5-vl",
+            "qwen2-vl", "qwen3-vl", "gemma3", "moondream", "minicpm-v",
+        ))
+
+    def chat_with_images(self, prompt: str, images: list[dict[str, str]]) -> str:
+        if not self.supports_vision:
+            raise ModelUnavailable(
+                f"Configured Ollama model '{self.model}' is not recognized as a vision model"
+            )
+        return self.client.chat_with_images(
+            prompt, [item["data"] for item in images]
+        )
+
 
 class OpenAICompatibleProvider:
     """OpenAI Chat Completions-compatible API adapter.
@@ -102,7 +119,29 @@ class OpenAICompatibleProvider:
         except (OSError, URLError, HTTPError, TimeoutError):
             return False
 
+    @property
+    def supports_vision(self) -> bool:
+        # OpenAI-compatible servers may expose vision-capable models; the endpoint
+        # remains the authority and will reject unsupported model/payload pairs.
+        return True
+
+    def chat_with_images(self, prompt: str, images: list[dict[str, str]]) -> str:
+        if not prompt.strip() or not images:
+            raise ValueError("Image analysis requires a prompt and at least one image")
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for item in images:
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{item['mime_type']};base64,{item['data']}"
+                },
+            })
+        return self._request_chat([{"role": "user", "content": content}])
+
     def chat(self, messages: list[dict[str, str]]) -> str:
+        return self._request_chat(messages)
+
+    def _request_chat(self, messages: list[dict[str, Any]]) -> str:
         payload = json.dumps({
             "model": self.model,
             "messages": messages,
@@ -118,7 +157,6 @@ class OpenAICompatibleProvider:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 result = json.loads(response.read().decode("utf-8"))
         except HTTPError as exc:
-            # Do not echo request headers or API keys into logs/errors.
             try:
                 detail = exc.read(1500).decode("utf-8", errors="replace")
             except OSError:
@@ -136,12 +174,9 @@ class OpenAICompatibleProvider:
             ) from exc
 
         try:
-            choices = result["choices"]
-            message = choices[0]["message"]
-            response_content = message["content"]
+            response_content = result["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ModelUnavailable("OpenAI-compatible provider response has no assistant message") from exc
-
         if isinstance(response_content, list):
             response_content = "".join(
                 item.get("text", "") for item in response_content if isinstance(item, dict)
@@ -184,6 +219,24 @@ class ProviderChain:
         raise ModelUnavailable(
             "All configured model providers failed. " + " | ".join(failures)
         )
+
+    def chat_with_images(self, prompt: str, images: list[dict[str, str]]) -> str:
+        failures = []
+        for label, provider in self.providers:
+            if not getattr(provider, "supports_vision", False):
+                continue
+            method = getattr(provider, "chat_with_images", None)
+            if not callable(method):
+                continue
+            try:
+                answer = method(prompt, images)
+                self.last_provider = label
+                return answer
+            except ModelUnavailable as exc:
+                failures.append(f"{label}: {str(exc)[:400]}")
+        self.last_provider = None
+        detail = " | ".join(failures) if failures else "No configured provider advertises image support"
+        raise ModelUnavailable("Image analysis unavailable. " + detail)
 
 
 def _make_provider(

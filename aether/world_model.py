@@ -10,6 +10,7 @@ from typing import Any
 from uuid import uuid4
 import json
 
+from aether.decisions import DecisionManager
 from aether.storage import Store
 
 
@@ -30,8 +31,9 @@ def _normalize(value: str) -> str:
 class WorldModel:
     """Versioned symbolic world states, action effects, constraints and observed outcomes."""
 
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, decisions: DecisionManager | None = None):
         self.store = store
+        self.decisions = decisions
 
     @staticmethod
     def _validate_constraints(constraints: dict[str, Any]) -> None:
@@ -196,6 +198,16 @@ class WorldModel:
             "expected_resource_cost": sum(action["resource_costs"].values()),
         }
         self.store.insert_world_simulation(simulation)
+        if self.decisions is not None and simulation["executable"]:
+            action_name = action["name"]
+            self.decisions.log_typed_prediction(
+                f"Will symbolic world action '{action_name}' succeed?",
+                1.0 - float(action["failure_probability"]),
+                "world-model",
+                producer_type="world_model",
+                source_ref=simulation["id"],
+                model_id="symbolic-world-model-v1",
+            )
         return simulation
 
     def compare_actions(self, world_name: str, action_ids: list[str]) -> list[dict[str, Any]]:
@@ -252,6 +264,19 @@ class WorldModel:
             self.store.insert_world_observation(
                 observation, simulation["action_id"], outcome_class
             )
+        if self.decisions is not None and outcome_class in {"success", "failure"}:
+            matching = [
+                item for item in self.store.list_decisions(
+                    resolved_only=False, limit=10000
+                )
+                if item.get("metadata", {}).get("producer_type") == "world_model"
+                and item.get("metadata", {}).get("source_ref") == simulation_id
+                and item.get("outcome") is None
+            ]
+            if matching:
+                self.decisions.resolve(
+                    matching[0]["id"], outcome_class == "success"
+                )
         return observation
 
     def history(self, world_name: str) -> list[dict[str, Any]]:

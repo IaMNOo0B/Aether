@@ -70,15 +70,22 @@ Benchmark boundary: fixed lexical fixtures measure retrieval and draft-skill exc
 
 Stage 4 remains partial until the held-out end-to-end acceptance benchmark passes and authenticated reviewer identities are enforced across all review stages. Search rankings and source scores are not truth measures; exact-quote matching is not semantic entailment. The design-specific checklists are not validated instruments. Meta-analysis and Egger screening assume comparable independent effects and supplied standard errors; raw ingestion currently supports independent groups only.
 
-## Stage 5 — RLCD investigation
+## Stage 5 — RLCD investigation and frontier interface
 
 - [x] Identify OpenJev-RLCD and review its two-stage method.
 - [x] Document GPU, benchmark, and licensing constraints in [RLCD feasibility](research/RLCD_FEASIBILITY.md).
 - [x] Persistent binary decision ledger and Brier/log-loss/ECE/AURC metrics.
-- [ ] Held-out calibration benchmarks and typed decision-producer integration.
-- [ ] Training reproduction on suitable GPU resources.
+- [x] Typed decision-producer API with producer type, source reference, optional model ID and evidence hash.
+- [x] Symbolic world-model integration: declared success probabilities are logged at simulation time and only unambiguous observed outcomes are resolved.
+- [x] Deterministic held-out calibration benchmark with fixed seed, dataset SHA-256, disjoint train/test records and Brier/log-loss/ECE/AURC reporting.
+- [x] Read-only runtime dashboard covering provider status, resource telemetry, capability evidence states, research inventory, decisions, tasks and saved acceptance results.
+- [x] Bounded local image intake and vision-provider routing for PNG/JPEG/GIF/WebP, with size/signature checks and explicit consent before remote upload.
+- [ ] Held-out benchmark on a sufficiently large, independently curated real-world dataset.
+- [ ] Continuous research/capability discovery with scheduled source refresh, independent evidence review and reproducible validation; the current dashboard is an inventory, not an autonomous discovery agent.
+- [ ] Video understanding, OCR validation, and audio-event perception beyond the existing offline speech-to-text path.
+- [ ] RLCD training reproduction on suitable GPU resources.
 
-AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX 2060 has 6 GB VRAM, while the paper reports 48 GB GPU runs.
+The implementation adds a post-hoc histogram calibration baseline for evaluation only. AETHER is not RLCD-trained and no model weights are updated. Full reproduction is deferred because the target RTX 2060 has 6 GB VRAM, while the paper reports 48 GB GPU runs.
 
 ## Stage 6 — Bounded autonomy
 

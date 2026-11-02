@@ -137,6 +137,45 @@ Conflict detection only flags candidates; it does not decide which source is cor
 
 This is a conservative runtime decision gate, **not RLCD training**. Manually supplied probabilities are labelled as user-supplied; they are not treated as calibrated model outputs.
 
+### RLCD evaluation (Phase 5)
+
+Typed decision producers preserve the producing subsystem and source reference:
+- `DecisionManager.log_typed_prediction(...)` accepts named producers such as `assistant_model`, `research_claim`, `experiment_prediction`, `tool_verification`, `world_model`, and `operator`.
+- Symbolic world-model simulations automatically record the declared success probability. A later unambiguous success/failure observation resolves that prediction; ambiguous observations remain unresolved and are excluded from calibration metrics.
+- Producer labels and source references are provenance metadata, not authentication or proof of calibration.
+
+Run a deterministic held-out calibration benchmark against resolved outcomes:
+
+```powershell
+.venv\Scripts\python -m aether.rlcd_evaluation --database data/aether.sqlite3 --domain world-model --seed 42 --train-fraction 0.7 --bins 10 --output reports/rlcd/held-out.json
+```
+
+The benchmark requires at least five training and five held-out resolved decisions (the default 70/30 split therefore needs at least 17 records). It refuses to mix multiple decision domains; pass `--domain` when more than one domain is present. The benchmark fits a small Laplace-smoothed histogram calibrator on the training split and reports Brier score, log loss, ECE and AURC on a disjoint held-out split. It includes a dataset SHA-256 and fixed seed for reproducibility. This is a post-hoc calibration baseline, **not OpenJev-RLCD training**, not a model-weight update, and not evidence of generalization beyond the evaluated data. Full RLCD reproduction remains deferred: the target RTX 2060 6 GB is below the paper's reported 48 GB GPU setup.
+
+### Multimodal image analysis (Phase 5)
+
+AETHER can pass a local PNG, JPEG, GIF or WebP image to a configured vision-capable provider:
+
+```powershell
+.venv\Scripts\python -m aether.multimodal --image workspace/example.png --prompt "Describe the visible objects and any readable text."
+```
+
+- The image is read locally, limited to 8 MiB, signature-checked and never stored in AETHER's database.
+- SVG and unknown formats are rejected.
+- Ollama routing is limited to model names recognized as vision-capable; OpenAI-compatible endpoints may accept vision payloads but the endpoint/model must actually support them.
+- Sending an image to any non-local model endpoint requires the explicit `--allow-remote` flag.
+- Voice remains the existing offline push-to-talk path. Video understanding, OCR guarantees, and audio-event perception are not claimed.
+
+### System dashboard (Phase 5)
+
+Run a read-only snapshot of runtime/provider status, CPU/RAM/GPU telemetry, capability evidence states, research report inventory, decision-producer counts, task statuses and the latest saved OMEGA acceptance report:
+
+```powershell
+.venv\Scripts\python -m aether.dashboard
+```
+
+Use `--json` for machine-readable output. The dashboard does not start research, modify capability states, or execute autonomous tasks. It labels unverified capabilities rather than presenting them as completed.
+
 ### Emergency stop
 
 - `/emergency-stop` immediately records a persistent stop flag in SQLite.
