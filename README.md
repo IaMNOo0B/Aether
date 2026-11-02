@@ -329,6 +329,17 @@ Not implemented: autonomous goal discovery, unrestricted/background project auto
 - Preserve `data/` and review candidate patches before use.
 
 
+### Scheduled research discovery (Phase 5)
+
+Copy `config/discovery.example.json` to `config/discovery.json`, edit the topics, then run:
+
+```powershell
+python -m aether.discovery --config config/discovery.json --once
+python -m aether.discovery --config config/discovery.json --watch
+```
+
+Discovery is opt-in. Each topic has a minimum one-hour refresh interval; one cycle searches at most 20 configured topics, stores provenance-bearing reports and marks every result **pending human review**. It does not assert truth, authenticate reviewers, update model weights or grant new capabilities. Stop the watcher with Ctrl+C. The state file is stored separately at `data/discovery-state.json`.
+
 ### Local media perception (Phase 5)
 
 Install the optional audio inference packages with `python -m pip install -e ".[media]"`.
