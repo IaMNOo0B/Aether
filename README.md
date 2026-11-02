@@ -188,7 +188,7 @@ Run the five-scenario executor benchmark with `python -m aether.benchmark`. It u
 
 ### Extended evidence methods (operator-reviewed)
 
-- `/reviewer register REVIEWER_ID` creates a local reviewer identity. Passwords are salted and PBKDF2-HMAC-SHA256 hashed in a separate SQLite file beside the configured AETHER database; passwords are never stored in plaintext.
+- `/reviewer register REVIEWER_ID` creates a local reviewer identity. Passwords are salted and PBKDF2-HMAC-SHA256 hashed in a dedicated table in the primary AETHER SQLite database, so normal database backups include reviewer accounts; passwords are never stored in plaintext.
 - `/review-method prisma REVIEW_ID` emits PRISMA-style flow counts.
 - `/review-method prisma-checklist REVIEW_ID | RESPONSES_JSON` validates and persists all 27 PRISMA 2020 checklist items with manuscript locations and rationales. It does not certify compliance. Checklist source: https://www.prisma-statement.org/prisma-2020 (CC BY 4.0; Page et al., BMJ 2021).
 - `/review-method publication-bias REVIEW_ID` runs Egger regression only when at least 10 compatible extracted effects are available. The p-value is a normal approximation; asymmetry is not proof of publication bias.
