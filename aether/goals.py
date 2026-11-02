@@ -108,9 +108,18 @@ class GoalManager:
         if not criteria:
             raise ValueError("At least one measurable completion criterion is required")
         budget = dict(resource_budget or {"max_steps": 5, "max_runtime_seconds": 300, "max_model_calls": 8})
+        allowed_budget_keys = {"max_steps", "max_runtime_seconds", "max_model_calls"}
+        unknown_budget_keys = set(budget) - allowed_budget_keys
+        if unknown_budget_keys:
+            raise ValueError(f"Unsupported goal resource budget fields: {sorted(unknown_budget_keys)}")
         for key, value in budget.items():
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
-                raise ValueError(f"Resource budget {key} must be a positive number")
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                raise ValueError(f"Resource budget {key} must be a finite positive number")
+        for key in ("max_steps", "max_model_calls"):
+            if key in budget and (not isinstance(budget[key], int) or budget[key] > 50):
+                raise ValueError(f"Resource budget {key} must be an integer from 1 to 50")
+        if float(budget.get("max_runtime_seconds", 300)) > 3600:
+            raise ValueError("Goal max_runtime_seconds cannot exceed 3600 seconds")
         goal = {
             "id": uuid4().hex, "parent_goal_id": parent_goal_id, "title": title,
             "purpose": purpose, "source": source, "source_key": source_key,
