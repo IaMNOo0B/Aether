@@ -47,6 +47,37 @@ GRADE_LEVELS = ("high", "moderate", "low", "very_low")
 GRADE_DOWNGRADES = {"none": 0, "serious": 1, "very_serious": 2}
 
 
+PRISMA_2020_CHECKLIST = (
+    ("1", "Title", "Identify the report as a systematic review."),
+    ("2", "Abstract", "Report the structured abstract elements using the PRISMA 2020 for Abstracts checklist."),
+    ("3", "Rationale", "Explain the review rationale in the context of existing knowledge."),
+    ("4", "Objectives", "State the explicit review objectives or questions."),
+    ("5", "Eligibility criteria", "Specify inclusion/exclusion criteria and how studies were grouped for syntheses."),
+    ("6", "Information sources", "List every database, register, website and other source, with last-search dates."),
+    ("7", "Search strategy", "Provide complete reproducible search strategies, filters and limits for every source."),
+    ("8", "Selection process", "Describe reviewer numbers, independence, eligibility decisions and automation, if any."),
+    ("9", "Data collection process", "Describe reviewer numbers, independent extraction and processes for missing/unclear data."),
+    ("10", "Data items", "Define outcomes and other variables sought, including assumptions for missing information."),
+    ("11", "Study risk of bias assessment", "Name the tool, domains, reviewer process and automation used for risk-of-bias assessment."),
+    ("12", "Effect measures", "Specify each effect measure used for each outcome."),
+    ("13", "Synthesis methods", "Describe synthesis eligibility, data preparation, displays, statistical methods, heterogeneity and sensitivity analyses."),
+    ("14", "Reporting bias assessment", "Describe methods used to assess missing results or reporting biases."),
+    ("15", "Certainty assessment", "Describe methods used to assess certainty/confidence in the body of evidence."),
+    ("16", "Study selection", "Report records identified, screened, excluded, reports sought/not retrieved, included studies and key exclusions."),
+    ("17", "Study characteristics", "Cite included studies and present their relevant characteristics."),
+    ("18", "Risk of bias in studies", "Present risk-of-bias assessments for each included study."),
+    ("19", "Individual study results", "For every outcome, present group summaries and effect estimates with precision for each study."),
+    ("20", "Results of syntheses", "Summarise study characteristics and risk of bias; present each synthesis, heterogeneity and sensitivity results."),
+    ("21", "Reporting biases", "Present results of assessments of reporting bias for each synthesis assessed."),
+    ("22", "Certainty of evidence", "Present certainty/confidence assessments for each outcome."),
+    ("23", "Discussion", "Interpret results in context of other evidence, limitations of evidence and review-process limitations, and implications."),
+    ("24", "Registration and protocol", "Report registration details, protocol access and any amendments with reasons."),
+    ("25", "Support", "Report financial/non-financial support and funder role."),
+    ("26", "Competing interests", "Declare review authors' competing interests."),
+    ("27", "Availability of data, code and materials", "State which forms, extracted data, analysis data, code and materials are public and where."),
+)
+
+
 class ResearchCompletion:
     def __init__(self, store: Store):
         self.store = store
@@ -182,6 +213,49 @@ class ResearchCompletion:
             "limitations": ["Counts reflect records imported into AETHER, not necessarily all records returned by external databases.", "No deduplication across independent databases can be inferred beyond stored review sources.", "This is a PRISMA-style count summary, not a completed PRISMA checklist or compliance claim."],
         }
         return report
+
+
+    def record_prisma_checklist(self, review_id: str, responses: dict[str, dict[str, str]]) -> dict[str, Any]:
+        review = self.store.get_systematic_review(review_id)
+        if review is None:
+            raise KeyError(f"Unknown systematic review: {review_id}")
+        required = {item[0] for item in PRISMA_2020_CHECKLIST}
+        if set(responses) != required:
+            missing, extra = sorted(required - set(responses)), sorted(set(responses) - required)
+            raise ValueError(f"PRISMA checklist must contain all 27 items; missing={missing}, extra={extra}")
+        normalized = {}
+        for item_id, section, prompt in PRISMA_2020_CHECKLIST:
+            response = responses[item_id]
+            status = response.get("status")
+            location = response.get("location", "").strip()
+            rationale = response.get("rationale", "").strip()
+            if status not in {"reported", "not_applicable"}:
+                raise ValueError(f"PRISMA item {item_id} status must be reported or not_applicable")
+            if status == "reported" and not location:
+                raise ValueError(f"PRISMA item {item_id} requires a report location")
+            if len(rationale) < 8:
+                raise ValueError(f"PRISMA item {item_id} requires an explanatory rationale")
+            normalized[item_id] = {
+                "section": section, "prompt": prompt, "status": status,
+                "location": location, "rationale": rationale,
+            }
+        report = {
+            "review_id": review_id, "framework": "PRISMA 2020 27-item checklist",
+            "source": "Page et al. (2021), PRISMA 2020; https://www.prisma-statement.org/prisma-2020",
+            "items": normalized,
+            "reported_items": sum(x["status"] == "reported" for x in normalized.values()),
+            "not_applicable_items": sum(x["status"] == "not_applicable" for x in normalized.values()),
+            "checklist_completed": True,
+            "compliance_claim": False,
+            "limitation": "This is an operator-completed reporting checklist. Completion does not independently verify manuscript content or certify methodological compliance.",
+        }
+        report_id = uuid4().hex
+        self.store.save_research_report(
+            report_id, f"prisma-2020-checklist:{review_id}", json.dumps(report, indent=2),
+            [{"title": "PRISMA 2020 checklist", "url": "https://www.prisma-statement.org/prisma-2020",
+              "evidence_type": "reporting-checklist", "summary": "Operator-completed 27-item reporting checklist."}],
+        )
+        return {"report_id": report_id, **report}
 
     @staticmethod
     def egger_publication_bias(effects: list[dict[str, float]]) -> dict[str, Any]:
