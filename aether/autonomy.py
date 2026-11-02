@@ -649,12 +649,15 @@ class AutonomyRunner:
             return {"task_id": task_id, "status": "completed", **final_state}
         except ResourceLimitExceeded as exc:
             self.tasks.transition(task_id, "cancelled", {
-                **preserved_state, "kind": "autonomy",
-                "receipts": receipts, "resource_limit": str(exc),
+                **preserved_state, "kind": "autonomy", "plan": steps,
+                "receipts": receipts, "completed_steps": completed_steps,
+                "replan_history": replan_history, "model_calls": model_calls,
+                "resource_limit": str(exc),
             })
             return {
                 "task_id": task_id, "status": "cancelled",
-                "receipts": receipts, "reason": str(exc),
+                "receipts": receipts, "completed_steps": completed_steps,
+                "reason": str(exc),
             }
         except EmergencyStop as exc:
             self.tasks.transition(task_id, "cancelled", {
