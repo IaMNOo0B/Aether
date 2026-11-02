@@ -162,7 +162,11 @@ class ResearchCompletion:
     def grade_certainty(
         self, review_id: str, outcome: str, starting_level: str,
         domain_judgments: dict[str, dict[str, str]], rationale: str,
+        reviewer_id: str | None = None, password: str | None = None,
     ) -> dict[str, Any]:
+        if self.authentication_enabled():
+            if reviewer_id is None or password is None or not self.authenticate_reviewer(reviewer_id, password):
+                raise PermissionError("Authenticated reviewer account required for certainty grading.")
         if starting_level not in GRADE_LEVELS:
             raise ValueError("Starting level must be high, moderate, low or very_low")
         if set(domain_judgments) != set(GRADE_DOMAINS):
@@ -178,7 +182,8 @@ class ResearchCompletion:
             downgrades += GRADE_DOWNGRADES[item["judgment"]]
         level = GRADE_LEVELS[max(0, GRADE_LEVELS.index(starting_level) + downgrades)]
         artifact = {
-            "review_id": review_id, "outcome": outcome, "framework": "GRADE-inspired structured assessment",
+            "review_id": review_id, "outcome": outcome, "reviewer_id": reviewer_id,
+            "framework": "GRADE-inspired structured assessment",
             "starting_level": starting_level, "domain_judgments": domain_judgments,
             "total_downgrades": downgrades, "certainty": level, "rationale": rationale.strip(),
             "limitations": "Operator judgment is required. This is not an official GRADEpro assessment and does not replace guideline-specific methods.",
