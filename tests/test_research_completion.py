@@ -89,3 +89,51 @@ def test_raw_observations_are_validated_and_saved_to_experiment_history(tmp_path
         workflow.ingest_raw_observations(
             "exp-raw", b"group,value\ncontrol,1\nother,2\n", "group", "value", "treatment", "control"
         )
+
+
+def test_registered_reviewer_authentication_is_enforced_for_all_review_decisions(tmp_path):
+    store = Store(tmp_path / "aether.sqlite3")
+    completion = ResearchCompletion(store)
+    completion.register_reviewer("screen-a", "correct horse battery")
+    completion.register_reviewer("screen-b", "another correct battery")
+    workflow = __import__("aether.research_advanced", fromlist=["AdvancedResearch"]).AdvancedResearch(store)
+    review = workflow.create_systematic_review(
+        "Does intervention X improve outcome Y?",
+        ["Human studies"], ["Animal studies"],
+        {"databases": ["Crossref"], "queries": ["intervention X"], "searched_on": "2026-11-02"},
+    )
+    from aether.research import ResearchSource
+    source = ResearchSource(
+        title="Study", url="https://example.org/study", publisher="Journal",
+        published="2026", evidence_type="article", summary="Study summary.",
+    )
+    workflow.add_review_sources(review["id"], [source])
+    with pytest.raises(PermissionError, match="Authenticated reviewer"):
+        workflow.screen_source(review["id"], source.url, "screen-a", "include", "The study meets the criteria.")
+    workflow.screen_source(
+        review["id"], source.url, "screen-a", "include",
+        "The study meets the criteria.", password="correct horse battery",
+    )
+    workflow.screen_source(
+        review["id"], source.url, "screen-b", "include",
+        "Independent screening confirms the study meets criteria.",
+        password="another correct battery",
+    )
+    assert store.get_systematic_review(review["id"])["sources"][0]["decision"] == "include"
+
+
+def test_authenticated_stage_and_citation_actions_reject_wrong_credentials(tmp_path):
+    store = Store(tmp_path / "aether.sqlite3")
+    completion = ResearchCompletion(store)
+    completion.register_reviewer("reviewer-a", "correct horse battery")
+    workflow = __import__("aether.research_advanced", fromlist=["AdvancedResearch"]).AdvancedResearch(store)
+    with pytest.raises(PermissionError, match="Authenticated reviewer"):
+        workflow.record_review_stage(
+            "missing-review", "https://example.org/study", "full_text", "reviewer-a",
+            {"decision": "exclude", "rationale": "This study is outside scope."},
+        )
+    with pytest.raises(PermissionError, match="Authenticated reviewer"):
+        workflow.adjudicate_citation(
+            "missing-evidence", "reviewer-a", "insufficient", "The evidence is not sufficient.",
+            password="wrong password",
+        )
