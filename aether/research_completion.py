@@ -137,7 +137,7 @@ class ResearchCompletion:
             if len(item.get("rationale", "").strip()) < 12:
                 raise ValueError(f"{domain} requires a rationale")
             downgrades += GRADE_DOWNGRADES[item["judgment"]]
-        level = GRADE_LEVELS[max(0, GRADE_LEVELS.index(starting_level) - downgrades)]
+        level = GRADE_LEVELS[max(0, GRADE_LEVELS.index(starting_level) + downgrades)]
         artifact = {
             "review_id": review_id, "outcome": outcome, "framework": "GRADE-inspired structured assessment",
             "starting_level": starting_level, "domain_judgments": domain_judgments,
