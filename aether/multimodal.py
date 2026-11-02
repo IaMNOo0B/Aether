@@ -79,14 +79,14 @@ def main(argv: list[str] | None = None) -> int:
     if not settings.models.enabled:
         raise ModelUnavailable("Enable [models].enabled before image analysis")
     remote_endpoints = []
-    if settings.models.provider.strip().casefold() == "openai_compatible" and not _is_loopback_url(settings.models.base_url):
+    if not _is_loopback_url(settings.models.base_url):
         remote_endpoints.append(settings.models.base_url)
     for fallback in settings.models.fallbacks:
-        if fallback.provider.strip().casefold() == "openai_compatible" and not _is_loopback_url(fallback.base_url):
+        if not _is_loopback_url(fallback.base_url):
             remote_endpoints.append(fallback.base_url)
     if remote_endpoints and not args.allow_remote:
         raise PermissionError(
-            "A configured model endpoint is remote. Re-run with --allow-remote only if you consent "
+            "A configured model endpoint is non-local. Re-run with --allow-remote only if you consent "
             "to sending this image to that endpoint."
         )
 
