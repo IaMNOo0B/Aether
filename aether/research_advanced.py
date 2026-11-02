@@ -321,8 +321,8 @@ class AdvancedResearch:
         if not any(item.get("source_key") == source_key for item in review.get("sources", [])):
             raise ValueError("Assessment source must belong to the specified systematic review")
         if stage == "full_text":
-            if payload.get("decision") not in {"include", "exclude"}:
-                raise ValueError("Full-text assessment requires include or exclude")
+            if payload.get("decision") not in {"include", "exclude", "not_retrieved"}:
+                raise ValueError("Full-text assessment requires include, exclude or not_retrieved")
             if len(str(payload.get("rationale", "")).strip()) < 12:
                 raise ValueError("Full-text eligibility requires a detailed rationale")
             if payload["decision"] == "include" and not str(payload.get("text_locator", "")).strip():
@@ -364,7 +364,7 @@ class AdvancedResearch:
             raise ValueError("Stage has no unresolved two-reviewer disagreement")
         # Reuse the same stage validators while keeping the adjudicator distinct.
         if stage == "full_text":
-            if payload.get("decision") not in {"include", "exclude"} or len(str(payload.get("rationale", "")).strip()) < 12:
+            if payload.get("decision") not in {"include", "exclude", "not_retrieved"} or len(str(payload.get("rationale", "")).strip()) < 12:
                 raise ValueError("Adjudication requires a decision and detailed rationale")
             if payload["decision"] == "include" and not str(payload.get("text_locator", "")).strip():
                 raise ValueError("Included full text requires a text locator")
@@ -402,6 +402,7 @@ class AdvancedResearch:
             raise ValueError("Complete title/abstract screening before synthesis")
         included = []
         full_text_excluded = []
+        full_text_not_retrieved = []
         for source in review["sources"]:
             if source["decision"] != "include":
                 continue
@@ -409,6 +410,9 @@ class AdvancedResearch:
             full = self._stage_consensus(review_id, key, "full_text")
             if full["status"] not in {"agreed", "adjudicated"}:
                 raise ValueError(f"Full-text eligibility for {key} is unresolved")
+            if full["payload"]["decision"] == "not_retrieved":
+                full_text_not_retrieved.append({"source": source["source"], "assessment": full["payload"]})
+                continue
             if full["payload"]["decision"] == "exclude":
                 full_text_excluded.append({"source": source["source"], "assessment": full["payload"]})
                 continue
@@ -484,10 +488,13 @@ class AdvancedResearch:
                 "records_retrieved": len(review["sources"]),
                 "title_abstract_excluded": sum(item["decision"] == "exclude" for item in review["sources"]),
                 "title_abstract_included": sum(item["decision"] == "include" for item in review["sources"]),
+                "full_text_not_retrieved": len(full_text_not_retrieved),
+                "full_text_assessed": sum(item["decision"] == "include" for item in review["sources"]) - len(full_text_not_retrieved),
                 "full_text_excluded": len(full_text_excluded),
                 "included_in_synthesis": len(included),
             },
             "full_text_excluded": full_text_excluded,
+            "full_text_not_retrieved": full_text_not_retrieved,
             "included_studies": included,
             "effect_evidence_validation": effect_evidence_validation,
             "meta_analysis": meta_analysis,
