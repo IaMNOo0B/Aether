@@ -86,6 +86,8 @@ def test_dependencies_block_auto_queue_until_parent_completes(tmp_path):
     manager.transition(parent["id"], "queued")
     manager.transition(parent["id"], "running")
     manager.transition(parent["id"], "completed")
+    assert manager.unblock_ready() == []
+    manager.review_completion(parent["id"], True, "Parent acceptance criteria independently checked.")
     assert manager.unblock_ready() == [child["id"]]
     assert store.get_autonomy_goal(child["id"])["status"] == "approved"
 
@@ -236,3 +238,42 @@ def test_goal_reconciliation_marks_interrupted_running_task_failed(tmp_path):
     assert recovered == [task_id]
     assert len(reconciled) == 1
     assert store.get_autonomy_goal(goal["id"])["status"] == "failed"
+
+def test_goal_cannot_satisfy_dependencies_until_completion_is_reviewed(tmp_path):
+    store = Store(tmp_path / "goals.sqlite3")
+    manager = GoalManager(store)
+    goal = make_goal(manager)
+    manager.approve(goal["id"])
+    manager.transition(goal["id"], "queued")
+    manager.transition(goal["id"], "running")
+    manager.transition(goal["id"], "completed")
+
+    saved = store.get_autonomy_goal(goal["id"])
+    assert saved["completion_review_status"] == "pending_review"
+    assert not manager.dependencies_satisfied({
+        "dependencies": [goal["id"]], "parent_goal_id": None
+    })
+
+    verified = manager.review_completion(
+        goal["id"], True, "All stated completion criteria were manually checked."
+    )
+    assert verified["completion_review_status"] == "verified"
+    assert manager.dependencies_satisfied({
+        "dependencies": [goal["id"]], "parent_goal_id": None
+    })
+
+
+def test_rejected_goal_completion_returns_goal_to_failed_state(tmp_path):
+    store = Store(tmp_path / "goals.sqlite3")
+    manager = GoalManager(store)
+    goal = make_goal(manager)
+    manager.approve(goal["id"])
+    manager.transition(goal["id"], "queued")
+    manager.transition(goal["id"], "running")
+    manager.transition(goal["id"], "completed")
+
+    rejected = manager.review_completion(
+        goal["id"], False, "The requested outcome was not achieved."
+    )
+    assert rejected["status"] == "failed"
+    assert rejected["completion_review_status"] == "rejected"
