@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from getpass import getpass
 import logging
 from pathlib import Path
 from threading import Event, Thread
@@ -19,6 +20,7 @@ from aether.learning import SkillLearner
 from aether.research import ResearchError, ResearchSource, Researcher
 from aether.research_quality import ResearchWorkflow
 from aether.research_advanced import AdvancedResearch
+from aether.research_completion import ResearchCompletion
 from aether.resources import ResourceLimitExceeded
 from aether.scheduler import AutonomyScheduler
 from aether.self_engineering import SelfEngineer
