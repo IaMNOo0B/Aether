@@ -320,8 +320,9 @@ class AutonomyRunner:
         max_runtime = min(int(budget.get("max_runtime_seconds", 300)), 86400)
         max_tool_calls = min(int(budget.get("max_tool_calls", self.limits.max_autonomy_steps)), 100)
         max_model_calls = min(int(budget.get("max_model_calls", 1)), 10)
-        started_at = float(state.get("started_at_epoch", time.time()))
-        state["started_at_epoch"] = started_at
+        active_elapsed = float(state.get("active_elapsed_seconds", 0.0))
+        started_at = time.time()
+        state["active_elapsed_seconds"] = active_elapsed
         state["budget"] = {
             "max_runtime_seconds": max_runtime, "max_tool_calls": max_tool_calls,
             "max_model_calls": max_model_calls,
@@ -350,6 +351,10 @@ class AutonomyRunner:
             current_step = int(state.get("current_step", 0))
             if current_step < 0 or current_step > len(steps):
                 raise ValueError("Saved autonomy checkpoint has an invalid current_step")
+            state.update({
+                "plan": steps, "receipts": receipts, "current_step": current_step,
+                "model_calls": model_calls,
+            })
             self.tasks.checkpoint(task_id, {
                 **preserved_state, "kind": "autonomy", "plan": steps,
                 "receipts": receipts, "current_step": current_step,
@@ -380,6 +385,7 @@ class AutonomyRunner:
                         **preserved_state, "kind": "autonomy", "plan": steps,
                         "receipts": receipts, "current_step": index,
                         "pause_reason": latest_state.get("pause_reason", "Paused by user"),
+                        "active_elapsed_seconds": active_elapsed + (time.time() - started_at),
                     }
                     self.tasks.transition(task_id, "paused", paused_state)
                     self.goals.sync_task_status(task_id, "paused")
@@ -388,7 +394,7 @@ class AutonomyRunner:
                         task_data["objective"], "info", task_id,
                     )
                     return {"task_id": task_id, "status": "paused", **paused_state}
-                elapsed = time.time() - started_at
+                elapsed = active_elapsed + (time.time() - started_at)
                 if elapsed >= max_runtime:
                     raise ResourceLimitExceeded(
                         f"Task runtime budget exhausted ({elapsed:.1f}s / {max_runtime}s)"
@@ -408,10 +414,14 @@ class AutonomyRunner:
                     "human_approved": step["tool"] in {"workspace.write", "tests.run"},
                     "result": result, "completed_at": time.time(),
                 })
+                state.update({
+                    "plan": steps, "receipts": receipts, "current_step": index + 1,
+                    "model_calls": model_calls,
+                })
                 self.tasks.checkpoint(task_id, {
                     **preserved_state, "kind": "autonomy", "plan": steps,
                     "receipts": receipts, "current_step": index + 1,
-                    "model_calls": model_calls, "started_at_epoch": started_at,
+                    "model_calls": model_calls, "active_elapsed_seconds": active_elapsed,
                     "budget": state["budget"],
                 })
                 if step["tool"] == "tests.run" and not result.get("passed", False):
@@ -422,6 +432,7 @@ class AutonomyRunner:
                 **preserved_state, "kind": "autonomy", "plan": steps,
                 "receipts": receipts, "current_step": len(steps),
                 "model_calls": model_calls,
+                "active_elapsed_seconds": active_elapsed + (time.time() - started_at),
                 "verified": bool(test_receipts) and all(
                     item["result"].get("passed", False) for item in test_receipts
                 ),
@@ -439,6 +450,8 @@ class AutonomyRunner:
             final = {
                 **preserved_state, "kind": "autonomy", "plan": state.get("plan", []),
                 "receipts": receipts, "resource_limit": str(exc),
+                "plan": state.get("plan", []), "current_step": state.get("current_step", len(receipts)),
+                "active_elapsed_seconds": active_elapsed + (time.time() - started_at),
                 "stop_condition_triggered": "resource_budget_exhausted",
             }
             self.tasks.transition(task_id, "cancelled", final)
@@ -452,6 +465,8 @@ class AutonomyRunner:
             final = {
                 **preserved_state, "kind": "autonomy", "plan": state.get("plan", []),
                 "receipts": receipts, "emergency_stop": True, "reason": str(exc),
+                "plan": state.get("plan", []), "current_step": state.get("current_step", len(receipts)),
+                "active_elapsed_seconds": active_elapsed + (time.time() - started_at),
                 "stop_condition_triggered": "emergency_stop",
             }
             self.tasks.transition(task_id, "cancelled", final)
@@ -465,6 +480,8 @@ class AutonomyRunner:
             final = {
                 **preserved_state, "kind": "autonomy", "plan": state.get("plan", []),
                 "receipts": receipts, "reason": str(exc),
+                "plan": state.get("plan", []), "current_step": state.get("current_step", len(receipts)),
+                "active_elapsed_seconds": active_elapsed + (time.time() - started_at),
                 "stop_condition_triggered": "approval_declined",
             }
             self.tasks.transition(task_id, "cancelled", final)
@@ -478,6 +495,8 @@ class AutonomyRunner:
             final = {
                 **preserved_state, "kind": "autonomy", "plan": state.get("plan", []),
                 "receipts": receipts, "error_type": type(exc).__name__,
+                "plan": state.get("plan", []), "current_step": state.get("current_step", len(receipts)),
+                "active_elapsed_seconds": active_elapsed + (time.time() - started_at),
                 "error": str(exc)[:1000],
             }
             self.tasks.transition(task_id, "failed", final)
