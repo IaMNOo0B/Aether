@@ -191,8 +191,10 @@ def test_goal_and_notification_events_are_persistent(tmp_path):
 
     reopened = Store(database)
     assert reopened.get_autonomy_goal(goal["id"])["status"] == "approved"
-    notification = reopened.list_notifications()[0]
-    reopened.mark_notification_read(notification["id"])
+    notifications = reopened.list_notifications(unread_only=True)
+    assert len(notifications) >= 2
+    for notification in notifications:
+        reopened.mark_notification_read(notification["id"])
     assert reopened.list_notifications(unread_only=True) == []
 
 def test_scheduler_enforces_per_goal_step_budget(tmp_path):
