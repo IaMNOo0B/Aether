@@ -33,6 +33,9 @@ def test_design_specific_risk_of_bias_requires_exact_domains(tmp_path):
     )
     source = ResearchSource(title="Study", url="https://example.org/study", publisher="Journal", published="2026", evidence_type="article", summary="Study summary.")
     advanced.add_review_sources(review["id"], [source])
+    advanced.screen_source(review["id"], source.url, "reviewer-1", "include", "The study meets the eligibility criteria.", password="correct horse battery")
+    advanced.screen_source(review["id"], source.url, "reviewer-2", "include", "Independent screening confirms eligibility.", password="another correct battery")
+    advanced.finalize_review(review["id"])
     domains = {
         name: {"rating": "low", "rationale": "The paper provides sufficient detail for this domain."}
         for name in (
