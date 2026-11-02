@@ -83,11 +83,11 @@ def probe_video(path: str | Path) -> dict[str, Any]:
 def extract_video_frames(
     path: str | Path, *, interval_seconds: float = 5.0, max_frames: int = 12,
 ) -> list[Path]:
-    source = _input_file(path)
-    if not math.isfinite(interval_seconds) or not 0.5 <= interval_seconds <= 60:
+    if isinstance(interval_seconds, bool) or not isinstance(interval_seconds, (int, float)) or not math.isfinite(interval_seconds) or not 0.5 <= interval_seconds <= 60:
         raise ValueError("interval_seconds must be between 0.5 and 60")
-    if isinstance(max_frames, bool) or not 1 <= max_frames <= MAX_FRAMES:
+    if isinstance(max_frames, bool) or not isinstance(max_frames, int) or not 1 <= max_frames <= MAX_FRAMES:
         raise ValueError(f"max_frames must be between 1 and {MAX_FRAMES}")
+    source = _input_file(path)
     metadata = probe_video(source)
     interval = max(interval_seconds, metadata["duration_seconds"] / max_frames)
     directory = Path(tempfile.mkdtemp(prefix="aether-media-"))
@@ -186,7 +186,13 @@ def audio_events(
     inputs = session.get_inputs()
     if len(inputs) != 1:
         raise MediaError("Expected a single-input YAMNet-compatible ONNX model")
-    tensor = waveform.reshape(1, -1).astype(np.float32, copy=False)
+    input_shape = inputs[0].shape
+    if len(input_shape) == 1:
+        tensor = waveform.astype(np.float32, copy=False)
+    elif len(input_shape) == 2:
+        tensor = waveform.reshape(1, -1).astype(np.float32, copy=False)
+    else:
+        raise MediaError("Expected a 1-D waveform or 2-D batched waveform input")
     scores = session.run(None, {inputs[0].name: tensor})[0]
     scores = np.asarray(scores)
     if scores.ndim == 2:
@@ -223,6 +229,14 @@ def main(argv: list[str] | None = None) -> int:
             result["ocr"] = ocr_video(args.input, interval_seconds=args.interval,
                                       max_frames=args.frames, language=args.language)
         else:
+            frames = extract_video_frames(args.input, interval_seconds=args.interval,
+                                          max_frames=args.frames)
+            try:
+                result["sampled_frames"] = len(frames)
+                result["frame_files"] = [frame.name for frame in frames]
+            finally:
+                if frames:
+                    shutil.rmtree(frames[0].parent, ignore_errors=True)
             result["note"] = "Use the Python analyze_video(provider, ...) API for frame-level vision-model descriptions."
     elif args.command == "ocr":
         result = ocr_image(args.input, language=args.language)
