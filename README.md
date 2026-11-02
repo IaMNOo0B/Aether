@@ -327,3 +327,17 @@ Not implemented: autonomous goal discovery, unrestricted/background project auto
 - Never commit API keys, tokens, private documents, or model files.
 - Destructive and consequential actions are not exposed as autonomous tools.
 - Preserve `data/` and review candidate patches before use.
+
+
+### Local media perception (Phase 5)
+
+Install the optional audio inference packages with `python -m pip install -e ".[media]"`.
+Install FFmpeg (including `ffprobe`) and Tesseract separately on Windows and add their executable directories to PATH. These tools are optional; the core install stays dependency-free.
+
+- `python -m aether.media_perception video --input PATH --frames 8 --interval 5` validates a video and samples frames within strict duration/size/frame caps.
+- Add `--ocr` to run Tesseract on the sampled frames. The Python `ocr_video(...)` API returns recognized text and removes its temporary frames afterwards.
+- `python -m aether.media_perception ocr --input IMAGE --language eng` runs local OCR.
+- `analyze_video(provider, path, prompt, ...)` samples frames and sends them to the configured vision-capable provider. Use a local vision model to keep video frames on-device; the existing image-analysis CLI requires explicit consent for non-local endpoints.
+- `audio_events(path, model_path=..., labels_path=...)` runs a local YAMNet-compatible ONNX model on at most 30 seconds of mono 16 kHz audio. The ONNX model and matching class-label file must be supplied locally; AETHER does not download model weights or labels.
+
+The media module uses subprocess argument arrays (never shell execution), validates regular files and bounded sizes/durations, and treats classifier outputs as model estimates rather than verified facts. OCR quality, model accuracy, Windows executable compatibility and actual GPU/CPU performance still require machine-level validation. Audio ONNX inference currently uses the CPU execution provider for compatibility and predictable resource use.
