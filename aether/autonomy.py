@@ -337,6 +337,10 @@ class AutonomyRunner:
                            "cancel_requested", "pause_reason", "cancel_reason"}
         }
         try:
+            if active_elapsed >= max_runtime:
+                raise ResourceLimitExceeded(
+                    f"Task runtime budget already exhausted ({active_elapsed:.1f}s / {max_runtime}s)"
+                )
             steps = state.get("plan")
             model_calls = int(state.get("model_calls", 0))
             if not steps:
