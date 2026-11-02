@@ -100,6 +100,8 @@ class ResearchDiscovery:
         topics = load_topics(self.config_path)
         state = self._load_state()
         now = self.clock()
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise DiscoveryError("Discovery clock must return a timezone-aware datetime")
         due, skipped = [], []
         for topic in topics:
             query = topic["query"]
