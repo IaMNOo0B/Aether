@@ -185,6 +185,18 @@ Automatic replanning is deliberately narrow: one replan is permitted after a mis
 
 Run the five-scenario executor benchmark with `python -m aether.benchmark`. It uses fixed reference plans to measure orchestration and tool postconditions; it does not measure the LLM's natural-language planning ability or establish general intelligence.
 
+
+### Extended evidence methods (operator-reviewed)
+
+- `/reviewer register REVIEWER_ID` creates a local reviewer identity. Passwords are salted and PBKDF2-HMAC-SHA256 hashed in a separate SQLite file beside the configured AETHER database; passwords are never stored in plaintext.
+- `/review-method prisma REVIEW_ID` emits a PRISMA-style flow-count artifact. It is not a PRISMA checklist or compliance certification.
+- `/review-method publication-bias REVIEW_ID` runs Egger regression only when at least 10 compatible extracted effects are available. The p-value is a normal approximation; asymmetry is not proof of publication bias.
+- `/review-method grade REVIEW_ID | OUTCOME | STARTING_LEVEL | DOMAINS_JSON | RATIONALE` records a transparent GRADE-inspired downgrade assessment. The operator must judge all five domains; this is not an official GRADEpro assessment.
+- `/review-method rob REVIEW_ID | SOURCE_URL | DESIGN | REVIEWER_ID | DOMAIN_RATINGS_JSON` records an authenticated structured domain assessment for `randomized`, `nonrandomized`, `qualitative`, or `cross_sectional` designs. These are AETHER checklists, not validated RoB 2, ROBINS-I, CASP, or JBI instruments.
+- `/experiment ingest-raw ID | CSV_PATH | GROUP_COLUMN | OUTCOME_COLUMN | TREATMENT_LABEL | CONTROL_LABEL` ingests raw independent-group observations, validates rows, computes group means, a Welch standard error, and records the input hash in experiment history.
+
+Authentication currently protects the new design-specific risk-of-bias command only. Existing title/abstract screening, full-text screening, extraction, and citation adjudication still accept operator-supplied reviewer labels; do not treat those records as authenticated identity evidence. Raw ingestion assumes independent groups and does not infer paired, clustered, repeated-measures, or causal designs. Egger regression is a screening test, not a correction model.
+
 ### Resource telemetry and execution budgets
 
 - `/resources` reports CPU, system RAM and NVIDIA GPU/VRAM telemetry when available.
