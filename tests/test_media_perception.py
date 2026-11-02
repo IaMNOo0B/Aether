@@ -39,8 +39,9 @@ def test_audio_event_top_k_is_bounded(tmp_path):
         media.audio_events(source, model_path=model, labels_path=labels, top_k=21)
 
 
-def test_input_rejects_oversized_file(tmp_path):
+def test_input_rejects_oversized_file(monkeypatch, tmp_path):
     source = tmp_path / "large.mp4"
     source.write_bytes(b"x" * 20)
+    monkeypatch.setattr(media, "MAX_MEDIA_BYTES", 10)
     with pytest.raises(media.MediaError, match="safety limit"):
-        media._input_file(source) if media.MAX_MEDIA_BYTES < 20 else pytest.skip("default cap exceeds fixture")
+        media._input_file(source)
