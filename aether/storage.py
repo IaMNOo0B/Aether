@@ -90,6 +90,55 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_scheduled_goals_due
                     ON scheduled_goals(enabled, next_run_at);
+                CREATE TABLE IF NOT EXISTS autonomy_goals (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    goal_level TEXT NOT NULL DEFAULT 'immediate' CHECK(goal_level IN
+                        ('immediate','project','system','research','exploration')),
+                    purpose TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    source_key TEXT NOT NULL UNIQUE,
+                    expected_benefit TEXT NOT NULL,
+                    priority REAL NOT NULL CHECK(priority >= 0 AND priority <= 1),
+                    complexity INTEGER NOT NULL CHECK(complexity BETWEEN 1 AND 5),
+                    resource_budget_json TEXT NOT NULL,
+                    risks_json TEXT NOT NULL,
+                    deadline_at TEXT,
+                    dependencies_json TEXT NOT NULL,
+                    completion_criteria_json TEXT NOT NULL,
+                    stop_condition TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK(status IN
+                        ('proposed','approved','queued','running','paused','completed','cancelled','blocked')),
+                    task_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_autonomy_goals_status_priority
+                    ON autonomy_goals(status, priority DESC, deadline_at);
+                CREATE TABLE IF NOT EXISTS autonomy_goal_events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    goal_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    from_status TEXT,
+                    to_status TEXT,
+                    payload_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(goal_id) REFERENCES autonomy_goals(id) ON DELETE CASCADE
+                );
+                CREATE INDEX IF NOT EXISTS idx_autonomy_goal_events_goal
+                    ON autonomy_goal_events(goal_id, sequence);
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id TEXT PRIMARY KEY,
+                    kind TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    severity TEXT NOT NULL CHECK(severity IN ('info','warning','error','success')),
+                    task_id TEXT,
+                    read_at TEXT,
+                    created_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_notifications_unread
+                    ON notifications(read_at, created_at);
                 CREATE TABLE IF NOT EXISTS system_controls (
                     name TEXT PRIMARY KEY,
                     enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
@@ -972,14 +1021,20 @@ class Store:
         now = utc_now()
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+            row = db.execute("SELECT status, state_json FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row is None:
                 raise KeyError(f"Unknown task: {task_id}")
             if row["status"] != "running":
                 raise ValueError(f"Only running tasks can be checkpointed, found {row['status']}")
+            # Preserve control requests that may arrive while an external tool is running.
+            current_state = json.loads(row["state_json"])
+            checkpoint_state = dict(state)
+            for control_key in ("pause_requested", "pause_reason", "cancel_requested", "cancel_reason"):
+                if control_key in current_state:
+                    checkpoint_state[control_key] = current_state[control_key]
             db.execute(
                 "UPDATE tasks SET state_json=?, updated_at=? WHERE id=?",
-                (json.dumps(state), now, task_id),
+                (json.dumps(checkpoint_state), now, task_id),
             )
             db.execute(
                 """INSERT INTO task_events(task_id, event_type, from_status, to_status,
@@ -1151,6 +1206,203 @@ class Store:
                 )
                 created.append(task_id)
         return created
+
+
+    def create_autonomy_goal(self, goal: dict[str, Any]) -> str:
+        now = utc_now()
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO autonomy_goals
+                   (id, title, goal_level, purpose, source, source_key, expected_benefit, priority,
+                    complexity, resource_budget_json, risks_json, deadline_at,
+                    dependencies_json, completion_criteria_json, stop_condition,
+                    status, task_id, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)""",
+                (
+                    goal["id"], goal["title"], goal.get("goal_level", "immediate"),
+                    goal["purpose"], goal["source"],
+                    goal["source_key"], goal["expected_benefit"], goal["priority"],
+                    goal["complexity"], json.dumps(goal["resource_budget"]),
+                    json.dumps(goal["risks"]), goal.get("deadline_at"),
+                    json.dumps(goal["dependencies"]), json.dumps(goal["completion_criteria"]),
+                    goal["stop_condition"], goal.get("status", "proposed"), now, now,
+                ),
+            )
+            db.execute(
+                """INSERT INTO autonomy_goal_events
+                   (goal_id, event_type, from_status, to_status, payload_json, created_at)
+                   VALUES (?, 'created', NULL, 'proposed', ?, ?)""",
+                (goal["id"], json.dumps({"source": goal["source"], "goal_level": goal.get("goal_level", "immediate")}), now),
+            )
+        return goal["id"]
+
+    def get_autonomy_goal(self, goal_id: str) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute("SELECT * FROM autonomy_goals WHERE id=?", (goal_id,)).fetchone()
+        if row is None:
+            return None
+        item = dict(row)
+        for field in ("resource_budget", "risks", "dependencies", "completion_criteria"):
+            item[field] = json.loads(item.pop(field + "_json"))
+        return item
+
+    def list_autonomy_goals(
+        self, status: str | None = None, limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            if status is None:
+                rows = db.execute(
+                    """SELECT id FROM autonomy_goals
+                       ORDER BY CASE status WHEN 'approved' THEN 0 WHEN 'proposed' THEN 1
+                         WHEN 'queued' THEN 2 WHEN 'running' THEN 3 ELSE 4 END,
+                         priority DESC, deadline_at LIMIT ?""",
+                    (max(0, min(limit, 1000)),),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    """SELECT id FROM autonomy_goals WHERE status=?
+                       ORDER BY priority DESC, deadline_at LIMIT ?""",
+                    (status, max(0, min(limit, 1000))),
+                ).fetchall()
+        return [item for row in rows if (item := self.get_autonomy_goal(row["id"])) is not None]
+
+    def update_autonomy_goal(
+        self, goal_id: str, expected_status: str, new_status: str,
+        *, task_id: str | None = None,
+    ) -> dict[str, Any]:
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status FROM autonomy_goals WHERE id=?", (goal_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown autonomy goal: {goal_id}")
+            if row["status"] != expected_status:
+                raise ValueError(
+                    f"Goal status changed concurrently: expected {expected_status}, found {row['status']}"
+                )
+            db.execute(
+                """UPDATE autonomy_goals SET status=?, task_id=COALESCE(?, task_id),
+                   updated_at=? WHERE id=?""",
+                (new_status, task_id, now, goal_id),
+            )
+            db.execute(
+                """INSERT INTO autonomy_goal_events
+                   (goal_id, event_type, from_status, to_status, payload_json, created_at)
+                   VALUES (?, 'status_changed', ?, ?, ?, ?)""",
+                (goal_id, row["status"], new_status, json.dumps({"task_id": task_id}), now),
+            )
+        result = self.get_autonomy_goal(goal_id)
+        assert result is not None
+        return result
+
+    def autonomy_goal_events(self, goal_id: str, limit: int = 200) -> list[dict[str, Any]]:
+        if self.get_autonomy_goal(goal_id) is None:
+            raise KeyError(f"Unknown autonomy goal: {goal_id}")
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT sequence, event_type, from_status, to_status, payload_json, created_at
+                   FROM autonomy_goal_events WHERE goal_id=? ORDER BY sequence LIMIT ?""",
+                (goal_id, max(0, min(limit, 1000))),
+            ).fetchall()
+        return [
+            {"sequence": row["sequence"], "event_type": row["event_type"],
+             "from_status": row["from_status"], "to_status": row["to_status"],
+             "payload": json.loads(row["payload_json"]), "created_at": row["created_at"]}
+            for row in rows
+        ]
+
+    def create_notification(
+        self, notification_id: str, kind: str, title: str, message: str,
+        severity: str = "info", task_id: str | None = None,
+    ) -> None:
+        if severity not in {"info", "warning", "error", "success"}:
+            raise ValueError("Invalid notification severity")
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO notifications
+                   (id, kind, title, message, severity, task_id, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (notification_id, kind, title, message, severity, task_id, utc_now()),
+            )
+
+    def list_notifications(self, unread_only: bool = True, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            query = "SELECT * FROM notifications"
+            if unread_only:
+                query += " WHERE read_at IS NULL"
+            query += " ORDER BY created_at DESC LIMIT ?"
+            rows = db.execute(query, (max(0, min(limit, 1000)),)).fetchall()
+        return [dict(row) for row in rows]
+
+    def mark_notification_read(self, notification_id: str) -> None:
+        with self._connect() as db:
+            cursor = db.execute(
+                "UPDATE notifications SET read_at=? WHERE id=? AND read_at IS NULL",
+                (utc_now(), notification_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(f"Unknown or already-read notification: {notification_id}")
+
+
+    def replan_paused_task(
+        self, task_id: str, new_objective: str, state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Replace a paused plan only after caller has checked prior side effects."""
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT objective, status FROM tasks WHERE id=?", (task_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown task: {task_id}")
+            if row["status"] != "paused":
+                raise ValueError(f"Only paused tasks can be replanned; found {row['status']}")
+            db.execute(
+                "UPDATE tasks SET objective=?, status='queued', state_json=?, updated_at=? WHERE id=?",
+                (new_objective, json.dumps(state), now, task_id),
+            )
+            db.execute(
+                """INSERT INTO task_events(task_id, event_type, from_status, to_status,
+                   payload_json, created_at) VALUES (?, 'replanned', 'paused', 'queued', ?, ?)""",
+                (task_id, json.dumps({"previous_objective": row["objective"],
+                                      "new_objective": new_objective}), now),
+            )
+        result = self.get_task(task_id)
+        assert result is not None
+        return result
+
+    def request_task_control(self, task_id: str, control: str, reason: str = "") -> dict[str, Any]:
+        """Set a cooperative pause/cancel request without interrupting an in-flight tool."""
+        if control not in {"pause", "cancel"}:
+            raise ValueError("Task control must be pause or cancel")
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status, state_json FROM tasks WHERE id=?", (task_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown task: {task_id}")
+            if row["status"] != "running":
+                raise ValueError(f"Cooperative {control} requires a running task; found {row['status']}")
+            state = json.loads(row["state_json"])
+            state[f"{control}_requested"] = True
+            state[f"{control}_reason"] = reason.strip()[:500]
+            db.execute(
+                "UPDATE tasks SET state_json=?, updated_at=? WHERE id=?",
+                (json.dumps(state), now, task_id),
+            )
+            db.execute(
+                """INSERT INTO task_events(task_id, event_type, from_status, to_status,
+                   payload_json, created_at) VALUES (?, 'control_requested', 'running', 'running', ?, ?)""",
+                (task_id, json.dumps({"control": control, "reason": reason[:500]}), now),
+            )
+        result = self.get_task(task_id)
+        assert result is not None
+        return result
 
     def record_decision(
         self, decision_id: str, question: str, probability: float,

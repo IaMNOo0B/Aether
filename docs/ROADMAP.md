@@ -67,11 +67,19 @@ AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX
 - [x] Workspace writes require feature flag and per-action human approval.
 - [x] Test execution requires feature flag and per-action human approval.
 - [x] Workspace path containment, file-size caps, step limits, and execution timeout.
-- [x] Persisted plans, progress, and action receipts.
-- [ ] Background scheduler, bounded goal discovery, pause/resume, and crash recovery.
+- [x] Persisted plans, progress, action receipts, and ordered audit events.
+- [x] Persistent hierarchical goals (immediate, project, system, research, exploration).
+- [x] Goal proposals from failed autonomy tasks and unverified/degraded capability records.
+- [x] Goal scoring, dependency gating, explicit approval, and bounded queueing.
+- [x] Opt-in background scheduler for explicitly approved goals and read-only recurring schedules.
+- [x] Cooperative pause, resume, cancel, and safe re-plan from a paused checkpoint.
+- [x] Per-goal active-runtime, model-call, and tool-call budgets.
+- [x] System CPU/RAM/GPU/VRAM guards, emergency stop, and persistent notifications.
+- [x] Startup recovery marks interrupted tasks for manual review; uncertain side effects are never replayed.
+- [ ] Broader goal discovery from project dependency changes, external-system events, and new research opportunities.
 - [ ] OS-level sandbox for arbitrary code (not provided by the current copy-based candidate workflow).
 
-No arbitrary shell, unrestricted filesystem, or unrestricted URL-fetch tool is exposed.
+Scheduled autonomy is opt-in and read-only. Workspace writes and test execution still require an interactive human approval. Goal discovery creates proposals only; it never silently authorizes execution. Resource budgets are enforced at task boundaries and before each tool call; they are not hard real-time OS quotas. No arbitrary shell, unrestricted filesystem, or unrestricted URL-fetch tool is exposed.
 
 ## Stage 7 — Controlled self-engineering
 
