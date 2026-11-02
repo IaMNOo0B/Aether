@@ -11,6 +11,7 @@ from pathlib import Path
 from statistics import mean, stdev
 from typing import Any
 from uuid import uuid4
+import base64
 import csv
 import io
 import json
@@ -139,7 +140,7 @@ class ResearchCompletion:
             raise ValueError("Outcome and an explicit overall rationale are required")
         downgrades = 0
         for domain, item in domain_judgments.items():
-            if item.get("judgment") not in GRADE_DOWNGRADES:
+            if not isinstance(item, dict) or item.get("judgment") not in GRADE_DOWNGRADES:
                 raise ValueError(f"{domain} judgment must be none, serious or very_serious")
             if len(item.get("rationale", "").strip()) < 12:
                 raise ValueError(f"{domain} requires a rationale")
@@ -219,7 +220,7 @@ class ResearchCompletion:
         summary = review.get("final_summary") or {}
         studies = summary.get("included_studies", [])
         effects = [x["extraction"] for x in studies if {"effect_estimate", "standard_error"} <= x.get("extraction", {}).keys()]
-        result = self.egger_publication_bias(effects)
+        measures = {item.get("effect_measure") for item in effects}\n        if len(measures) > 1:\n            return {"review_id": review_id, "status": "not_tested_incompatible_effect_measures",\n                    "effect_measures": sorted(str(item) for item in measures),\n                    "limitation": "Egger regression is not run across mixed effect measures."}\n        result = self.egger_publication_bias(effects)
         result["review_id"] = review_id
         result["effect_measure"] = studies[0]["extraction"].get("effect_measure") if studies else None
         return result
@@ -235,6 +236,8 @@ class ResearchCompletion:
             raise ValueError("Experiment must be running or completed")
         if len(csv_bytes) > 5_000_000:
             raise ValueError("Raw observation CSV is limited to 5 MB")
+        if not treatment_label.strip() or not control_label.strip() or treatment_label == control_label:
+            raise ValueError("Treatment and control labels must be non-empty and distinct")
         try:
             reader = csv.DictReader(io.StringIO(csv_bytes.decode("utf-8-sig")))
             if not reader.fieldnames or group_column not in reader.fieldnames or outcome_column not in reader.fieldnames:
@@ -269,6 +272,6 @@ class ResearchCompletion:
             "effect_measure": "raw_mean_difference",
             "limitations": "Raw rows are summarized using an independent-groups Welch standard error. Pairing, clustering, repeated measures, missingness mechanisms and causal identification are not inferred.",
         }
-        event = {"type": "raw_observations_ingested", **artifact}
+        event = {"type": "raw_observations_ingested", "dataset_encoding": "base64-utf8-csv",\n                 "raw_dataset_base64": base64.b64encode(csv_bytes).decode("ascii"), **artifact}
         self.store.append_research_experiment_event(experiment_id, "raw_observations_ingested", event)
         return artifact
