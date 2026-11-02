@@ -398,3 +398,37 @@ def test_combined_research_search_interleaves_web_and_scholarly_sources(tmp_path
         "https://arxiv.org/a",
         "https://wikipedia.org/a",
     ]
+
+def test_quantitative_extraction_validates_exact_source_quote_and_numeric_values(tmp_path):
+    store = Store(tmp_path / "research.sqlite3")
+    workflow = AdvancedResearch(store)
+    review = workflow.create_systematic_review(
+        "Does intervention X reduce response time?",
+        ["Adult studies"], ["Animal studies"],
+        {"databases": ["Synthetic"], "queries": ["intervention X"], "searched_on": "2026-11-02"},
+    )
+    source = ResearchSource(
+        title="Evidence source", url="https://example.org/effect",
+        summary="Effect summary.",
+        full_text="Results table: Mean difference was -2.5 ms with standard error 0.8.",
+    )
+    workflow.add_review_sources(review["id"], [source])
+    extraction = {
+        "study_design": "randomized controlled trial",
+        "population": "Adults with condition X",
+        "sample_size": 80,
+        "outcome": "response time",
+        "findings": "Intervention reduced response time.",
+        "effect_measure": "mean_difference_ms",
+        "effect_estimate": -2.5,
+        "standard_error": 0.8,
+        "effect_evidence_quote": "Mean difference was -2.5 ms with standard error 0.8.",
+        "effect_text_locator": "Results table 2",
+    }
+    invalid = dict(extraction, effect_evidence_quote="Mean difference was -9.9 ms with standard error 0.8.")
+    with pytest.raises(ValueError, match="match captured full text"):
+        workflow.record_review_stage(review["id"], source.url, "extraction", "reviewer-a", invalid)
+    result = workflow.record_review_stage(review["id"], source.url, "extraction", "reviewer-a", extraction)
+    assert result["status"] == "awaiting_second_reviewer"
+    assert result["reviewers"][0]["payload"]["effect_evidence_status"] == "exact_quote_and_numeric_values_found"
+
