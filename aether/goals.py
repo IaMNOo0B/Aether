@@ -92,7 +92,10 @@ class GoalManager:
     def discover(self, limit: int = 10) -> list[dict[str, Any]]:
         """Convert failed autonomy tasks into review proposals; never auto-retry them."""
         discovered = []
-        for task in self.store.list_tasks(status="failed", limit=max(1, min(limit, 50))):
+        discovery_limit = max(1, min(limit, 50))
+        for task in self.store.list_tasks(status="failed", limit=discovery_limit):
+            if len(discovered) >= discovery_limit:
+                break
             if task["state"].get("kind") != "autonomy":
                 continue
             reason = (task["state"].get("recovery", {}).get("reason")
@@ -116,6 +119,8 @@ class GoalManager:
         # Unverified/degraded capabilities are knowledge gaps, not permission to mutate code.
         profile = SelfModel(self.store.path).snapshot()
         for capability in profile["capabilities"]:
+            if len(discovered) >= discovery_limit:
+                break
             if capability["state"] == "verified":
                 continue
             goal = self.propose(
@@ -138,7 +143,7 @@ class GoalManager:
                 stop_condition="Stop if required hardware, credentials, or user approval are unavailable.",
             )
             discovered.append(goal)
-            if len(discovered) >= max(1, min(limit, 50)):
+            if len(discovered) >= discovery_limit:
                 break
         return discovered
 
