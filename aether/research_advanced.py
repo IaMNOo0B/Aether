@@ -23,6 +23,7 @@ from uuid import uuid4
 
 from aether.research import ResearchError, ResearchSource
 from aether.storage import Store
+from aether.research_completion import ResearchCompletion
 
 
 ANALYSIS_VERSION = "1.1"
@@ -124,6 +125,12 @@ def _welch_test(left: list[float], right: list[float]) -> dict[str, float]:
 class AdvancedResearch:
     def __init__(self, store: Store):
         self.store = store
+        self.reviewer_auth = ResearchCompletion(store)
+
+    def _authorize_reviewer(self, reviewer_id: str, password: str | None) -> None:
+        if self.reviewer_auth.authentication_enabled():
+            if password is None or not self.reviewer_auth.authenticate_reviewer(reviewer_id, password):
+                raise PermissionError("Authenticated reviewer account required; register an account with /reviewer register.")
 
     def create_systematic_review(
         self, question: str, inclusion_criteria: list[str],
@@ -189,8 +196,9 @@ class AdvancedResearch:
 
     def screen_source(
         self, review_id: str, source_key: str, reviewer_id: str,
-        decision: str, reason: str,
+        decision: str, reason: str, password: str | None = None,
     ) -> dict[str, Any]:
+        self._authorize_reviewer(reviewer_id, password)
         if decision not in {"include", "exclude"}:
             raise ValueError("Screening decision must be include or exclude")
         if len(reason.strip()) < 8:
@@ -198,7 +206,8 @@ class AdvancedResearch:
         self.store.screen_systematic_review_source(review_id, source_key, reviewer_id, decision, reason.strip())
         return self.store.get_systematic_review(review_id)
 
-    def resolve_review_conflict(self, review_id: str, source_key: str, adjudicator_id: str, decision: str, rationale: str) -> dict[str, Any]:
+    def resolve_review_conflict(self, review_id: str, source_key: str, adjudicator_id: str, decision: str, rationale: str, password: str | None = None) -> dict[str, Any]:
+        self._authorize_reviewer(adjudicator_id, password)
         self.store.resolve_systematic_review_conflict(
             review_id, source_key, adjudicator_id, decision, rationale
         )
@@ -275,8 +284,9 @@ class AdvancedResearch:
 
     def record_review_stage(
         self, review_id: str, source_key: str, stage: str,
-        reviewer_id: str, payload: dict[str, Any],
+        reviewer_id: str, payload: dict[str, Any], password: str | None = None,
     ) -> dict[str, Any]:
+        self._authorize_reviewer(reviewer_id, password)
         review = self.store.get_systematic_review(review_id)
         if review is None:
             raise KeyError(f"Unknown systematic review: {review_id}")
@@ -308,8 +318,9 @@ class AdvancedResearch:
 
     def resolve_review_stage(
         self, review_id: str, source_key: str, stage: str,
-        adjudicator_id: str, payload: dict[str, Any],
+        adjudicator_id: str, payload: dict[str, Any], password: str | None = None,
     ) -> dict[str, Any]:
+        self._authorize_reviewer(adjudicator_id, password)
         current = self._stage_consensus(review_id, source_key, stage)
         if current["status"] != "disagreement":
             raise ValueError("Stage has no unresolved two-reviewer disagreement")
@@ -497,7 +508,9 @@ class AdvancedResearch:
 
     def adjudicate_citation(
         self, evidence_id: str, reviewer_id: str, decision: str, rationale: str,
+        password: str | None = None,
     ) -> dict[str, Any]:
+        self._authorize_reviewer(reviewer_id, password)
         if decision not in {"supports", "contradicts", "insufficient"}:
             raise ValueError("Decision must be supports, contradicts or insufficient")
         if len(rationale.strip()) < 12:
@@ -515,7 +528,9 @@ class AdvancedResearch:
 
     def resolve_citation_conflict(
         self, evidence_id: str, adjudicator_id: str, decision: str, rationale: str,
+        password: str | None = None,
     ) -> dict[str, Any]:
+        self._authorize_reviewer(adjudicator_id, password)
         if decision not in {"supports", "contradicts", "insufficient"}:
             raise ValueError("Resolution must be supports, contradicts or insufficient")
         if len(rationale.strip()) < 12:
