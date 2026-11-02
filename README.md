@@ -327,3 +327,38 @@ Not implemented: autonomous goal discovery, unrestricted/background project auto
 - Never commit API keys, tokens, private documents, or model files.
 - Destructive and consequential actions are not exposed as autonomous tools.
 - Preserve `data/` and review candidate patches before use.
+
+
+### Real-world calibration dataset validation (Phase 5)
+
+AETHER can validate an independently curated JSONL dataset and manifest before evaluating fixed train/dev/test partitions:
+
+```powershell
+python -m aether.rlcd_dataset --data benchmarks/phase5/records.jsonl --manifest benchmarks/phase5/manifest.json --output reports/phase5/calibration.json
+```
+
+Each row must include a pre-outcome probability, independently observed binary outcome, domain, source reference, timezone-aware prediction/outcome timestamps, and a frozen `train`/`dev`/`test` split. The manifest must include source/license/protocol/adjudicator metadata and the dataset SHA-256. The validator rejects temporal leakage, cross-split source leakage, hash mismatches and under-sized partitions. It fits the histogram baseline on train only and reports dev/test separately. The manifest's adjudicator identities are still operator-supplied and not authenticated. No real dataset is bundled or fabricated; the benchmark remains pending until real evidence is supplied.
+
+### Scheduled research discovery (Phase 5)
+
+Copy `config/discovery.example.json` to `config/discovery.json`, edit the topics, then run:
+
+```powershell
+python -m aether.discovery --config config/discovery.json --once
+python -m aether.discovery --config config/discovery.json --watch
+```
+
+Discovery is opt-in. Each topic has a minimum one-hour refresh interval; one cycle searches at most 20 configured topics, stores provenance-bearing reports and marks every result **pending human review**. It does not assert truth, authenticate reviewers, update model weights or grant new capabilities. Stop the watcher with Ctrl+C. The state file is stored separately at `data/discovery-state.json`.
+
+### Local media perception (Phase 5)
+
+Install the optional audio inference packages with `python -m pip install -e ".[media]"`.
+Install FFmpeg (including `ffprobe`) and Tesseract separately on Windows and add their executable directories to PATH. These tools are optional; the core install stays dependency-free.
+
+- `python -m aether.media_perception video --input PATH --frames 8 --interval 5` validates a video and samples frames within strict duration/size/frame caps.
+- Add `--ocr` to run Tesseract on the sampled frames. The Python `ocr_video(...)` API returns recognized text and removes its temporary frames afterwards.
+- `python -m aether.media_perception ocr --input IMAGE --language eng` runs local OCR.
+- `analyze_video(provider, path, prompt, ...)` samples frames and sends them to the configured vision-capable provider. Use a local vision model to keep video frames on-device; the existing image-analysis CLI requires explicit consent for non-local endpoints.
+- `audio_events(path, model_path=..., labels_path=...)` runs a local YAMNet-compatible ONNX model on at most 30 seconds of mono 16 kHz audio. The ONNX model and matching class-label file must be supplied locally; AETHER does not download model weights or labels.
+
+The media module uses subprocess argument arrays (never shell execution), validates regular files and bounded sizes/durations, and treats classifier outputs as model estimates rather than verified facts. OCR quality, model accuracy, Windows executable compatibility and actual GPU/CPU performance still require machine-level validation. Audio ONNX inference currently uses the CPU execution provider for compatibility and predictable resource use.

@@ -80,12 +80,14 @@ Stage 4 remains partial until the end-to-end acceptance benchmark passes. Search
 - [x] Deterministic held-out calibration benchmark with fixed seed, dataset SHA-256, disjoint train/test records and Brier/log-loss/ECE/AURC reporting.
 - [x] Read-only runtime dashboard covering provider status, resource telemetry, capability evidence states, research inventory, decisions, tasks and saved acceptance results.
 - [x] Bounded local image intake and vision-provider routing for PNG/JPEG/GIF/WebP, with size/signature checks and explicit consent before remote upload.
-- [ ] Held-out benchmark on a sufficiently large, independently curated real-world dataset.
-- [ ] Continuous research/capability discovery with scheduled source refresh, independent evidence review and reproducible validation; the current dashboard is an inventory, not an autonomous discovery agent.
-- [ ] Video understanding, OCR validation, and audio-event perception beyond the existing offline speech-to-text path.
-- [ ] RLCD training reproduction on suitable GPU resources.
+- [ ] Held-out benchmark on a sufficiently large, independently curated real-world dataset. A provenance/manifest validator and frozen train/dev/test evaluator now exist (`aether.rlcd_dataset`); actual independent records and adjudication remain outstanding.
+- [x] Opt-in, rate-limited scheduled research source refresh with persisted provenance reports and explicit pending-human-review state (`python -m aether.discovery --once` or `--watch`).
+- [ ] Independent evidence review, authenticated reviewers, and reproducible validation of discovered capabilities; scheduled discovery does not verify truth or promote capabilities automatically.
+- [x] Bounded local video sampling, sampled-frame vision API, Tesseract OCR integration, and local YAMNet-compatible ONNX audio-event classification pipeline (`aether.media_perception`).
+- [ ] End-to-end video/OCR/audio-event model validation on the target Windows PC with installed FFmpeg, Tesseract, vision model, ONNX model and label map.
+- [ ] Faithful two-stage RLCD training reproduction on suitable GPU resources. See [RLCD feasibility](../research/RLCD_FEASIBILITY.md); the target RTX 2060 6 GB is below the reference 48 GB GPU setup.
 
-The implementation adds a post-hoc histogram calibration baseline for evaluation only. AETHER is not RLCD-trained and no model weights are updated. Full reproduction is deferred because the target RTX 2060 has 6 GB VRAM, while the paper reports 48 GB GPU runs.
+The implementation adds a post-hoc histogram calibration baseline for evaluation only. AETHER is not RLCD-trained and no model weights are updated. The real-world dataset protocol is documented in [benchmarks/phase5](../benchmarks/phase5/REAL_WORLD_DATASET_PROTOCOL.md), but independent data and labels have not been supplied. Full reproduction is deferred because the target RTX 2060 has 6 GB VRAM, while the reference run instructions report 48 GB GPU runs. Media/discovery pipelines are implemented but still require target-machine and external-model validation.
 
 ## Stage 6 — Bounded autonomy
 
