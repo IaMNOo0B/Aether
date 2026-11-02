@@ -262,3 +262,19 @@ def test_notification_can_be_marked_read(tmp_path):
     assert unread
     store.mark_notification_read(unread[0]["id"])
     assert store.list_notifications(unread_only=True) == []
+
+
+def test_goal_lifecycle_has_append_only_audit_history(tmp_path):
+    store = Store(tmp_path / "goal-events.sqlite3")
+    manager = GoalManager(store)
+    goal = manager.propose(
+        title="Audited goal", purpose="Inspect a safe local workspace",
+        source="user", source_key="audit-goal", expected_benefit="Trace all decisions",
+        goal_level="project",
+    )
+    manager.approve(goal["id"])
+    events = store.autonomy_goal_events(goal["id"])
+    assert [item["event_type"] for item in events] == ["created", "status_changed"]
+    assert events[0]["to_status"] == "proposed"
+    assert events[1]["from_status"] == "proposed"
+    assert events[1]["to_status"] == "approved"
