@@ -82,17 +82,24 @@ AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX
 
 ## Stage 6 — Bounded autonomy
 
-- [x] Permission-enforced fixed tool gateway.
-- [x] Read-only research and workspace tools.
-- [x] Workspace writes require feature flag and per-action human approval.
-- [x] Test execution requires feature flag and per-action human approval.
-- [x] Workspace path containment, file-size caps, step limits, and execution timeout.
-- [x] Persisted plans, progress, and action receipts.
-- [ ] Background scheduler and bounded goal discovery.
-- [x] Cooperative pause/resume and conservative crash recovery for explicitly queued autonomy tasks.
+- [x] Permission-enforced fixed tool gateway with explicit operator approval for consequential tools.
+- [x] Read-only research, workspace and symbolic-world tools.
+- [x] Workspace writes and test execution require feature flags and per-action human approval.
+- [x] Workspace path containment, file-size caps, step limits, execution timeouts and resource preflight checks.
+- [x] Durable goal records with source provenance, hierarchy, dependencies, priority, complexity, risk score, resource budget, deadline, completion criteria and stop condition.
+- [x] Bounded goal discovery from failed local autonomy tasks and unverified/degraded self-model capabilities. Discovery creates proposals only; it never self-approves.
+- [x] Transparent priority heuristic with deadline urgency, benefit, complexity and risk factors.
+- [x] Explicit approve/reject flow; dependencies block execution until satisfied.
+- [x] Background scheduler executes only explicitly approved low-risk goals and only through read-only tools.
+- [x] Higher-risk goals require operator-initiated execution and per-action approval.
+- [x] Cooperative pause, resume and cancel at safe step boundaries; checkpoints preserve receipts and completed DAG steps.
+- [x] Goal/task reconciliation after restart, with notifications and auditable goal/task event histories.
+- [ ] Integrations for external issue trackers, calendars, filesystem watchers, error streams and performance-regression signals.
 - [ ] OS-level sandbox for arbitrary code (not provided by the current copy-based candidate workflow).
 
-No arbitrary shell, unrestricted filesystem, or unrestricted URL-fetch tool is exposed.
+No arbitrary shell, unrestricted filesystem, unrestricted URL-fetch tool or autonomous permission escalation is exposed.
+
+Discovery and ranking are bounded local heuristics, not an unrestricted agentic goal generator. Background autonomy is disabled unless the operator enables both scheduler and autonomy settings.
 
 ## Stage 7 — Controlled self-engineering
 
