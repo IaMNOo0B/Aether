@@ -158,6 +158,20 @@ To run them in the background, set all of the following:
 
 The scheduler is disabled by default. It only processes scheduled tasks through read-only tools. It never approves workspace writes or test execution. A model-generated plan that requests a side effect is cancelled rather than approved.
 
+### Bounded goal discovery and autonomy
+
+- `/goal discover` inspects local failure records and self-model capability gaps. It creates proposals only; it never approves or executes them.
+- `/goal list`, `/goal show ID`, `/goal approve ID`, and `/goal reject ID` manage proposals.
+- `/goal create TITLE | PURPOSE | EXPECTED BENEFIT | priority(0..1) | complexity(1..5) | risk(0..1)` creates an operator-defined proposal.
+- `/goal run ID` starts an approved goal interactively. Workspace writes and test execution still require per-action approval.
+- `/goal pause ID`, `/goal resume ID`, `/goal cancel ID`, and `/goal replan ...` control the durable goal/task lifecycle.
+- `/notifications` lists unread goal notifications; `/notification read ID` acknowledges one.
+- Background scheduling processes only explicitly approved goals with risk score <= 0.25 and complexity <= 3. It only grants read-only tools; it cannot approve writes or test execution.
+- Goal dependencies and parent/child relationships are persisted. A dependent goal remains blocked until its dependencies are complete.
+- Goal discovery, ranking, transitions, task receipts and notifications are stored in SQLite.
+
+The current discovery adapters are deliberately limited to failed local autonomy tasks and self-model capability gaps. External calendars, issue trackers, filesystem watchers, live error streams and performance-regression sources are not connected. The priority score is a transparent heuristic, not a learned utility function. Resource checks are preflight guards, not hard OS quotas.
+
 ### Phase 1 orchestration and verification
 
 Autonomy plans may include stable step IDs and explicit dependencies:
