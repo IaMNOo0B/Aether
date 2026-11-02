@@ -77,6 +77,11 @@ class ResearchCompletion:
                 raise ValueError("Reviewer ID already exists") from exc
         return {"reviewer_id": reviewer_id, "status": "registered"}
 
+    def authentication_enabled(self) -> bool:
+        with sqlite3.connect(self.identity_path) as db:
+            count = db.execute("SELECT COUNT(*) FROM reviewers").fetchone()[0]
+        return count > 0
+
     def authenticate_reviewer(self, reviewer_id: str, password: str) -> bool:
         with sqlite3.connect(self.identity_path) as db:
             row = db.execute(
