@@ -146,7 +146,13 @@ class GoalManager:
         goal = self.store.get_autonomy_goal(goal_id)
         if goal is None:
             raise KeyError(f"Unknown goal: {goal_id}")
-        if goal["status"] not in {"proposed", "approved", "paused"}:
+        if goal["status"] in {"queued", "running", "paused"} and goal.get("task_id"):
+            task = self.store.get_task(goal["task_id"])
+            if task and task["status"] in {"queued", "running", "paused"}:
+                self.tasks.cancel(task["id"], "Parent autonomy goal cancelled")
+                if task["status"] == "running":
+                    return goal
+        if goal["status"] not in {"proposed", "approved", "queued", "running", "paused"}:
             raise ValueError(f"Goal cannot be cancelled from status {goal['status']}")
         return self.store.update_autonomy_goal(goal_id, goal["status"], "cancelled")
 
