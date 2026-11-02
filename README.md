@@ -164,6 +164,7 @@ The scheduler is disabled by default. It only processes scheduled tasks through 
 - `/goal list`, `/goal show ID`, `/goal approve ID`, and `/goal reject ID` manage proposals.
 - `/goal create TITLE | PURPOSE | EXPECTED BENEFIT | priority(0..1) | complexity(1..5) | risk(0..1)` creates an operator-defined proposal.
 - `/goal run ID` starts an approved goal interactively. Workspace writes and test execution still require per-action approval.
+- `/goal verify ID | evidence` confirms the stated completion criteria; `/goal dispute ID | reason` rejects an unfulfilled goal. Dependent goals stay blocked until completion is reviewed.
 - `/goal pause ID`, `/goal resume ID`, `/goal cancel ID`, and `/goal replan ...` control the durable goal/task lifecycle.
 - `/notifications` lists unread goal notifications; `/notification read ID` acknowledges one.
 - Background scheduling processes only explicitly approved goals with risk score <= 0.25 and complexity <= 3. It only grants read-only tools; it cannot approve writes or test execution.
