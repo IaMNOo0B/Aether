@@ -58,6 +58,26 @@ class GoalManager:
             raise ValueError("deadline_at must include a timezone")
         return parsed.isoformat()
 
+    def _depends_on(self, start_id: str, targets: set[str]) -> bool:
+        """Return whether a goal's dependency/parent graph reaches any target."""
+        pending = [start_id]
+        visited: set[str] = set()
+        while pending:
+            current_id = pending.pop()
+            if current_id in targets:
+                return True
+            if current_id in visited:
+                continue
+            visited.add(current_id)
+            current = self.store.get_autonomy_goal(current_id)
+            if current is None:
+                continue
+            pending.extend(current.get("dependencies", []))
+            parent_id = current.get("parent_goal_id")
+            if parent_id:
+                pending.append(parent_id)
+        return False
+
     @staticmethod
     def priority_score(goal: dict[str, Any], now: datetime | None = None) -> float:
         """Transparent ranking heuristic; it is not a learned utility function."""
@@ -249,7 +269,11 @@ class GoalManager:
                 raise ValueError("Replanned goal dependencies would create a cycle")
         if not completion_criteria:
             raise ValueError("Replanned goals require at least one completion criterion")
-        if not 0 <= priority <= 1 or not 1 <= complexity <= 5 or not 0 <= risk_score <= 1:
+        if (
+            not math.isfinite(priority) or not 0 <= priority <= 1
+            or isinstance(complexity, bool) or not isinstance(complexity, int) or not 1 <= complexity <= 5
+            or not math.isfinite(risk_score) or not 0 <= risk_score <= 1
+        ):
             raise ValueError("Replanned priority, complexity or risk score is outside allowed bounds")
         deadline_at = self._validate_deadline(deadline_at)
         allowed_budget_keys = {"max_steps", "max_runtime_seconds", "max_model_calls"}
