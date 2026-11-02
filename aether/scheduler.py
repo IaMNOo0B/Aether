@@ -72,6 +72,11 @@ class AutonomyScheduler:
             if self.goal_manager is not None:
                 result.update({"discovered_goals": [], "goal_results": []})
             return result
+        if hasattr(self.runner, "policy") and not self.runner.policy.enabled:
+            result = {"status": "autonomy_disabled", "enqueued": [], "results": []}
+            if self.goal_manager is not None:
+                result.update({"discovered_goals": [], "goal_results": []})
+            return result
         discovered, goal_results = self._run_goal_tasks()
         remaining_capacity = max(0, self.settings.max_tasks_per_tick - len(goal_results))
         enqueued = (
