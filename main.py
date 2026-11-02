@@ -652,7 +652,7 @@ def main() -> int:
                     if len(fields) != 5:
                         print("Usage: /review screen REVIEW_ID | SOURCE_URL | REVIEWER_ID | include/exclude | REASON")
                         continue
-                    review = advanced.screen_source(*[field.strip() for field in fields])
+                    reviewer_id = fields[2].strip()\n                    password = getpass("Reviewer password: ") if ResearchCompletion(store).authentication_enabled() else None\n                    review = advanced.screen_source(*[field.strip() for field in fields], password=password)
                     print(f"AETHER > Screening saved. Two distinct reviewers are required for consensus.")
                     continue
                 if action == "resolve":
@@ -660,7 +660,7 @@ def main() -> int:
                     if len(fields) != 5:
                         print("Usage: /review resolve REVIEW_ID | SOURCE_URL | ADJUDICATOR_ID | include/exclude | RATIONALE")
                         continue
-                    review = advanced.resolve_review_conflict(*[field.strip() for field in fields])
+                    adjudicator_id = fields[2].strip()\n                    password = getpass("Adjudicator password: ") if ResearchCompletion(store).authentication_enabled() else None\n                    review = advanced.resolve_review_conflict(*[field.strip() for field in fields], password=password)
                     print("AETHER > Screening disagreement adjudicated.")
                     continue
                 if action == "stage":
@@ -720,7 +720,7 @@ def main() -> int:
                     fields[0].strip(), fields[1].strip(), fields[2].strip(), fields[3]
                 )
                 print(json.dumps(result, indent=2))
-                print("AETHER > Two distinct reviewer IDs are required for agreement; IDs are operator-supplied, not authenticated.")
+                print("AETHER > Two distinct reviewer IDs are required for agreement; reviewer accounts are authenticated when registered.")
                 continue
 
             if lower.startswith("/citation-resolve "):
