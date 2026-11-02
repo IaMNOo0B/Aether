@@ -181,7 +181,7 @@ def test_scheduler_executes_only_approved_goal_and_emits_notifications(tmp_path)
                for item in store.list_notifications(unread_only=True))
 
 
-def test_dependency_cycles_do_not_queue(tmp_path):
+def test_missing_dependencies_do_not_queue(tmp_path):
     store = Store(tmp_path / "cycle.sqlite3")
     manager = GoalManager(store)
     first = manager.propose(
@@ -196,3 +196,69 @@ def test_dependency_cycles_do_not_queue(tmp_path):
     manager.approve(first["id"])
     manager.approve(second["id"])
     assert manager.queue_approved(limit=10) == []
+
+
+def test_replan_preserves_history_and_only_allows_read_only_completed_steps(tmp_path):
+    store = Store(tmp_path / "replan.sqlite3")
+    from aether.tasks import TaskManager
+    manager = TaskManager(store)
+    task = manager.create("Original research objective", {"kind": "autonomy"})
+    manager.transition(task.id, "running")
+    manager.checkpoint(task.id, {
+        "kind": "autonomy",
+        "plan": [{"tool": "workspace.read", "args": {"path": "notes.txt"}}],
+        "receipts": [{"tool": "workspace.read", "result": {"content": "evidence"}}],
+        "current_step": 1,
+    })
+    manager.transition(task.id, "paused")
+    replanned = manager.replan(task.id, "Revised research objective")
+    assert replanned.status == "queued"
+    assert replanned.objective == "Revised research objective"
+    assert replanned.state["plan"] == []
+    assert replanned.state["receipts"] == []
+    assert replanned.state["replan_history"][0]["receipts"][0]["tool"] == "workspace.read"
+    assert manager.events(task.id)[-1]["event_type"] == "replanned"
+
+
+def test_replan_refuses_to_repeat_possible_side_effects(tmp_path):
+    from aether.tasks import TaskManager
+    store = Store(tmp_path / "unsafe-replan.sqlite3")
+    manager = TaskManager(store)
+    task = manager.create("Task with side effect", {"kind": "autonomy"})
+    manager.transition(task.id, "running")
+    manager.checkpoint(task.id, {
+        "kind": "autonomy",
+        "plan": [{"tool": "workspace.write", "args": {"path": "a.txt"}}],
+        "receipts": [{"tool": "workspace.write", "result": {"path": "a.txt"}}],
+        "current_step": 1,
+    })
+    manager.transition(task.id, "paused")
+    with pytest.raises(PermissionError, match="side effects"):
+        manager.replan(task.id)
+
+
+def test_capability_gap_discovery_creates_system_goal_proposal(tmp_path):
+    from aether.self_model import SelfModel
+    store = Store(tmp_path / "capability-goal.sqlite3")
+    SelfModel(store.path).register_capability(
+        "vision.ocr", "Vision OCR", "Read text from screenshots",
+        state="implemented_unverified",
+    )
+    found = GoalManager(store).discover()
+    proposal = next(item for item in found if item["source"] == "capability_gap")
+    assert proposal["goal_level"] == "system"
+    assert proposal["status"] == "proposed"
+    assert "Do not modify production code" in proposal["purpose"]
+
+
+def test_notification_can_be_marked_read(tmp_path):
+    store = Store(tmp_path / "notifications.sqlite3")
+    manager = GoalManager(store)
+    goal = manager.propose(
+        title="Notify", purpose="Review a task", source="user",
+        source_key="notify-1", expected_benefit="Keep user informed",
+    )
+    unread = store.list_notifications(unread_only=True)
+    assert unread
+    store.mark_notification_read(unread[0]["id"])
+    assert store.list_notifications(unread_only=True) == []
