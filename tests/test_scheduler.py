@@ -76,5 +76,5 @@ def test_disabled_scheduler_does_not_enqueue_or_execute(tmp_path):
         store, object(), SchedulerSettings(enabled=False)
     )
     assert scheduler.run_once() == {
-        "status": "disabled", "enqueued": [], "results": []
+        "status": "disabled", "discovered": [], "enqueued": [], "results": []
     }
