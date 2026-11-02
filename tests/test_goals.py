@@ -277,3 +277,16 @@ def test_rejected_goal_completion_returns_goal_to_failed_state(tmp_path):
     )
     assert rejected["status"] == "failed"
     assert rejected["completion_review_status"] == "rejected"
+
+def test_goal_resource_budgets_have_hard_upper_bounds(tmp_path):
+    manager = GoalManager(Store(tmp_path / "goals.sqlite3"))
+    with pytest.raises(ValueError, match="cannot exceed 3600"):
+        make_goal(
+            manager, source_key="too-long",
+            resource_budget={"max_steps": 5, "max_runtime_seconds": 3601, "max_model_calls": 8},
+        )
+    with pytest.raises(ValueError, match="Unsupported goal resource budget fields"):
+        make_goal(
+            manager, source_key="unknown-budget",
+            resource_budget={"max_steps": 5, "max_runtime_seconds": 30, "max_model_calls": 8, "unlimited": True},
+        )
