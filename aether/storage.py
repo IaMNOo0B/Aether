@@ -1296,6 +1296,37 @@ class Store:
             if cursor.rowcount != 1:
                 raise KeyError(f"Unknown or already-read notification: {notification_id}")
 
+
+    def request_task_control(self, task_id: str, control: str, reason: str = "") -> dict[str, Any]:
+        """Set a cooperative pause/cancel request without interrupting an in-flight tool."""
+        if control not in {"pause", "cancel"}:
+            raise ValueError("Task control must be pause or cancel")
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status, state_json FROM tasks WHERE id=?", (task_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown task: {task_id}")
+            if row["status"] != "running":
+                raise ValueError(f"Cooperative {control} requires a running task; found {row['status']}")
+            state = json.loads(row["state_json"])
+            state[f"{control}_requested"] = True
+            state[f"{control}_reason"] = reason.strip()[:500]
+            db.execute(
+                "UPDATE tasks SET state_json=?, updated_at=? WHERE id=?",
+                (json.dumps(state), now, task_id),
+            )
+            db.execute(
+                """INSERT INTO task_events(task_id, event_type, from_status, to_status,
+                   payload_json, created_at) VALUES (?, 'control_requested', 'running', 'running', ?, ?)""",
+                (task_id, json.dumps({"control": control, "reason": reason[:500]}), now),
+            )
+        result = self.get_task(task_id)
+        assert result is not None
+        return result
+
     def record_decision(
         self, decision_id: str, question: str, probability: float,
         predicted_label: bool | int, metadata: dict[str, Any] | None = None,
