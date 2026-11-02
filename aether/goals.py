@@ -17,7 +17,7 @@ GOAL_TRANSITIONS = {
     "approved": {"queued", "blocked", "cancelled"},
     "queued": {"running", "paused", "failed", "cancelled", "blocked"},
     "running": {"paused", "completed", "failed", "cancelled", "blocked"},
-    "paused": {"approved", "queued", "cancelled", "blocked"},
+    "paused": {"proposed", "approved", "queued", "cancelled", "blocked"},
     "blocked": {"proposed", "approved", "cancelled"},
     "failed": {"proposed", "cancelled"},
     "completed": set(),
@@ -100,8 +100,6 @@ class GoalManager:
         if len(set(dependencies)) != len(dependencies):
             raise ValueError("Goal dependencies cannot contain duplicates")
         for dependency in dependencies:
-            if dependency == parent_goal_id:
-                raise ValueError("A goal cannot depend on its own parent")
             if self.store.get_autonomy_goal(dependency) is None:
                 raise KeyError(f"Unknown dependency goal: {dependency}")
         if parent_goal_id and self.store.get_autonomy_goal(parent_goal_id) is None:
