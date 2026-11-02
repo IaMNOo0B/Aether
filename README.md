@@ -152,6 +152,20 @@ Run a deterministic held-out calibration benchmark against resolved outcomes:
 
 The benchmark fits a small Laplace-smoothed histogram calibrator on the training split and reports Brier score, log loss, ECE and AURC on a disjoint held-out split. It includes a dataset SHA-256 and fixed seed for reproducibility. This is a post-hoc calibration baseline, **not OpenJev-RLCD training**, not a model-weight update, and not evidence of generalization beyond the evaluated data. Full RLCD reproduction remains deferred: the target RTX 2060 6 GB is below the paper's reported 48 GB GPU setup.
 
+### Multimodal image analysis (Phase 5)
+
+AETHER can pass a local PNG, JPEG, GIF or WebP image to a configured vision-capable provider:
+
+```powershell
+.venv\Scripts\python -m aether.multimodal --image workspace/example.png --prompt "Describe the visible objects and any readable text."
+```
+
+- The image is read locally, limited to 8 MiB, signature-checked and never stored in AETHER's database.
+- SVG and unknown formats are rejected.
+- Ollama routing is limited to model names recognized as vision-capable; OpenAI-compatible endpoints may accept vision payloads but the endpoint/model must actually support them.
+- Sending an image to a non-local OpenAI-compatible endpoint requires the explicit `--allow-remote` flag.
+- Voice remains the existing offline push-to-talk path. Video understanding, OCR guarantees, and audio-event perception are not claimed.
+
 ### System dashboard (Phase 5)
 
 Run a read-only snapshot of runtime/provider status, CPU/RAM/GPU telemetry, capability evidence states, research report inventory, decision-producer counts, task statuses and the latest saved OMEGA acceptance report:
