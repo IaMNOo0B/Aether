@@ -450,6 +450,21 @@ def main() -> int:
                     )
                     print(json.dumps(artifact, indent=2))
                     continue
+                if action == "ingest-raw":
+                    fields = argument.split("|", 5)
+                    if len(fields) != 6:
+                        print("Usage: /experiment ingest-raw ID | CSV_PATH | GROUP_COLUMN | OUTCOME_COLUMN | TREATMENT_LABEL | CONTROL_LABEL")
+                        continue
+                    csv_path = Path(fields[1].strip())
+                    if not csv_path.is_file():
+                        print("AETHER > CSV file not found.")
+                        continue
+                    result = ResearchCompletion(store).ingest_raw_observations(
+                        fields[0].strip(), csv_path.read_bytes(), fields[2].strip(),
+                        fields[3].strip(), fields[4].strip(), fields[5].strip(),
+                    )
+                    print(json.dumps(result, indent=2))
+                    continue
                 if action == "list":
                     print(json.dumps(store.list_research_experiments(), indent=2))
                     continue
