@@ -70,7 +70,7 @@ Benchmark boundary: fixed lexical fixtures measure retrieval and draft-skill exc
 
 Stage 4 remains partial until the end-to-end acceptance benchmark passes. Search rankings and source scores are not truth measures; exact-quote matching is not semantic entailment; reviewer IDs are operator-supplied and not authenticated. Meta-analysis assumes comparable independent effects and standard errors, and does not validate those assumptions.
 
-## Stage 5 — RLCD investigation
+## Stage 5 — RLCD investigation and frontier interface
 
 - [x] Identify OpenJev-RLCD and review its two-stage method.
 - [x] Document GPU, benchmark, and licensing constraints in [RLCD feasibility](research/RLCD_FEASIBILITY.md).
@@ -78,7 +78,10 @@ Stage 4 remains partial until the end-to-end acceptance benchmark passes. Search
 - [x] Typed decision-producer API with producer type, source reference, optional model ID and evidence hash.
 - [x] Symbolic world-model integration: declared success probabilities are logged at simulation time and only unambiguous observed outcomes are resolved.
 - [x] Deterministic held-out calibration benchmark with fixed seed, dataset SHA-256, disjoint train/test records and Brier/log-loss/ECE/AURC reporting.
+- [x] Read-only runtime dashboard covering provider status, resource telemetry, capability evidence states, research inventory, decisions, tasks and saved acceptance results.
+- [x] Bounded local image intake and vision-provider routing for PNG/JPEG/GIF/WebP, with size/signature checks and explicit consent before remote upload.
 - [ ] Held-out benchmark on a sufficiently large, independently curated real-world dataset.
+- [ ] Video understanding, OCR validation, and audio-event perception beyond the existing offline speech-to-text path.
 - [ ] RLCD training reproduction on suitable GPU resources.
 
 The implementation adds a post-hoc histogram calibration baseline for evaluation only. AETHER is not RLCD-trained and no model weights are updated. Full reproduction is deferred because the target RTX 2060 has 6 GB VRAM, while the paper reports 48 GB GPU runs.
