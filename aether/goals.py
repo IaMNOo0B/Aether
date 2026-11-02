@@ -234,7 +234,16 @@ class GoalManager:
                 return False
         return True
 
+    def unblock_ready(self, limit: int = 20) -> list[str]:
+        released = []
+        for goal in self.store.list_autonomy_goals(status="blocked", limit=limit):
+            if self.dependencies_satisfied(goal):
+                self.transition(goal["id"], "approved", {"reason": "All dependencies are complete"})
+                released.append(goal["id"])
+        return released
+
     def enqueue_approved(self, limit: int = 1) -> list[dict[str, Any]]:
+        self.unblock_ready(limit=limit * 5)
         queued = []
         approved = self.store.list_autonomy_goals(status="approved", limit=max(1, min(limit, 10)) * 5)
         approved.sort(key=lambda goal: self.priority_score(goal), reverse=True)
