@@ -147,6 +147,25 @@ class GoalManager:
                     "risks": ["The previous task may have performed a side effect before interruption."],
                     "dependencies": [], "completion_criteria": ["Failure cause is identified", "A safe next action is documented"],
                 })
+        for claim in self.store.list_knowledge_claims(limit=self.max_discoveries):
+            if claim.get("status") == "unverified":
+                claim_id = claim["id"]
+                candidates.append({
+                    "title": f"Review knowledge claim: {claim.get('subject_name', 'Unknown subject')[:80]}",
+                    "purpose": (
+                        f"Investigate claim {claim_id}: {claim.get('subject_name', '')} "
+                        f"{claim.get('predicate', '')} {claim.get('object_value', '')}. "
+                        "Find authoritative evidence, record provenance, and do not mark it verified without support."
+                    ),
+                    "source": "knowledge_gap", "source_key": f"knowledge-claim:{claim_id}",
+                    "expected_benefit": "Reduce unresolved claims in the local knowledge graph.",
+                    "priority": 0.5, "complexity": 2, "risk_score": 0.05,
+                    "risks": ["Search results may be incomplete or conflicting; human review may still be required."],
+                    "dependencies": [],
+                    "completion_criteria": ["Relevant evidence and source provenance are recorded", "Claim status is reviewed or explicitly left unresolved"],
+                })
+                if len(candidates) >= self.max_discoveries:
+                    break
         if self.self_model is not None:
             try:
                 snapshot = self.self_model.snapshot()
