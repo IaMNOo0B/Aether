@@ -75,10 +75,13 @@ Stage 4 remains partial until the end-to-end acceptance benchmark passes. Search
 - [x] Identify OpenJev-RLCD and review its two-stage method.
 - [x] Document GPU, benchmark, and licensing constraints in [RLCD feasibility](research/RLCD_FEASIBILITY.md).
 - [x] Persistent binary decision ledger and Brier/log-loss/ECE/AURC metrics.
-- [ ] Held-out calibration benchmarks and typed decision-producer integration.
-- [ ] Training reproduction on suitable GPU resources.
+- [x] Typed decision-producer API with producer type, source reference, optional model ID and evidence hash.
+- [x] Symbolic world-model integration: declared success probabilities are logged at simulation time and only unambiguous observed outcomes are resolved.
+- [x] Deterministic held-out calibration benchmark with fixed seed, dataset SHA-256, disjoint train/test records and Brier/log-loss/ECE/AURC reporting.
+- [ ] Held-out benchmark on a sufficiently large, independently curated real-world dataset.
+- [ ] RLCD training reproduction on suitable GPU resources.
 
-AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX 2060 has 6 GB VRAM, while the paper reports 48 GB GPU runs.
+The implementation adds a post-hoc histogram calibration baseline for evaluation only. AETHER is not RLCD-trained and no model weights are updated. Full reproduction is deferred because the target RTX 2060 has 6 GB VRAM, while the paper reports 48 GB GPU runs.
 
 ## Stage 6 — Bounded autonomy
 
