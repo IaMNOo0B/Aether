@@ -62,6 +62,8 @@ Goal discovery currently proposes recovery work from failed autonomy tasks, veri
 - Replanning is refused if any completed receipt may have caused a side effect.
 - A crash marks a running task interrupted for manual review. AETHER never blindly replays an uncertain action.
 - Emergency stop blocks scheduler and tool execution.
+- Completion criteria and the human-readable stop condition are persisted as goal metadata. A task is marked `completed` when its planned steps return successfully; this does not mean natural-language completion criteria were independently proven. The `verified` flag is true only when an included test-run step passes.
+- Machine-enforced stop conditions are emergency stop, approval denial, cancellation, and configured resource/tool/model-call budgets.
 
 ## Resource budgets
 
