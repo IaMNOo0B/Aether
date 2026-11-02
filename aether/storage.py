@@ -1517,6 +1517,9 @@ class Store:
                     "kind": "autonomy", "goal_id": goal_id, "receipts": [],
                     "goal_completion_criteria": json.loads(row["completion_criteria_json"]),
                     "goal_stop_condition": row["stop_condition"],
+                    "goal_resource_budget": json.loads(row["resource_budget_json"]),
+                    "goal_risk_score": row["risk_score"],
+                    "goal_risks": json.loads(row["risks_json"]),
                 }), now),
             )
             db.execute(
