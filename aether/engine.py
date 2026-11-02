@@ -44,6 +44,8 @@ BUILTIN_CAPABILITIES = (
     ("evolution.candidate_patches", "Candidate self-engineering", "Patch proposal and candidate testing without automatic production integration."),
     ("calibration.outcome_metrics", "Outcome calibration metrics", "Brier, log loss, ECE and selective-risk measurements on resolved outcomes."),
     ("decisions.empirical_abstention", "Evidence-based abstention gate", "Domain- and confidence-band-specific Wilson lower-bound policy."),
+    ("rlcd.typed_decision_producers", "Typed decision producers", "Traceable binary predictions from named subsystems, linked to source records and independently observed outcomes."),
+    ("rlcd.held_out_calibration", "Held-out calibration benchmark", "Deterministic train/held-out evaluation of a post-hoc calibration baseline; not RLCD model training."),
     ("knowledge.provenance_graph", "Provenance-aware knowledge graph", "Typed entities and temporal claims linked to source reports and URLs."),
     ("knowledge.conflict_detection", "Temporal claim conflict detection", "Surfaces overlapping incompatible claims without automatically resolving them."),
     ("world.symbolic_simulation", "Symbolic world-state simulation", "Versioned state snapshots, declared action effects, preconditions, constraints and observed outcomes."),
