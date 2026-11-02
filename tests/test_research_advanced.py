@@ -409,6 +409,7 @@ def test_quantitative_extraction_validates_exact_source_quote_and_numeric_values
     )
     source = ResearchSource(
         title="Evidence source", url="https://example.org/effect",
+        publisher="Example Journal", published="2026", evidence_type="peer-reviewed-study",
         summary="Effect summary.",
         full_text="Results table: Mean difference was -2.5 ms with standard error 0.8.",
     )
