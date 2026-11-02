@@ -284,6 +284,20 @@ def main() -> int:
                     print(f"AETHER > Goal {result['id']} is now {result['status']}.")
                     continue
 
+                if action in {"verify", "dispute"}:
+                    fields = argument.split("|", 1)
+                    if len(fields) != 2 or not fields[1].strip():
+                        print("Usage: /goal verify ID | evidence, or /goal dispute ID | reason")
+                        continue
+                    result = goal_manager.review_completion(
+                        fields[0].strip(), action == "verify", fields[1].strip()
+                    )
+                    print(
+                        f"AETHER > Goal {result['id']} status={result['status']} "
+                        f"completion_review={result['completion_review_status']}."
+                    )
+                    continue
+
                 if action == "run" and argument.strip():
                     if not settings.autonomy.enabled:
                         print("AETHER > Autonomy is disabled in config/settings.toml.")
@@ -377,7 +391,7 @@ def main() -> int:
                     print(f"AETHER > Goal replanned: {updated['id']}. It returns to proposed status and needs approval again.")
                     continue
 
-                print("Usage: /goal discover|list|show ID|create TITLE | PURPOSE | BENEFIT | priority | complexity | risk|approve ID|reject ID|run ID|pause ID|resume ID|cancel ID|replan ...")
+                print("Usage: /goal discover|list|show ID|create ...|approve ID|reject ID|verify ID | evidence|dispute ID | reason|run ID|pause ID|resume ID|cancel ID|replan ...")
                 continue
 
             if lower == "/notifications":
