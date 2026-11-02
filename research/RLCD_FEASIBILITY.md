@@ -27,6 +27,8 @@ Target machine: RTX 2060 6 GB VRAM, Ryzen 5 3600, 16 GB system RAM.
 | Faithful two-stage Qwen3-1.7B RLCD training | Not supported by the documented 6 GB target | Requires a compatible external GPU environment |
 | Paper-level benchmark reproduction | Not established by a local smoke test | Requires licensed datasets, pinned dependencies, multiple seeds and full evaluation |
 
+A rough full-fine-tuning lower-bound calculation for 1.7B parameters illustrates the mismatch: BF16 weights (2 bytes/parameter) ≈ 3.4 GB; BF16 gradients (2 bytes) ≈ 3.4 GB; two FP32 Adam moments (8 bytes) ≈ 13.6 GB; optional FP32 master weights (4 bytes) ≈ 6.8 GB. That is roughly **20.4–27.2 GB before activations, sampled sequences, reference-policy state, logits, temporary buffers and framework overhead**. This is an illustrative optimizer-state estimate, not a measured run. It already exceeds 6 GB by a wide margin.
+
 Do not estimate feasibility from parameter count alone. Training memory includes model weights, gradients, optimizer states, activations, sampled sequences, reference-policy state, and framework overhead. Quantization or LoRA may reduce memory but changes the training setup and must not be described as a faithful reproduction without matching the reference method and validating its outputs.
 
 ## Reproduction acceptance gate
