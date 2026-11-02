@@ -39,6 +39,7 @@ BUILTIN_CAPABILITIES = (
     ("autonomy.bounded_tools", "Bounded autonomous tools", "Fixed tool registry with workspace containment and per-action approval."),
     ("desktop.allowlisted", "Allowlisted desktop control", "Limited Windows application launch and approval-gated input."),
     ("voice.offline_push_to_talk", "Offline push-to-talk voice", "Optional Vosk speech recognition and local speech output."),
+    ("multimodal.image_analysis", "Vision-model image analysis", "Bounded local image intake with explicit remote-upload consent and configured vision-provider routing."),
     ("learning.procedural_skills", "Procedural skill records", "Draft and manually validated reusable procedures."),
     ("agents.sequential_specialists", "Sequential specialist agents", "Researcher, planner and critic role outputs with persistence."),
     ("evolution.candidate_patches", "Candidate self-engineering", "Patch proposal and candidate testing without automatic production integration."),
