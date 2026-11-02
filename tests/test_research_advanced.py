@@ -414,6 +414,9 @@ def test_quantitative_extraction_validates_exact_source_quote_and_numeric_values
         full_text="Results table: Mean difference was -2.5 ms with standard error 0.8.",
     )
     workflow.add_review_sources(review["id"], [source])
+    workflow.screen_source(review["id"], source.url, "screen-a", "include", "The study meets the inclusion criteria.")
+    workflow.screen_source(review["id"], source.url, "screen-b", "Independent screening confirms eligibility.")
+    workflow.finalize_review(review["id"])
     extraction = {
         "study_design": "randomized controlled trial",
         "population": "Adults with condition X",
