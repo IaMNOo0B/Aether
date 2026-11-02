@@ -278,3 +278,28 @@ def test_goal_lifecycle_has_append_only_audit_history(tmp_path):
     assert events[0]["to_status"] == "proposed"
     assert events[1]["from_status"] == "proposed"
     assert events[1]["to_status"] == "approved"
+
+
+def test_acceptance_gap_discovery_uses_persisted_report_as_signal(tmp_path):
+    import json
+
+    report_path = tmp_path / "reports" / "acceptance" / "latest.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(json.dumps({
+        "generated_at": "2026-11-02T00:00:00+00:00",
+        "results": [{
+            "id": "J", "name": "Resource management",
+            "acceptance_status": "PARTIAL",
+            "expected": "Configured budgets are respected",
+            "actual": "Preflight only",
+            "limitations": ["No hard OS quotas"],
+        }],
+    }), encoding="utf-8")
+    store = Store(tmp_path / "acceptance-goal.sqlite3")
+    found = GoalManager(store, tmp_path).discover()
+
+    assert len(found) == 1
+    assert found[0]["source"] == "acceptance_gap"
+    assert found[0]["goal_level"] == "system"
+    assert found[0]["status"] == "proposed"
+    assert "No hard OS quotas" in found[0]["purpose"]
