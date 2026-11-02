@@ -1306,6 +1306,34 @@ class Store:
                 raise KeyError(f"Unknown or already-read notification: {notification_id}")
 
 
+    def replan_paused_task(
+        self, task_id: str, new_objective: str, state: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Replace a paused plan only after caller has checked prior side effects."""
+        now = utc_now()
+        with self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT objective, status FROM tasks WHERE id=?", (task_id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(f"Unknown task: {task_id}")
+            if row["status"] != "paused":
+                raise ValueError(f"Only paused tasks can be replanned; found {row['status']}")
+            db.execute(
+                "UPDATE tasks SET objective=?, status='queued', state_json=?, updated_at=? WHERE id=?",
+                (new_objective, json.dumps(state), now, task_id),
+            )
+            db.execute(
+                """INSERT INTO task_events(task_id, event_type, from_status, to_status,
+                   payload_json, created_at) VALUES (?, 'replanned', 'paused', 'queued', ?, ?)""",
+                (task_id, json.dumps({"previous_objective": row["objective"],
+                                      "new_objective": new_objective}), now),
+            )
+        result = self.get_task(task_id)
+        assert result is not None
+        return result
+
     def request_task_control(self, task_id: str, control: str, reason: str = "") -> dict[str, Any]:
         """Set a cooperative pause/cancel request without interrupting an in-flight tool."""
         if control not in {"pause", "cancel"}:
