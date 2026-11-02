@@ -49,12 +49,12 @@ def test_design_specific_risk_of_bias_requires_exact_domains(tmp_path):
     )
     assert result["instrument"] == "AETHER-structured-randomized-v1"
     assert result["status"] == "awaiting_second_reviewer"
-    assert "not a validated" in result["payload"]["limitation"]
     second = workflow.record_risk_of_bias(
         review["id"], "https://example.org/study", "randomized",
         "reviewer-2", "another correct battery", domains,
     )
     assert second["status"] == "agreed"
+    assert "not a validated" in second["payload"]["limitation"]
     with pytest.raises(PermissionError):
         workflow.record_risk_of_bias(
             review["id"], "https://example.org/study", "randomized",
