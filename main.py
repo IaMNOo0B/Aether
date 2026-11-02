@@ -178,22 +178,24 @@ def main() -> int:
                 goals = GoalManager(store)
                 if action == "discover":
                     found = goals.discover()
-                    print(f"AETHER > Discovered {len(found)} recovery proposal(s); none were auto-approved.")
+                    print(f"AETHER > Discovered {len(found)} goal proposal(s); none were auto-approved.")
                     for goal in found:
                         print(f"{goal['id']} | {goal['status']} | {goal['title']}")
                 elif action == "list":
                     for goal in goals.prioritize():
                         print(f"{goal['id']} | {goal['goal_level']} | {goal['status']} | priority={goal['priority']:.2f} | {goal['title']}")
                 elif action == "add":
-                    fields = argument.split("|", 3)
+                    fields = argument.split("|", 4)
                     if len(fields) < 3:
-                        print("Usage: /goal add TITLE | PURPOSE | EXPECTED BENEFIT | PRIORITY(optional 0..1)")
+                        print("Usage: /goal add TITLE | PURPOSE | EXPECTED BENEFIT | PRIORITY(optional 0..1) | LEVEL(optional immediate/project/system/research/exploration)")
                         continue
-                    priority = float(fields[3].strip()) if len(fields) == 4 else 0.5
+                    priority = float(fields[3].strip()) if len(fields) >= 4 else 0.5
+                    goal_level = fields[4].strip().casefold() if len(fields) == 5 else "immediate"
                     goal = goals.propose(
                         title=fields[0].strip(), purpose=fields[1].strip(),
                         expected_benefit=fields[2].strip(), priority=priority,
-                        source="user", source_key=f"user:{uuid4().hex}",
+                        goal_level=goal_level, source="user",
+                        source_key=f"user:{uuid4().hex}",
                     )
                     print(f"AETHER > Goal proposal saved: {goal['id']} (approval required)")
                 elif action == "approve" and argument.strip():
