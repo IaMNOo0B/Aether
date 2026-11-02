@@ -201,24 +201,51 @@ class ResearchCompletion:
             raise KeyError(f"Unknown systematic review: {review_id}")
         sources = review.get("sources", [])
         summary = review.get("final_summary") or {}
-        flow = summary.get("screening_flow", {})
         retrieved = len(sources)
+        duplicates_removed = sum(
+            max(0, len(item.get("source", {}).get("search_report_ids", [])) - 1)
+            for item in sources
+        )
         included_title = sum(x.get("decision") == "include" for x in sources)
         excluded_title = sum(x.get("decision") == "exclude" for x in sources)
+        not_retrieved = len(summary.get("full_text_not_retrieved", []))
         full_excluded = len(summary.get("full_text_excluded", []))
-        synthesis = len(summary.get("included_studies", []))
+        included_studies = len(summary.get("included_studies", []))
+        synthesis = int((summary.get("meta_analysis") or {}).get("studies", 0))
         report = {
             "review_id": review_id,
             "reporting_framework": "PRISMA-style flow counts (not PRISMA compliance)",
-            "identification": {"records_from_searches": retrieved, "duplicate_records_removed": max(0, int(summary.get("duplicates_removed", 0))), "other_records": 0},
+            "identification": {
+                "records_from_searches": retrieved + duplicates_removed,
+                "duplicate_records_removed": duplicates_removed,
+                "records_after_deduplication": retrieved,
+                "other_records": 0,
+            },
             "screening": {"records_screened": retrieved, "records_excluded": excluded_title},
-            "eligibility": {"reports_sought": included_title, "reports_not_retrieved": int(summary.get("full_text_not_retrieved", 0)), "full_text_assessed": max(0, included_title - int(summary.get("full_text_not_retrieved", 0))), "full_text_excluded": full_excluded},
-            "included": {"studies_in_review": len(summary.get("included_studies", [])), "studies_in_quantitative_synthesis": int((summary.get("meta_analysis") or {}).get("studies", 0))},
-            "source_counts": {"title_abstract_included": included_title, "title_abstract_excluded": excluded_title, "included_in_synthesis": synthesis},
-            "limitations": ["Counts reflect records imported into AETHER, not necessarily all records returned by external databases.", "No deduplication across independent databases can be inferred beyond stored review sources.", "This is a PRISMA-style count summary, not a completed PRISMA checklist or compliance claim."],
+            "eligibility": {
+                "reports_sought": included_title,
+                "reports_not_retrieved": not_retrieved,
+                "full_text_assessed": max(0, included_title - not_retrieved),
+                "full_text_excluded": full_excluded,
+            },
+            "included": {
+                "studies_in_review": included_studies,
+                "studies_in_quantitative_synthesis": synthesis,
+            },
+            "source_counts": {
+                "title_abstract_included": included_title,
+                "title_abstract_excluded": excluded_title,
+                "full_text_not_retrieved": not_retrieved,
+                "full_text_excluded": full_excluded,
+                "included_in_synthesis": included_studies,
+            },
+            "limitations": [
+                "Counts include only records imported into this AETHER review; external database result totals must be supplied separately if needed.",
+                "Duplicate counts are derived from preserved search-report provenance for merged source records.",
+                "This is a PRISMA-style count summary, not a completed PRISMA checklist or compliance claim.",
+            ],
         }
         return report
-
 
     def record_prisma_checklist(self, review_id: str, responses: dict[str, dict[str, str]]) -> dict[str, Any]:
         review = self.store.get_systematic_review(review_id)
