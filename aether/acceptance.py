@@ -124,6 +124,7 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_goals.py::test_goal_reconciliation_marks_interrupted_running_task_failed",
             "tests/test_goals.py::test_goal_cannot_satisfy_dependencies_until_completion_is_reviewed",
             "tests/test_goals.py::test_goal_resource_budgets_have_hard_upper_bounds",
+            "tests/test_goals.py::test_goal_replanning_rejects_dependency_cycles",
             "tests/test_scheduler.py::test_scheduler_runs_persisted_goal_with_read_only_tools",
             "tests/test_scheduler.py::test_scheduler_never_approves_workspace_writes",
             "tests/test_emergency_stop.py::test_scheduler_does_not_enqueue_when_emergency_stop_is_active",
