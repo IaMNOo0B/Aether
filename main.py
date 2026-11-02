@@ -69,7 +69,7 @@ def main() -> int:
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
-    print("Commands: /status /resources /self-model /tasks /task-events ID /task pause|resume|cancel ID /goal /notifications /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
+    print("Commands: /status /resources /self-model /tasks /task-events ID /task pause|resume|cancel|replan ID /goal /notifications /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /remember /memory-search /memory-index /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
 
