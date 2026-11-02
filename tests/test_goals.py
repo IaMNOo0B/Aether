@@ -337,3 +337,23 @@ def test_scheduler_uses_one_combined_tick_budget_for_goals_and_schedules(tmp_pat
     assert result["results"] == []
     schedule = store.list_schedules()[0]
     assert schedule["run_count"] == 0
+
+def test_scheduler_does_not_queue_approved_goals_when_autonomy_is_disabled(tmp_path):
+    store = Store(tmp_path / "goals.sqlite3")
+    manager = GoalManager(store)
+    goal = make_goal(manager)
+    manager.approve(goal["id"])
+    runner = AutonomyRunner(
+        FakeProvider('{"steps":[{"id":"list","depends_on":[],"tool":"workspace.list","args":{"path":"."}}]}'),
+        store, AutonomySettings(enabled=False), LimitSettings(), ResearchSettings(), tmp_path,
+    )
+    scheduler = AutonomyScheduler(
+        store, runner, SchedulerSettings(enabled=True), goal_manager=manager
+    )
+
+    result = scheduler.run_once()
+
+    assert result["status"] == "autonomy_disabled"
+    assert result["goal_results"] == []
+    assert store.get_autonomy_goal(goal["id"])["status"] == "approved"
+    assert store.list_tasks(status="queued") == []
