@@ -31,6 +31,7 @@ class AutonomyScheduler:
     def _run_goal_tasks(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         if self.goal_manager is None:
             return [], []
+        self.goal_manager.reconcile()
         discovered = self.goal_manager.discover()
         self.goal_manager.enqueue_approved(limit=self.settings.max_tasks_per_tick)
         queued = self.store.list_autonomy_goals(status="queued", limit=100)
