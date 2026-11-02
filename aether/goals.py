@@ -230,6 +230,14 @@ class GoalManager:
             raise KeyError(f"Unknown goal: {goal_id}")
         if goal["status"] not in {"proposed", "blocked", "failed", "paused"}:
             raise ValueError("Only proposed, blocked, failed or paused goals can be replanned")
+        if goal["status"] == "paused" and goal.get("task_id"):
+            task = self.store.get_task(goal["task_id"])
+            if task and task["status"] == "paused":
+                state = dict(task["state"])
+                state["superseded_by_goal_replan"] = True
+                self.store.transition_task(
+                    task["id"], "paused", "cancelled", state
+                )
         if goal["status"] in {"failed", "paused", "blocked"}:
             self.transition(goal_id, "proposed", {"reason": "Replanned by operator"})
         return self.store.update_autonomy_goal_plan(
