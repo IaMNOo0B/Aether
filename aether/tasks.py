@@ -71,6 +71,20 @@ class TaskManager:
         updated = self.store.request_task_pause(task_id)
         return Task(updated["id"], updated["objective"], updated["status"], updated["state"])
 
+    def request_cancel(self, task_id: str, reason: str = "Cancelled by operator") -> Task:
+        task = self.store.get_task(task_id)
+        if task is None:
+            raise KeyError(f"Unknown task: {task_id}")
+        if task["status"] == "running":
+            updated = self.store.request_task_cancel(task_id, reason)
+        elif task["status"] in {"queued", "paused"}:
+            state = dict(task["state"])
+            state["cancel_reason"] = reason[:500]
+            updated = self.store.transition_task(task_id, task["status"], "cancelled", state)
+        else:
+            raise ValueError(f"Task cannot be cancelled from status {task['status']}")
+        return Task(updated["id"], updated["objective"], updated["status"], updated["state"])
+
     def events(self, task_id: str, limit: int = 500) -> list[dict[str, Any]]:
         if self.store.get_task(task_id) is None:
             raise KeyError(f"Unknown task: {task_id}")
