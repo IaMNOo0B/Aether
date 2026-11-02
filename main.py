@@ -168,6 +168,7 @@ def main() -> int:
                         task = engine.tasks.resume(task_id)
                     else:
                         task = engine.tasks.cancel(task_id)
+                GoalManager(store).sync_task_status(task.id, task.status)
                 print(f"AETHER > Task {task.id}: {task.status}")
                 continue
 
