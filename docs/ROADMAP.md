@@ -49,26 +49,27 @@ Benchmark boundary: fixed lexical fixtures measure retrieval and draft-skill exc
 
 ## Stage 4 — Research and knowledge
 
-- [x] Public source adapters for Crossref, arXiv, and Wikipedia.
-- [x] Provenance-aware reports with source URL, publisher, date, evidence class, and limitations.
-- [x] Persistent research report history.
-- [x] Operator-supplied public HTML/plain-text full-text ingestion with private-network/localhost rejection, redirect refusal, content-type checks, timeout and 2 MB cap.
-- [x] Transparent source-triage scoring with explicit factor breakdown and caveats; scores are not truth probabilities.
-- [x] Citation URL reachability checks tied to persisted report sources; claim-support verification remains a human review task.
-- [x] Persisted evidence-review inventory and protocol checklist; sources remain pending human screening and are never silently excluded.
-- [x] General public web search through a bounded DuckDuckGo HTML adapter, with untrusted result metadata and no automatic arbitrary result-page fetching.
-- [x] Systematic review protocol with databases, explicit queries/date, inclusion/exclusion criteria, source deduplication, dual title/abstract screening and third-reviewer conflict resolution.
-- [x] Full-text eligibility screening with locators, dual-review agreement and explicit adjudication.
-- [x] Generic five-domain risk-of-bias assessment and dual-reviewed data extraction with adjudication.\n- [x] Design-specific structured domain checklists for randomized, nonrandomized, qualitative and cross-sectional studies; these are not validated RoB 2/ROBINS-I/CASP/JBI instruments.\n- [x] GRADE-inspired five-domain certainty assessment with explicit operator judgments and downgrade rationale.\n- [x] PRISMA-style screening-flow count report with explicit limits; no PRISMA compliance certification.\n- [x] Egger regression publication-asymmetry screening for at least ten extracted studies; no trim-and-fill or selection model.
-- [x] Evidence-table synthesis and DerSimonian-Laird random-effects meta-analysis when at least two compatible effect estimates and standard errors are supplied.
-- [x] Exact-quote citation passage matching, lexical alignment screening, two-reviewer adjudication and third-reviewer disagreement resolution.
-- [x] Reproducible CSV experiment analysis with input SHA-256, Python/algorithm version, descriptive statistics, Welch two-sample tests, pooled effect size and confidence intervals.
-- [x] Analysis artifacts persist as research reports and append to experiment event history.
-- [x] Preregistered experiment records linked to typed hypothesis claims, with required objective/method/success criteria, explicit start/complete/cancel transitions, evidence-backed outcomes and append-only lifecycle events.
-- [ ] Held-out end-to-end systematic-review acceptance benchmark, publication-bias analysis, certainty-of-evidence grading, validated design-specific risk-of-bias tools and authenticated reviewer identities.
-- [ ] Raw observation ingestion from experiment runs and automatic validation of supplied effect estimates/standard errors.
+- [x] Public source adapters for Crossref, arXiv, Wikipedia and general web search through a bounded DuckDuckGo HTML adapter; results are treated as untrusted leads.
+- [x] Provenance-aware research reports with source URL, publisher, date, evidence class, limitations and persistent report history.
+- [x] Bounded public HTML/plain-text full-text ingestion with localhost/private-network rejection, redirect refusal, content-type checks, timeout and size cap.
+- [x] Transparent source-triage scoring with factor breakdown; scores are not truth probabilities.
+- [x] Citation evidence workflow with report membership, captured-full-text exact quote matching, lexical screening, two authenticated reviewer decisions and distinct adjudication.
+- [x] Systematic-review protocol with databases, explicit queries/date, inclusion/exclusion criteria, source deduplication and provenance preservation.
+- [x] Dual authenticated title/abstract screening, full-text eligibility, data extraction, risk-of-bias assessment and adjudication.
+- [x] Design-specific structured risk-of-bias checklists for randomized, nonrandomized, qualitative and cross-sectional studies; the workflow explicitly does not claim these custom checklists are validated RoB 2/ROBINS-I/CASP/JBI instruments.
+- [x] PRISMA 2020 27-item operator-completed reporting checklist with per-item locations/rationales, plus PRISMA-style study-flow counts. Checklist completion is not automatic compliance certification.
+- [x] GRADE-inspired five-domain certainty assessment with explicit judgments, rationale and deterministic downgrade levels; not an official GRADEpro assessment.
+- [x] Egger regression publication-asymmetry screening for at least ten compatible extracted effects; mixed effect measures are rejected, and no trim-and-fill/selection model is claimed.
+- [x] Evidence-table synthesis and DerSimonian-Laird random-effects meta-analysis for compatible supplied effects and standard errors.
+- [x] Reproducible CSV experiment analysis with SHA-256, Python/algorithm version, descriptive statistics, Welch two-sample tests, pooled effect size and confidence intervals.
+- [x] Raw independent-group CSV observation ingestion with row validation, SHA-256 provenance, persisted source CSV bytes in the local experiment event history, group summaries and Welch standard error.
+- [x] Preregistered experiment records, typed hypothesis claims, explicit lifecycle transitions and append-only event history.
+- [x] Deterministic synthetic end-to-end Phase 4 acceptance fixture covers dual-review authentication, systematic-review synthesis/meta-analysis, PRISMA flow/checklist, GRADE-inspired grading, publication-bias eligibility, citation adjudication and raw experiment ingestion.
+- [x] Local reviewer accounts use salted PBKDF2-HMAC-SHA256 hashes. After the first account is registered, every screening, full-text, risk-of-bias, extraction, adjudication and citation-review decision requires the matching account password.
+- [ ] Optional adoption of externally validated/licensed risk-of-bias instruments and independent methodological validation. AETHER's included domain checklists are transparent structured aids, not substitutes for those validated instruments.
+- [ ] External identity-provider integration and cross-machine reviewer federation; local AETHER accounts are enforced for this repository workflow.
 
-Stage 4 remains partial until the held-out end-to-end acceptance benchmark passes and authenticated reviewer identities are enforced across all review stages. Search rankings and source scores are not truth measures; exact-quote matching is not semantic entailment. The design-specific checklists are not validated instruments. Meta-analysis and Egger screening assume comparable independent effects and supplied standard errors; raw ingestion currently supports independent groups only.
+Phase 4's implemented software workflow is complete within the documented bounded scope. The remaining unchecked items require external validated instruments/methodological validation or external identity infrastructure; they are not silently represented as complete. Search rankings and source scores are not truth measures; exact quote matching is not semantic entailment. Meta-analysis and Egger screening depend on comparable independent effects and supplied standard errors. Raw observation ingestion currently supports independent groups only.
 
 ## Stage 5 — RLCD investigation
 
