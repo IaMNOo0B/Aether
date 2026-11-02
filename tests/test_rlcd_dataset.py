@@ -12,7 +12,7 @@ def _write_fixture(tmp_path, *, leak=False):
     base = datetime(2026, 1, 1, tzinfo=timezone.utc)
     for split in ("train", "dev", "test"):
         for index in range(5):
-            source = "shared-source" if leak and split == "test" and index == 0 else f"{split}-{index}"
+            source = "shared-source" if leak and split in {"train", "test"} and index == 0 else f"{split}-{index}"
             rows.append({
                 "id": f"{split}-{index}",
                 "probability": 0.7 if index % 2 else 0.3,
