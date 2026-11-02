@@ -87,3 +87,32 @@ def test_ambiguous_world_observation_does_not_become_binary_training_label(tmp_p
     pending = store.list_decisions(resolved_only=False)
     assert len(pending) == 1
     assert pending[0]["outcome"] is None
+
+
+
+def test_typed_decision_rejects_invalid_evidence_hash_and_nonfinite_probability(tmp_path):
+    manager = DecisionManager(Store(tmp_path / "decisions.sqlite3"))
+    with pytest.raises(ValueError, match="SHA-256"):
+        manager.log_typed_prediction(
+            "Will it pass?", 0.8, "software-tests",
+            producer_type="tool_verification", source_ref="run-1",
+            evidence_hash="not-a-hash",
+        )
+    with pytest.raises(ValueError, match="between zero and one"):
+        manager.log_typed_prediction(
+            "Will it pass?", float("nan"), "software-tests",
+            producer_type="tool_verification", source_ref="run-1",
+        )
+
+
+def test_non_executable_world_simulation_is_not_logged_as_a_decision(tmp_path):
+    store = Store(tmp_path / "world.sqlite3")
+    world = WorldModel(store, DecisionManager(store))
+    world.create_world("Locked door", {"locked": True})
+    action = world.register_action(
+        "Locked door", "Open door", preconditions={"locked": False},
+        effects={"locked": False}, failure_probability=0.1,
+    )
+    simulation = world.simulate("Locked door", action["id"])
+    assert simulation["executable"] is False
+    assert store.list_decisions(resolved_only=False) == []
