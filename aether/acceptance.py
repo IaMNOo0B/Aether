@@ -110,7 +110,7 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
         ],
         "full_scope": False,
         "limitations": [
-            "Goal discovery currently proposes recovery work from failed tasks and unverified capability records; it does not yet infer every project, research, performance-regression, or external-system opportunity. Discovery never self-authorizes: human approval is required, and unattended execution is restricted to approved goals and read-only tools."
+            "Goal discovery currently proposes recovery work from failed tasks, verification work for unverified/degraded capabilities, and engineering goals from persisted OMEGA acceptance gaps. It does not yet infer every project dependency, external-system event, or research opportunity. Discovery never self-authorizes: human approval is required, and unattended execution is restricted to approved goals and read-only tools."
         ],
     },
     {
