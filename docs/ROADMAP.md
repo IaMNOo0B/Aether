@@ -60,7 +60,7 @@ Benchmark boundary: fixed lexical fixtures measure retrieval and draft-skill exc
 - [x] PRISMA 2020 27-item operator-completed reporting checklist with per-item locations/rationales, plus PRISMA-style study-flow counts. Checklist completion is not automatic compliance certification.
 - [x] GRADE-inspired five-domain certainty assessment with explicit judgments, rationale and deterministic downgrade levels; not an official GRADEpro assessment.
 - [x] Egger regression publication-asymmetry screening for at least ten compatible extracted effects; mixed effect measures are rejected, and no trim-and-fill/selection model is claimed.
-- [x] Evidence-table synthesis and DerSimonian-Laird random-effects meta-analysis for compatible supplied effects and standard errors.
+- [x] Evidence-table synthesis and DerSimonian-Laird random-effects meta-analysis for compatible supplied effects and standard errors. Quantitative extraction can verify exact source quotes and numeric estimate/SE tokens when captured full text is available; unverified extractions are explicitly labeled.
 - [x] Reproducible CSV experiment analysis with SHA-256, Python/algorithm version, descriptive statistics, Welch two-sample tests, pooled effect size and confidence intervals.
 - [x] Raw independent-group CSV observation ingestion with row validation, SHA-256 provenance, persisted source CSV bytes in the local experiment event history, group summaries and Welch standard error.
 - [x] Preregistered experiment records, typed hypothesis claims, explicit lifecycle transitions and append-only event history.
