@@ -239,6 +239,32 @@ class GoalManager:
             raise KeyError(f"Unknown goal: {goal_id}")
         if goal["status"] not in {"proposed", "blocked", "failed", "paused"}:
             raise ValueError("Only proposed, blocked, failed or paused goals can be replanned")
+        dependencies = list(dependencies)
+        if len(set(dependencies)) != len(dependencies):
+            raise ValueError("Goal dependencies cannot contain duplicates")
+        for dependency_id in dependencies:
+            if dependency_id == goal_id or self.store.get_autonomy_goal(dependency_id) is None:
+                raise ValueError(f"Invalid goal dependency: {dependency_id}")
+            if self._depends_on(dependency_id, {goal_id}):
+                raise ValueError("Replanned goal dependencies would create a cycle")
+        if not completion_criteria:
+            raise ValueError("Replanned goals require at least one completion criterion")
+        if not 0 <= priority <= 1 or not 1 <= complexity <= 5 or not 0 <= risk_score <= 1:
+            raise ValueError("Replanned priority, complexity or risk score is outside allowed bounds")
+        deadline_at = self._validate_deadline(deadline_at)
+        allowed_budget_keys = {"max_steps", "max_runtime_seconds", "max_model_calls"}
+        if set(resource_budget) - allowed_budget_keys:
+            raise ValueError("Replanned resource budget contains unsupported fields")
+        if any(
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) or value <= 0
+            for value in resource_budget.values()
+        ):
+            raise ValueError("Replanned resource budget values must be finite and positive")
+        if resource_budget.get("max_steps", 5) > 50 or resource_budget.get("max_model_calls", 8) > 50:
+            raise ValueError("Replanned step/model-call budgets cannot exceed 50")
+        if resource_budget.get("max_runtime_seconds", 300) > 3600:
+            raise ValueError("Replanned runtime budget cannot exceed 3600 seconds")
         if goal["status"] == "paused" and goal.get("task_id"):
             task = self.store.get_task(goal["task_id"])
             if task and task["status"] == "paused":
