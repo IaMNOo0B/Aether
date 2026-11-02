@@ -29,7 +29,7 @@ def test_phase4_end_to_end_synthetic_acceptance(tmp_path):
             title=f"Synthetic study {index}", url=f"https://fixture.example/study-{index}",
             publisher="Synthetic Evidence Lab", published="2026",
             evidence_type="synthetic-rct", summary="Adult participants; response-time outcome.",
-            full_text="The intervention reduced mean response time in the adult study group.",
+            full_text=f"The intervention reduced mean response time in the adult study group. Mean difference was {-3.0 * index} ms with standard error 1.5.",
         )
         for index in (1, 2)
     ]
@@ -66,6 +66,8 @@ def test_phase4_end_to_end_synthetic_acceptance(tmp_path):
             "effect_measure": "mean_difference_ms",
             "effect_estimate": -3.0 * index,
             "standard_error": 1.5,
+            "effect_evidence_quote": f"Mean difference was {-3.0 * index} ms with standard error 1.5.",
+            "effect_text_locator": "Results, Table 2",
         }
         for reviewer_id, password in credentials.items():
             if reviewer_id == "adjudicator":
@@ -86,6 +88,7 @@ def test_phase4_end_to_end_synthetic_acceptance(tmp_path):
     synthesized = research.synthesize_review(review["id"])
     assert synthesized["status"] == "synthesized"
     assert synthesized["final_summary"]["meta_analysis"]["studies"] == 2
+    assert synthesized["final_summary"]["effect_evidence_validation"]["exact_quote_and_numeric_values_found"] == 2
 
     flow = completion.prisma_flow(review["id"])
     assert flow["included"]["studies_in_review"] == 2
