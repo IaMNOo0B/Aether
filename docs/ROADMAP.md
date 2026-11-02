@@ -97,11 +97,12 @@ The implementation adds a post-hoc histogram calibration baseline for evaluation
 - [x] Test execution requires feature flag and per-action human approval.
 - [x] Workspace path containment, file-size caps, step limits, and execution timeout.
 - [x] Persisted plans, progress, and action receipts.
-- [ ] Background scheduler and bounded goal discovery.
+- [x] Opt-in background scheduler for explicitly configured schedules; scheduled execution remains read-only.
+- [x] Bounded goal discovery from failed tasks, saved research reports, tracked Git-change metadata and submitted external events; proposals are deduplicated, prioritized, persisted and require reasoned human approval before any separate enqueue.
 - [x] Cooperative pause/resume and conservative crash recovery for explicitly queued autonomy tasks.
-- [ ] OS-level sandbox for arbitrary code (not provided by the current copy-based candidate workflow).
+- [ ] OS-level sandbox for arbitrary code (not provided by the current copy-based candidate workflow; generated tests still run with the current user's permissions).
 
-No arbitrary shell, unrestricted filesystem, or unrestricted URL-fetch tool is exposed.
+No arbitrary shell, unrestricted filesystem, or unrestricted URL-fetch tool is exposed. Goal discovery only creates proposals; approval never auto-enqueues or executes them. The scheduler only runs explicitly configured read-only schedules. The candidate self-engineering workflow is not an OS security sandbox.
 
 ## Stage 7 — Controlled self-engineering
 
