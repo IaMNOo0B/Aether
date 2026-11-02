@@ -219,3 +219,20 @@ def test_scheduler_enforces_per_goal_step_budget(tmp_path):
     assert saved["status"] == "cancelled"
     assert saved["state"]["plan"]
     assert saved["state"]["resource_limit"]
+
+def test_goal_reconciliation_marks_interrupted_running_task_failed(tmp_path):
+    store = Store(tmp_path / "goals.sqlite3")
+    manager = GoalManager(store)
+    goal = make_goal(manager)
+    manager.approve(goal["id"])
+    task_id = store.enqueue_approved_autonomy_goal(goal["id"], "interrupted-goal-task")
+    manager.transition(goal["id"], "running", {"task_id": task_id}, task_id)
+    tasks = TaskManager(store)
+    tasks.transition(task_id, "running", {"kind": "autonomy", "goal_id": goal["id"]})
+
+    recovered = tasks.recover_interrupted()
+    reconciled = manager.reconcile()
+
+    assert recovered == [task_id]
+    assert len(reconciled) == 1
+    assert store.get_autonomy_goal(goal["id"])["status"] == "failed"
