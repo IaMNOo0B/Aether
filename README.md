@@ -152,6 +152,16 @@ Run a deterministic held-out calibration benchmark against resolved outcomes:
 
 The benchmark fits a small Laplace-smoothed histogram calibrator on the training split and reports Brier score, log loss, ECE and AURC on a disjoint held-out split. It includes a dataset SHA-256 and fixed seed for reproducibility. This is a post-hoc calibration baseline, **not OpenJev-RLCD training**, not a model-weight update, and not evidence of generalization beyond the evaluated data. Full RLCD reproduction remains deferred: the target RTX 2060 6 GB is below the paper's reported 48 GB GPU setup.
 
+### System dashboard (Phase 5)
+
+Run a read-only snapshot of runtime/provider status, CPU/RAM/GPU telemetry, capability evidence states, research report inventory, decision-producer counts, task statuses and the latest saved OMEGA acceptance report:
+
+```powershell
+.venv\Scripts\python -m aether.dashboard
+```
+
+Use `--json` for machine-readable output. The dashboard does not start research, modify capability states, or execute autonomous tasks. It labels unverified capabilities rather than presenting them as completed.
+
 ### Emergency stop
 
 - `/emergency-stop` immediately records a persistent stop flag in SQLite.
