@@ -106,6 +106,7 @@ def test_phase4_end_to_end_synthetic_acceptance(tmp_path):
     grade = completion.grade_certainty(
         review["id"], "response time", "high", judgments,
         "The synthetic evidence is consistent but remains imprecise due to small samples.",
+        reviewer_id="reviewer-a", password=credentials["reviewer-a"],
     )
     assert grade["certainty"] == "moderate"
 
