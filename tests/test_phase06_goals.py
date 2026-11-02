@@ -303,3 +303,36 @@ def test_acceptance_gap_discovery_uses_persisted_report_as_signal(tmp_path):
     assert found[0]["goal_level"] == "system"
     assert found[0]["status"] == "proposed"
     assert "No hard OS quotas" in found[0]["purpose"]
+
+
+def test_active_runtime_budget_stops_before_model_or_tool_call(tmp_path):
+    store = Store(tmp_path / "runtime-budget.sqlite3")
+    runner = _runner(tmp_path, store, '{"steps":[]}')
+    task = runner.tasks.create("Already out of time", {
+        "kind": "autonomy", "receipts": [], "active_elapsed_seconds": 20,
+        "resource_budget": {
+            "max_runtime_seconds": 10, "max_tool_calls": 2, "max_model_calls": 1
+        },
+    })
+    result = runner.run_task(task.id)
+
+    assert result["status"] == "cancelled"
+    assert "already exhausted" in result["reason"]
+    assert runner.provider.calls == 0
+    assert result["receipts"] == []
+
+
+def test_model_call_budget_stops_before_planning(tmp_path):
+    store = Store(tmp_path / "model-budget.sqlite3")
+    runner = _runner(tmp_path, store, '{"steps":[]}')
+    task = runner.tasks.create("No model calls allowed", {
+        "kind": "autonomy", "receipts": [],
+        "resource_budget": {
+            "max_runtime_seconds": 30, "max_tool_calls": 2, "max_model_calls": 0
+        },
+    })
+    result = runner.run_task(task.id)
+
+    assert result["status"] == "cancelled"
+    assert "model-call budget exhausted" in result["reason"]
+    assert runner.provider.calls == 0
