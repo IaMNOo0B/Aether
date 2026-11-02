@@ -339,7 +339,7 @@ class AdvancedResearch:
                 if not full_text or quote not in captured:
                     raise ValueError("Quantitative effect quote must match captured full text exactly")
                 numeric_values = [float(value) for value in re.findall(
-                    r"[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?", quote
+                    r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?", quote
                 )]
                 estimate, standard_error = float(payload["effect_estimate"]), float(payload["standard_error"])
                 if not any(math.isclose(value, estimate, rel_tol=1e-9, abs_tol=1e-12) for value in numeric_values):
