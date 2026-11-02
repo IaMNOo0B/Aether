@@ -151,16 +151,23 @@ def main() -> int:
 
             if lower.startswith("/task "):
                 parts = user_text.split(maxsplit=2)
-                if len(parts) != 3 or parts[1].casefold() not in {"pause", "resume", "cancel"}:
-                    print("Usage: /task pause|resume|cancel TASK_ID")
+                if len(parts) != 3 or parts[1].casefold() not in {"pause", "resume", "cancel", "replan"}:
+                    print("Usage: /task pause|resume|cancel TASK_ID | /task replan TASK_ID | NEW OBJECTIVE")
                     continue
-                action, task_id = parts[1].casefold(), parts[2].strip()
-                if action == "pause":
-                    task = engine.tasks.pause(task_id)
-                elif action == "resume":
-                    task = engine.tasks.resume(task_id)
+                action, task_argument = parts[1].casefold(), parts[2].strip()
+                if action == "replan":
+                    fields = task_argument.split("|", 1)
+                    task_id = fields[0].strip()
+                    new_objective = fields[1].strip() if len(fields) == 2 else None
+                    task = engine.tasks.replan(task_id, new_objective)
                 else:
-                    task = engine.tasks.cancel(task_id)
+                    task_id = task_argument
+                    if action == "pause":
+                        task = engine.tasks.pause(task_id)
+                    elif action == "resume":
+                        task = engine.tasks.resume(task_id)
+                    else:
+                        task = engine.tasks.cancel(task_id)
                 print(f"AETHER > Task {task.id}: {task.status}")
                 continue
 
@@ -176,7 +183,7 @@ def main() -> int:
                         print(f"{goal['id']} | {goal['status']} | {goal['title']}")
                 elif action == "list":
                     for goal in goals.prioritize():
-                        print(f"{goal['id']} | {goal['status']} | priority={goal['priority']:.2f} | {goal['title']}")
+                        print(f"{goal['id']} | {goal['goal_level']} | {goal['status']} | priority={goal['priority']:.2f} | {goal['title']}")
                 elif action == "add":
                     fields = argument.split("|", 3)
                     if len(fields) < 3:
