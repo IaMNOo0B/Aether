@@ -137,6 +137,21 @@ Conflict detection only flags candidates; it does not decide which source is cor
 
 This is a conservative runtime decision gate, **not RLCD training**. Manually supplied probabilities are labelled as user-supplied; they are not treated as calibrated model outputs.
 
+### RLCD evaluation (Phase 5)
+
+Typed decision producers preserve the producing subsystem and source reference:
+- `DecisionManager.log_typed_prediction(...)` accepts named producers such as `assistant_model`, `research_claim`, `experiment_prediction`, `tool_verification`, `world_model`, and `operator`.
+- Symbolic world-model simulations automatically record the declared success probability. A later unambiguous success/failure observation resolves that prediction; ambiguous observations remain unresolved and are excluded from calibration metrics.
+- Producer labels and source references are provenance metadata, not authentication or proof of calibration.
+
+Run a deterministic held-out calibration benchmark against resolved outcomes:
+
+```powershell
+.venv\\Scripts\\python -m aether.rlcd_evaluation --database data/aether.sqlite3 --domain world-model --seed 42 --train-fraction 0.7 --bins 10 --output reports/rlcd/held-out.json
+```
+
+The benchmark fits a small Laplace-smoothed histogram calibrator on the training split and reports Brier score, log loss, ECE and AURC on a disjoint held-out split. It includes a dataset SHA-256 and fixed seed for reproducibility. This is a post-hoc calibration baseline, **not OpenJev-RLCD training**, not a model-weight update, and not evidence of generalization beyond the evaluated data. Full RLCD reproduction remains deferred: the target RTX 2060 6 GB is below the paper's reported 48 GB GPU setup.
+
 ### Emergency stop
 
 - `/emergency-stop` immediately records a persistent stop flag in SQLite.
