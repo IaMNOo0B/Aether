@@ -112,7 +112,6 @@ class ResearchCompletion:
         payload = {"instrument": f"AETHER-structured-{design}-v1", "design": design, "domains": ratings,
                    "limitation": "Structured domain checklist; not a validated RoB 2, ROBINS-I, CASP or JBI instrument."}
         event_id = uuid4().hex
-        self.store.append_research_experiment_event if False else None
         # Persist as a provenance-bearing research report; review_id/source_key are explicit metadata.
         self.store.save_research_report(
             event_id, f"risk-of-bias:{review_id}:{source_key}",
