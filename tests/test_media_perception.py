@@ -43,7 +43,7 @@ def test_input_rejects_oversized_file(monkeypatch, tmp_path):
     source = tmp_path / "large.mp4"
     source.write_bytes(b"x" * 20)
     monkeypatch.setattr(media, "MAX_MEDIA_BYTES", 10)
-    with pytest.raises(media.MediaError, match="safety limit"):
+    with pytest.raises(media.MediaError, match="between 1 byte"):
         media._input_file(source)
 
 
