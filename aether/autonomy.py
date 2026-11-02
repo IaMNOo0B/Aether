@@ -509,7 +509,8 @@ class AutonomyRunner:
                         "receipts": receipts, "completed_steps": completed_steps,
                         "reason": "Pause requested; task stopped at a safe step boundary.",
                     }
-                enforce_goal_budget()\n                if not set(step["depends_on"]).issubset(completed_steps):
+                enforce_goal_budget()
+                if not set(step["depends_on"]).issubset(completed_steps):
                     raise RuntimeError(
                         f"Plan dependency is not satisfied before step {step['id']}"
                     )
@@ -541,7 +542,11 @@ class AutonomyRunner:
                         ],
                         "attempt": replan_attempts + 1,
                     }
-                    enforce_goal_budget()\n                    if model_calls >= max_goal_model_calls:\n                        raise ResourceLimitExceeded("Goal model-call budget exhausted before replanning")\n                    replanned = self._make_plan(task_data["objective"], context)\n                    model_calls += 1
+                    enforce_goal_budget()
+                    if model_calls >= max_goal_model_calls:
+                        raise ResourceLimitExceeded("Goal model-call budget exhausted before replanning")
+                    replanned = self._make_plan(task_data["objective"], context)
+                    model_calls += 1
                     def action_key(item: dict[str, Any]) -> str:
                         clean = {k: v for k, v in item.get("args", {}).items() if k != "purpose"}
                         return item["tool"] + ":" + json.dumps(clean, sort_keys=True, ensure_ascii=False)
@@ -581,7 +586,8 @@ class AutonomyRunner:
                         "replan_history": replan_history,
                     })
                     continue
-                enforce_goal_budget()\n                verification = self._verify_result(step["tool"], step.get("args", {}), result)
+                enforce_goal_budget()
+                verification = self._verify_result(step["tool"], step.get("args", {}), result)
                 receipt = {
                     "step": len(receipts) + 1,
                     "plan_step_id": step["id"],
