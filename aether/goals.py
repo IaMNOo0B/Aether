@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from aether.storage import Store
 from aether.tasks import TaskManager
+from aether.self_model import SelfModel
 
 
 DEFAULT_BUDGET = {"max_runtime_seconds": 300, "max_tool_calls": 8, "max_model_calls": 1}
@@ -25,6 +26,10 @@ class GoalManager:
         required = ("title", "purpose", "source", "source_key", "expected_benefit", "stop_condition")
         if any(not isinstance(goal.get(key), str) or not goal[key].strip() for key in required):
             raise ValueError("Goal title, purpose, source, source_key, benefit and stop condition are required")
+        if goal.get("goal_level", "immediate") not in {
+            "immediate", "project", "system", "research", "exploration"
+        }:
+            raise ValueError("Unsupported goal level")
         priority, complexity = goal.get("priority", 0.5), goal.get("complexity", 2)
         if isinstance(priority, bool) or not isinstance(priority, (int, float)) or not 0 <= priority <= 1:
             raise ValueError("Goal priority must be between 0 and 1")
@@ -45,6 +50,7 @@ class GoalManager:
     def propose(
         self, *, title: str, purpose: str, source: str, source_key: str,
         expected_benefit: str, priority: float = 0.5, complexity: int = 2,
+        goal_level: str = "immediate",
         resource_budget: dict[str, int] | None = None, risks: list[str] | None = None,
         deadline_at: str | None = None, dependencies: list[str] | None = None,
         completion_criteria: list[str] | None = None,
@@ -54,6 +60,7 @@ class GoalManager:
             "id": uuid4().hex, "title": title.strip(), "purpose": purpose.strip(),
             "source": source.strip(), "source_key": source_key.strip(),
             "expected_benefit": expected_benefit.strip(), "priority": priority,
+            "goal_level": goal_level,
             "complexity": complexity, "resource_budget": {**DEFAULT_BUDGET, **(resource_budget or {})},
             "risks": risks or [], "deadline_at": deadline_at,
             "dependencies": dependencies or [], "completion_criteria": completion_criteria or [],
@@ -96,6 +103,33 @@ class GoalManager:
                 stop_condition="Stop and request human review if prior side effects cannot be established.",
             )
             discovered.append(goal)
+        # Unverified/degraded capabilities are knowledge gaps, not permission to mutate code.
+        profile = SelfModel(self.store.path).snapshot()
+        for capability in profile["capabilities"]:
+            if capability["state"] == "verified":
+                continue
+            goal = self.propose(
+                title=f"Verify capability: {capability['name']}",
+                purpose=(
+                    f"Inspect the implementation and tests for capability {capability['id']}; "
+                    "run safe validation and record concrete evidence. Do not modify production code."
+                ),
+                source="capability_gap",
+                source_key=f"capability:{capability['id']}:{capability['state']}",
+                expected_benefit="Replace assumed capability status with test-backed evidence.",
+                priority=0.45 if capability["state"] == "planned" else 0.6,
+                complexity=2, goal_level="system",
+                risks=["A module may exist without being operational on this machine."],
+                completion_criteria=[
+                    "Inspect the actual implementation and relevant tests.",
+                    "Run a reproducible, non-destructive validation.",
+                    "Record the exact test result or leave the capability unverified.",
+                ],
+                stop_condition="Stop if required hardware, credentials, or user approval are unavailable.",
+            )
+            discovered.append(goal)
+            if len(discovered) >= max(1, min(limit, 50)):
+                break
         return discovered
 
     def approve(self, goal_id: str) -> dict[str, Any]:
