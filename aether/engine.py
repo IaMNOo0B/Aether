@@ -95,7 +95,7 @@ class AetherEngine:
         self.knowledge = KnowledgeGraph(
             store, self.provider() if settings.models.enabled else None
         )
-        self.world = WorldModel(store)
+        self.world = WorldModel(store, self.decisions)
         self.self_model = SelfModel(
             store.path, settings.app.name, "0.3.0"
         )
