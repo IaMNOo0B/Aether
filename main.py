@@ -348,6 +348,58 @@ def main() -> int:
                 print("Usage: /world create|list|state|action|actions|simulate|compare|observe|history")
                 continue
 
+            if lower.startswith("/reviewer "):
+                parts = user_text[len("/reviewer "):].split(maxsplit=1)
+                if len(parts) != 2 or parts[0].casefold() != "register":
+                    print("Usage: /reviewer register REVIEWER_ID")
+                    continue
+                password = getpass("New reviewer password (minimum 12 characters): ")
+                if password != getpass("Confirm password: "):
+                    print("AETHER > Passwords did not match.")
+                    continue
+                identity = ResearchCompletion(store).register_reviewer(parts[1].strip(), password)
+                print(f"AETHER > Reviewer identity registered: {identity['reviewer_id']}")
+                continue
+
+            if lower.startswith("/review-method "):
+                parts = user_text[len("/review-method "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                completion = ResearchCompletion(store)
+                if action == "prisma" and argument:
+                    print(json.dumps(completion.prisma_flow(argument.strip()), indent=2))
+                    continue
+                if action == "publication-bias" and argument:
+                    result = completion.publication_bias_for_review(argument.strip())
+                    report_id = uuid4().hex
+                    store.save_research_report(report_id, f"publication-bias:{argument.strip()}",
+                        json.dumps(result, indent=2), [{"title": "Publication bias analysis", "url": "",
+                        "evidence_type": "publication-bias-analysis", "summary": result.get("status", "")}])
+                    result["report_id"] = report_id
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "grade":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review-method grade REVIEW_ID | OUTCOME | STARTING_LEVEL | DOMAINS_JSON | RATIONALE")
+                        continue
+                    result = completion.grade_certainty(fields[0].strip(), fields[1].strip(),
+                        fields[2].strip(), json.loads(fields[3]), fields[4])
+                    print(json.dumps(result, indent=2))
+                    continue
+                if action == "rob":
+                    fields = argument.split("|", 4)
+                    if len(fields) != 5:
+                        print("Usage: /review-method rob REVIEW_ID | SOURCE_URL | DESIGN | REVIEWER_ID | DOMAIN_RATINGS_JSON")
+                        continue
+                    password = getpass("Reviewer password: ")
+                    result = completion.record_risk_of_bias(fields[0].strip(), fields[1].strip(),
+                        fields[2].strip(), fields[3].strip(), password, json.loads(fields[4]))
+                    print(json.dumps(result, indent=2))
+                    continue
+                print("Usage: /review-method prisma REVIEW_ID | publication-bias REVIEW_ID | grade ... | rob ...")
+                continue
+
             if lower.startswith("/experiment "):
                 parts = user_text[len("/experiment "):].split(maxsplit=1)
                 action = parts[0].casefold()
