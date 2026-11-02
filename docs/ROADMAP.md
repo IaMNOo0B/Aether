@@ -76,7 +76,7 @@ AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX
 - [x] Per-goal active-runtime, model-call, and tool-call budgets.
 - [x] System CPU/RAM/GPU/VRAM guards, emergency stop, and persistent notifications.
 - [x] Startup recovery marks interrupted tasks for manual review; uncertain side effects are never replayed.
-- [ ] Broader automatic goal discovery from external project signals, knowledge gaps, and performance-regression telemetry.
+- [ ] Broader goal discovery from project dependency changes, external-system events, and new research opportunities.
 - [ ] OS-level sandbox for arbitrary code (not provided by the current copy-based candidate workflow).
 
 Scheduled autonomy is opt-in and read-only. Workspace writes and test execution still require an interactive human approval. Goal discovery creates proposals only; it never silently authorizes execution. Resource budgets are enforced at task boundaries and before each tool call; they are not hard real-time OS quotas. No arbitrary shell, unrestricted filesystem, or unrestricted URL-fetch tool is exposed.
