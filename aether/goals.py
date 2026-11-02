@@ -5,7 +5,9 @@ Discovered goals are proposals only. No discovery path grants execution permissi
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+import json
 from uuid import uuid4
 
 from aether.storage import Store
@@ -17,8 +19,9 @@ DEFAULT_BUDGET = {"max_runtime_seconds": 300, "max_tool_calls": 8, "max_model_ca
 
 
 class GoalManager:
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, project_root: str | Path = "."):
         self.store = store
+        self.project_root = Path(project_root).resolve()
         self.tasks = TaskManager(store)
 
     @staticmethod
@@ -145,6 +148,47 @@ class GoalManager:
             discovered.append(goal)
             if len(discovered) >= discovery_limit:
                 break
+
+        # Acceptance reports are durable signals of known capability gaps and regressions.
+        report_path = self.project_root / "reports" / "acceptance" / "latest.json"
+        if len(discovered) < discovery_limit and report_path.is_file():
+            try:
+                if report_path.stat().st_size <= 1_000_000:
+                    report = json.loads(report_path.read_text(encoding="utf-8"))
+                    generated_at = str(report.get("generated_at", "unknown"))
+                    for item in report.get("results", []):
+                        if len(discovered) >= discovery_limit:
+                            break
+                        status = item.get("acceptance_status")
+                        if status not in {"FAIL", "PARTIAL"}:
+                            continue
+                        case_id = str(item.get("id", "unknown"))
+                        name = str(item.get("name", "acceptance gap"))[:100]
+                        limitation = "; ".join(str(value)[:300] for value in item.get("limitations", []))
+                        goal = self.propose(
+                            title=f"Review acceptance gap {case_id}: {name}",
+                            purpose=(
+                                f"Investigate OMEGA acceptance case {case_id} ({name}). "
+                                f"Current status: {status}. Expected: {str(item.get('expected', 'not recorded'))[:500]}. "
+                                f"Observed: {str(item.get('actual', 'not recorded'))[:500]}. "
+                                f"Known limitations: {limitation or 'none recorded'}"
+                            ),
+                            source="acceptance_gap",
+                            source_key=f"acceptance-gap:{generated_at}:{case_id}:{status}",
+                            expected_benefit="Turn a measured acceptance gap into a bounded, reviewable engineering objective.",
+                            priority=0.75 if status == "FAIL" else 0.5,
+                            complexity=3, goal_level="system",
+                            risks=["A partial acceptance result may represent a documented limitation rather than a defect."],
+                            completion_criteria=[
+                                "Reproduce the reported gap or verify the stated limitation.",
+                                "Propose a root-cause correction or document why it is out of scope.",
+                                "Re-run the relevant acceptance tests and preserve the result.",
+                            ],
+                            stop_condition="Stop if the report is stale, evidence cannot be reproduced, or the fix requires unsafe permissions.",
+                        )
+                        discovered.append(goal)
+            except (OSError, ValueError, TypeError):
+                pass
         return discovered
 
     def approve(self, goal_id: str) -> dict[str, Any]:
