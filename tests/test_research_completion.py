@@ -12,6 +12,10 @@ def test_reviewer_password_authentication_and_duplicate_identity(tmp_path):
     assert workflow.authenticate_reviewer("reviewer-1", "correct horse battery")
     assert not workflow.authenticate_reviewer("reviewer-1", "wrong password")
     assert not workflow.authenticate_reviewer("unknown", "wrong password")
+    backup = tmp_path / "reviewer-backup.sqlite3"
+    workflow.store.backup_to(backup)
+    restored = ResearchCompletion(Store(backup))
+    assert restored.authenticate_reviewer("reviewer-1", "correct horse battery")
     with pytest.raises(ValueError, match="already exists"):
         workflow.register_reviewer("reviewer-1", "another strong password")
 
