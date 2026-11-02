@@ -7,6 +7,7 @@ from uuid import uuid4
 import json
 import subprocess
 import sys
+import time
 
 from aether.config import AutonomySettings, LimitSettings, ResearchSettings
 from aether.providers import ChatProvider
@@ -455,9 +456,31 @@ class AutonomyRunner:
         steps: list[dict[str, Any]] = (
             list(task_data["state"].get("plan", [])) if has_saved_plan else []
         )
+        budget = dict(task_data["state"].get("goal_resource_budget", {}))
+        max_goal_steps = int(budget.get("max_steps", self.limits.max_autonomy_steps))
+        max_goal_runtime = float(budget.get("max_runtime_seconds", self.limits.tool_timeout_seconds * max(1, self.limits.max_autonomy_steps)))
+        max_goal_model_calls = int(budget.get("max_model_calls", self.limits.max_autonomy_steps + 2))
+        model_calls = int(task_data["state"].get("model_calls", 0))
+        started_at = time.monotonic()
+
+        def enforce_goal_budget() -> None:
+            if time.monotonic() - started_at > max_goal_runtime:
+                raise ResourceLimitExceeded(f"Goal runtime budget exceeded ({max_goal_runtime:g} seconds)")
+
         try:
             saved_plan = task_data["state"].get("plan")
-            steps = saved_plan if isinstance(saved_plan, list) else self._make_plan(task_data["objective"])
+            if not isinstance(saved_plan, list):
+                if model_calls >= max_goal_model_calls:
+                    raise ResourceLimitExceeded("Goal model-call budget exhausted before planning")
+                steps = self._make_plan(task_data["objective"])
+                model_calls += 1
+            else:
+                steps = saved_plan
+            if len(steps) > min(self.limits.max_autonomy_steps, max_goal_steps):
+                raise ResourceLimitExceeded(
+                    f"Goal plan has {len(steps)} steps; budget allows {min(self.limits.max_autonomy_steps, max_goal_steps)}"
+                )
+            enforce_goal_budget()
             self.tasks.checkpoint(task_id, {
                 **preserved_state, "kind": "autonomy",
                 "plan": steps, "receipts": receipts,
