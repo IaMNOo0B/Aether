@@ -120,7 +120,7 @@ class TaskManager:
         state["receipts"] = []
         state["current_step"] = 0
         state["model_calls"] = 0
-        state["started_at_epoch"] = time.time()
+        state["active_elapsed_seconds"] = 0.0
         for key in ("pause_requested", "pause_reason", "cancel_requested", "cancel_reason"):
             state.pop(key, None)
         updated = self.store.replan_paused_task(task_id, objective, state)
