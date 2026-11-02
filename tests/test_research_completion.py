@@ -153,3 +153,29 @@ def test_authenticated_stage_and_citation_actions_reject_wrong_credentials(tmp_p
             "missing-evidence", "reviewer-a", "insufficient", "The evidence is not sufficient.",
             password="wrong password",
         )
+
+def test_prisma_2020_checklist_requires_all_items_and_persists_completed_report(tmp_path):
+    from aether.research_advanced import AdvancedResearch
+    from aether.research_completion import PRISMA_2020_CHECKLIST
+
+    store = Store(tmp_path / "aether.sqlite3")
+    workflow = ResearchCompletion(store)
+    review = AdvancedResearch(store).create_systematic_review(
+        "Does intervention X improve outcome Y?", ["Human studies"], ["Animal studies"],
+        {"databases": ["Crossref"], "queries": ["intervention X"], "searched_on": "2026-11-02"},
+    )
+    responses = {
+        item_id: {"status": "reported", "location": f"Section {item_id}",
+                  "rationale": "The corresponding manuscript section reports this information."}
+        for item_id, _, _ in PRISMA_2020_CHECKLIST
+    }
+    assert len(responses) == 27
+    with pytest.raises(ValueError, match="all 27 items"):
+        workflow.record_prisma_checklist(review["id"], {"1": responses["1"]})
+    result = workflow.record_prisma_checklist(review["id"], responses)
+    assert result["checklist_completed"] is True
+    assert result["compliance_claim"] is False
+    assert result["reported_items"] == 27
+    assert store.get_research_report(result["report_id"]) is not None
+
+
