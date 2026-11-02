@@ -405,7 +405,7 @@ class AutonomyRunner:
                         f"Task tool-call budget exhausted ({len(receipts)} / {max_tool_calls})"
                     )
                 if self.resource_guard is not None:
-                    self.resource_guard.check(f"autonomy tool {steps[index]['tool']}")
+                    self.resource_guard.check(f"autonomy tool {steps[index]['tool']}", gpu_required=self.gpu_required)
                 step = steps[index]
                 result = self.gateway.execute(
                     step["tool"], step.get("args", {}), self._guard_approval(approval)
