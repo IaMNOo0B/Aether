@@ -1007,14 +1007,20 @@ class Store:
         now = utc_now()
         with self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute("SELECT status FROM tasks WHERE id=?", (task_id,)).fetchone()
+            row = db.execute("SELECT status, state_json FROM tasks WHERE id=?", (task_id,)).fetchone()
             if row is None:
                 raise KeyError(f"Unknown task: {task_id}")
             if row["status"] != "running":
                 raise ValueError(f"Only running tasks can be checkpointed, found {row['status']}")
+            # Preserve control requests that may arrive while an external tool is running.
+            current_state = json.loads(row["state_json"])
+            checkpoint_state = dict(state)
+            for control_key in ("pause_requested", "pause_reason", "cancel_requested", "cancel_reason"):
+                if control_key in current_state:
+                    checkpoint_state[control_key] = current_state[control_key]
             db.execute(
                 "UPDATE tasks SET state_json=?, updated_at=? WHERE id=?",
-                (json.dumps(state), now, task_id),
+                (json.dumps(checkpoint_state), now, task_id),
             )
             db.execute(
                 """INSERT INTO task_events(task_id, event_type, from_status, to_status,
