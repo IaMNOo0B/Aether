@@ -47,6 +47,8 @@ class DecisionManager:
     def log_prediction(
         self, question: str, probability_true: float, domain: str,
         probability_source: str = "user-supplied",
+        *, producer_type: str | None = None, source_ref: str | None = None,
+        model_id: str | None = None, evidence_hash: str | None = None,
     ) -> str:
         text = question.strip()
         category = domain.strip().casefold()
@@ -65,10 +67,45 @@ class DecisionManager:
             metadata={
                 "domain": category,
                 "probability_source": probability_source,
-                "decision_schema": "binary-v1",
+                "decision_schema": "typed-binary-v2" if producer_type else "binary-v1",
+                **({"producer_type": producer_type} if producer_type else {}),
+                **({"source_ref": source_ref} if source_ref else {}),
+                **({"model_id": model_id} if model_id else {}),
+                **({"evidence_hash": evidence_hash} if evidence_hash else {}),
             },
         )
         return decision_id
+
+    def log_typed_prediction(
+        self, question: str, probability_true: float, domain: str, *,
+        producer_type: str, source_ref: str, model_id: str | None = None,
+        evidence_hash: str | None = None,
+    ) -> str:
+        """Record a prediction emitted by a named subsystem with traceable provenance.
+
+        The producer label is metadata, not authentication or proof that the
+        probability is calibrated. Outcomes must still be independently observed.
+        """
+        allowed = {
+            "assistant_model", "research_claim", "experiment_prediction",
+            "tool_verification", "world_model", "operator",
+        }
+        producer = producer_type.strip().casefold()
+        reference = source_ref.strip()
+        if producer not in allowed:
+            raise ValueError(f"Unsupported decision producer: {producer_type}")
+        if not reference:
+            raise ValueError("Typed decisions require a non-empty source_ref")
+        if evidence_hash is not None and not evidence_hash.strip():
+            raise ValueError("evidence_hash cannot be empty when supplied")
+        if model_id is not None and not model_id.strip():
+            raise ValueError("model_id cannot be empty when supplied")
+        return self.log_prediction(
+            question, probability_true, domain,
+            probability_source=f"typed-producer:{producer}",
+            producer_type=producer, source_ref=reference,
+            model_id=model_id, evidence_hash=evidence_hash,
+        )
 
     def resolve(self, decision_id: str, outcome: bool) -> None:
         self.store.resolve_decision(decision_id, outcome)
