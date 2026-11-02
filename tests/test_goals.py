@@ -309,3 +309,29 @@ def test_goal_replanning_rejects_dependency_cycles(tmp_path):
             completion_criteria=first["completion_criteria"],
             stop_condition=first["stop_condition"],
         )
+
+def test_scheduler_uses_one_combined_tick_budget_for_goals_and_schedules(tmp_path):
+    store = Store(tmp_path / "goals.sqlite3")
+    manager = GoalManager(store)
+    goal = make_goal(manager)
+    manager.approve(goal["id"])
+    store.create_schedule("one-schedule", "Run scheduled read-only report", 5, max_runs=1, now_epoch=0)
+    provider = FakeProvider(json.dumps({"steps": [
+        {"id": "list", "depends_on": [], "purpose": "List workspace",
+         "tool": "workspace.list", "args": {"path": "."}}
+    ]}))
+    runner = AutonomyRunner(
+        provider, store, AutonomySettings(enabled=True, allow_read_only=True),
+        LimitSettings(), ResearchSettings(), tmp_path,
+    )
+    scheduler = AutonomyScheduler(
+        store, runner, SchedulerSettings(enabled=True, max_tasks_per_tick=1),
+        goal_manager=manager,
+    )
+
+    result = scheduler.run_once()
+
+    assert len(result["goal_results"]) == 1
+    assert result["results"] == []
+    schedule = store.list_schedules()[0]
+    assert schedule["run_count"] == 0
