@@ -189,9 +189,9 @@ Run the five-scenario executor benchmark with `python -m aether.benchmark`. It u
 ### Extended evidence methods (operator-reviewed)
 
 - `/reviewer register REVIEWER_ID` creates a local reviewer identity. Passwords are salted and PBKDF2-HMAC-SHA256 hashed in a separate SQLite file beside the configured AETHER database; passwords are never stored in plaintext.
-- `/review-method prisma REVIEW_ID` emits PRISMA-style flow counts.\n- `/review-method prisma-checklist REVIEW_ID | RESPONSES_JSON` validates and persists all 27 PRISMA 2020 checklist items with manuscript locations and rationales. It does not certify compliance.
+- `/review-method prisma REVIEW_ID` emits PRISMA-style flow counts.\n- `/review-method prisma-checklist REVIEW_ID | RESPONSES_JSON` validates and persists all 27 PRISMA 2020 checklist items with manuscript locations and rationales. It does not certify compliance. Checklist source: https://www.prisma-statement.org/prisma-2020 (CC BY 4.0; Page et al., BMJ 2021).
 - `/review-method publication-bias REVIEW_ID` runs Egger regression only when at least 10 compatible extracted effects are available. The p-value is a normal approximation; asymmetry is not proof of publication bias.
-- `/review-method grade REVIEW_ID | OUTCOME | STARTING_LEVEL | DOMAINS_JSON | RATIONALE` records a transparent GRADE-inspired downgrade assessment. The operator must judge all five domains; this is not an official GRADEpro assessment.
+- `/review-method grade REVIEW_ID | OUTCOME | STARTING_LEVEL | DOMAINS_JSON | REVIEWER_ID | RATIONALE` records a transparent GRADE-inspired downgrade assessment. The operator must judge all five domains; this is not an official GRADEpro assessment.
 - `/review-method rob REVIEW_ID | SOURCE_URL | DESIGN | REVIEWER_ID | DOMAIN_RATINGS_JSON` records a dual-reviewed authenticated structured domain assessment for `randomized`, `nonrandomized`, `qualitative`, or `cross_sectional` designs. These are AETHER checklists, not validated RoB 2, ROBINS-I, CASP, or JBI instruments.
 - `/experiment ingest-raw ID | CSV_PATH | GROUP_COLUMN | OUTCOME_COLUMN | TREATMENT_LABEL | CONTROL_LABEL` ingests raw independent-group observations, validates rows, computes group means, a Welch standard error, and records the input hash in experiment history.
 
