@@ -100,10 +100,16 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_scheduler.py::test_scheduler_runs_persisted_goal_with_read_only_tools",
             "tests/test_scheduler.py::test_scheduler_never_approves_workspace_writes",
             "tests/test_emergency_stop.py::test_scheduler_does_not_enqueue_when_emergency_stop_is_active",
+            "tests/test_phase06_goals.py::test_goal_discovery_creates_proposal_without_auto_approval_or_execution",
+            "tests/test_phase06_goals.py::test_capability_gap_discovery_creates_system_goal_proposal",
+            "tests/test_phase06_goals.py::test_scheduler_executes_only_approved_goal_and_emits_notifications",
+            "tests/test_phase06_goals.py::test_pause_resume_continues_from_checkpoint_without_replanning_or_repeating_step",
+            "tests/test_phase06_goals.py::test_running_task_cancel_is_cooperative_and_audited",
+            "tests/test_phase06_goals.py::test_replan_preserves_history_and_only_allows_read_only_completed_steps",
         ],
         "full_scope": False,
         "limitations": [
-            "The scheduler executes user-defined scheduled goals; autonomous goal discovery and unattended task selection are not implemented."
+            "Goal discovery currently proposes recovery work from failed tasks and unverified capability records; it does not yet infer every project, research, performance-regression, or external-system opportunity. Discovery never self-authorizes: human approval is required, and unattended execution is restricted to approved goals and read-only tools."
         ],
     },
     {
@@ -132,7 +138,7 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
         ],
         "full_scope": False,
         "limitations": [
-            "CPU, RAM and NVIDIA VRAM telemetry and configurable preflight budgets now exist. Hard OS quotas, per-process CPU/RAM enforcement, guaranteed VRAM reservation, model-call accounting and dynamic concurrency scheduling remain unimplemented."
+            "Per-goal active-runtime, model-call and tool-call caps are now enforced alongside CPU/RAM/GPU/VRAM preflight checks. Hard OS quotas, per-process CPU/RAM enforcement, guaranteed VRAM reservation and dynamic concurrency scheduling remain unimplemented."
         ],
     },
     {
