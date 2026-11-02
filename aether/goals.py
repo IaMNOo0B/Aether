@@ -272,8 +272,9 @@ class GoalManager:
         goal = self.store.get_autonomy_goal(task["state"]["goal_id"])
         if goal is None:
             return
-        target = {"running": "running", "paused": "paused", "completed": "completed",
-                  "cancelled": "cancelled", "failed": "blocked"}.get(status)
+        target = {"queued": "queued", "running": "running", "paused": "paused",
+                  "completed": "completed", "cancelled": "cancelled",
+                  "failed": "blocked"}.get(status)
         if target and goal["status"] != target:
             try:
                 self.store.update_autonomy_goal(goal["id"], goal["status"], target, task_id=task_id)
