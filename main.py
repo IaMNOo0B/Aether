@@ -652,7 +652,9 @@ def main() -> int:
                     if len(fields) != 5:
                         print("Usage: /review screen REVIEW_ID | SOURCE_URL | REVIEWER_ID | include/exclude | REASON")
                         continue
-                    reviewer_id = fields[2].strip()\n                    password = getpass("Reviewer password: ") if ResearchCompletion(store).authentication_enabled() else None\n                    review = advanced.screen_source(*[field.strip() for field in fields], password=password)
+                    reviewer_id = fields[2].strip()
+                    password = getpass("Reviewer password: ") if ResearchCompletion(store).authentication_enabled() else None
+                    review = advanced.screen_source(*[field.strip() for field in fields], password=password)
                     print(f"AETHER > Screening saved. Two distinct reviewers are required for consensus.")
                     continue
                 if action == "resolve":
@@ -660,7 +662,9 @@ def main() -> int:
                     if len(fields) != 5:
                         print("Usage: /review resolve REVIEW_ID | SOURCE_URL | ADJUDICATOR_ID | include/exclude | RATIONALE")
                         continue
-                    adjudicator_id = fields[2].strip()\n                    password = getpass("Adjudicator password: ") if ResearchCompletion(store).authentication_enabled() else None\n                    review = advanced.resolve_review_conflict(*[field.strip() for field in fields], password=password)
+                    adjudicator_id = fields[2].strip()
+                    password = getpass("Adjudicator password: ") if ResearchCompletion(store).authentication_enabled() else None
+                    review = advanced.resolve_review_conflict(*[field.strip() for field in fields], password=password)
                     print("AETHER > Screening disagreement adjudicated.")
                     continue
                 if action == "stage":
@@ -670,7 +674,8 @@ def main() -> int:
                         continue
                     result = advanced.record_review_stage(
                         fields[0].strip(), fields[1].strip(), fields[2].strip(),
-                        fields[3].strip(), json.loads(fields[4])
+                        fields[3].strip(), json.loads(fields[4]),
+                        password=getpass("Reviewer password: ") if ResearchCompletion(store).authentication_enabled() else None,
                     )
                     print(json.dumps(result, indent=2))
                     continue
@@ -681,7 +686,8 @@ def main() -> int:
                         continue
                     result = advanced.resolve_review_stage(
                         fields[0].strip(), fields[1].strip(), fields[2].strip(),
-                        fields[3].strip(), json.loads(fields[4])
+                        fields[3].strip(), json.loads(fields[4]),
+                        password=getpass("Adjudicator password: ") if ResearchCompletion(store).authentication_enabled() else None,
                     )
                     print(json.dumps(result, indent=2))
                     continue
@@ -717,7 +723,8 @@ def main() -> int:
                     print("Usage: /citation-review EVIDENCE_ID | REVIEWER_ID | supports/contradicts/insufficient | RATIONALE")
                     continue
                 result = AdvancedResearch(store).adjudicate_citation(
-                    fields[0].strip(), fields[1].strip(), fields[2].strip(), fields[3]
+                    fields[0].strip(), fields[1].strip(), fields[2].strip(), fields[3],
+                    password=getpass("Reviewer password: ") if ResearchCompletion(store).authentication_enabled() else None,
                 )
                 print(json.dumps(result, indent=2))
                 print("AETHER > Two distinct reviewer IDs are required for agreement; reviewer accounts are authenticated when registered.")
@@ -729,7 +736,8 @@ def main() -> int:
                     print("Usage: /citation-resolve EVIDENCE_ID | ADJUDICATOR_ID | supports/contradicts/insufficient | RATIONALE")
                     continue
                 result = AdvancedResearch(store).resolve_citation_conflict(
-                    fields[0].strip(), fields[1].strip(), fields[2].strip(), fields[3]
+                    fields[0].strip(), fields[1].strip(), fields[2].strip(), fields[3],
+                    password=getpass("Adjudicator password: ") if ResearchCompletion(store).authentication_enabled() else None,
                 )
                 print(json.dumps(result, indent=2))
                 continue
