@@ -290,6 +290,8 @@ class AdvancedResearch:
         review = self.store.get_systematic_review(review_id)
         if review is None:
             raise KeyError(f"Unknown systematic review: {review_id}")
+        if not any(item.get("source_key") == source_key for item in review.get("sources", [])):
+            raise ValueError("Assessment source must belong to the specified systematic review")
         if stage == "full_text":
             if payload.get("decision") not in {"include", "exclude"}:
                 raise ValueError("Full-text assessment requires include or exclude")
@@ -299,9 +301,16 @@ class AdvancedResearch:
                 raise ValueError("Included full text requires a page, section or paragraph locator")
         elif stage == "risk_of_bias":
             domains = payload.get("domains")
-            required = {"randomization", "deviations", "missing_data", "outcome_measurement", "selective_reporting"}
-            if not isinstance(domains, dict) or not required.issubset(domains):
-                raise ValueError("Risk-of-bias assessment requires five prespecified domains")
+            design = payload.get("design")
+            if design:
+                from aether.research_completion import RO_B_DOMAINS
+                required = set(RO_B_DOMAINS.get(design, ()))
+                if not required or set(domains or {}) != required:
+                    raise ValueError(f"Risk-of-bias assessment for {design} requires exactly its prespecified domains")
+            else:
+                required = {"randomization", "deviations", "missing_data", "outcome_measurement", "selective_reporting"}
+                if not isinstance(domains, dict) or not required.issubset(domains):
+                    raise ValueError("Risk-of-bias assessment requires five prespecified domains")
             valid = {"low", "some_concerns", "high", "not_applicable"}
             for name in required:
                 item = domains[name]
