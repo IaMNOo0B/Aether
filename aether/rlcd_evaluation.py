@@ -128,7 +128,7 @@ def evaluate_held_out(
     bin_count: int = 10,
 ) -> HeldOutCalibrationReport:
     """Fit on one deterministic split and report metrics only on unseen rows."""
-    if not 0.5 <= train_fraction <= 0.9:
+    if isinstance(train_fraction, bool) or not isinstance(train_fraction, (int, float)) or not 0.5 <= train_fraction <= 0.9:
         raise ValueError("train_fraction must be between 0.5 and 0.9")
     if isinstance(seed, bool) or not isinstance(seed, int):
         raise ValueError("seed must be an integer")
@@ -192,9 +192,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     records = Store(args.database).list_decisions(resolved_only=True, limit=10000)
+    domains = {item.get("metadata", {}).get("domain") for item in records}
+    domains.discard(None)
     if args.domain:
         domain = args.domain.strip().casefold()
         records = [item for item in records if item.get("metadata", {}).get("domain") == domain]
+    elif len(domains) > 1:
+        raise ValueError(
+            "Resolved decisions span multiple domains; specify --domain to avoid mixing incomparable tasks"
+        )
     report = evaluate_held_out(
         records, train_fraction=args.train_fraction, seed=args.seed, bin_count=args.bins
     )
