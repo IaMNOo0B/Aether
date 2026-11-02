@@ -62,7 +62,7 @@ def main() -> int:
             gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
         )
 
-    if settings.scheduler.enabled:
+    if settings.scheduler.enabled and settings.autonomy.enabled and settings.models.enabled:
         scheduled_runner = make_autonomy_runner()
         scheduler = AutonomyScheduler(
             store, scheduled_runner, settings.scheduler, goal_manager=goal_manager
@@ -72,6 +72,10 @@ def main() -> int:
             name="AETHER-Scheduler", daemon=True,
         )
         scheduler_thread.start()
+    elif settings.scheduler.enabled:
+        logging.warning(
+            "Scheduler requested but not started: models.enabled and autonomy.enabled must both be true."
+        )
 
     status = engine.status()
     print(f"{status['name']} v{status['version']} | Windows-first local AI")
