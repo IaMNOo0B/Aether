@@ -290,3 +290,22 @@ def test_goal_resource_budgets_have_hard_upper_bounds(tmp_path):
             manager, source_key="unknown-budget",
             resource_budget={"max_steps": 5, "max_runtime_seconds": 30, "max_model_calls": 8, "unlimited": True},
         )
+
+def test_goal_replanning_rejects_dependency_cycles(tmp_path):
+    store = Store(tmp_path / "goals.sqlite3")
+    manager = GoalManager(store)
+    first = make_goal(manager, source_key="first")
+    second = make_goal(
+        manager, source_key="second", dependencies=[first["id"]],
+        title="Dependent goal",
+    )
+    with pytest.raises(ValueError, match="cycle"):
+        manager.replan(
+            first["id"], purpose="Create a circular dependency",
+            expected_benefit=first["expected_benefit"], priority=first["priority"],
+            complexity=first["complexity"], risk_score=first["risk_score"],
+            resource_budget=first["resource_budget"], risks=first["risks"],
+            deadline_at=first["deadline_at"], dependencies=[second["id"]],
+            completion_criteria=first["completion_criteria"],
+            stop_condition=first["stop_condition"],
+        )
