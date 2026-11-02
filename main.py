@@ -15,6 +15,7 @@ from aether.config import load_settings
 from aether.desktop import DesktopController
 from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
+from aether.goals import GoalManager
 from aether.learning import SkillLearner
 from aether.research import ResearchError, ResearchSource, Researcher
 from aether.research_quality import ResearchWorkflow
@@ -48,17 +49,24 @@ def main() -> int:
         print("AETHER could not start. Check logs/aether.log and config/settings.toml.")
         return 1
 
+    goal_manager = GoalManager(store, engine.self_model)
     scheduler = None
     scheduler_stop = Event()
     scheduler_thread = None
-    if settings.scheduler.enabled:
-        scheduled_runner = AutonomyRunner(
+
+    def make_autonomy_runner() -> AutonomyRunner:
+        return AutonomyRunner(
             engine.provider(), store, settings.autonomy, settings.limits,
             settings.research, Path.cwd(),
             resource_guard=engine.resources,
             gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
         )
-        scheduler = AutonomyScheduler(store, scheduled_runner, settings.scheduler)
+
+    if settings.scheduler.enabled:
+        scheduled_runner = make_autonomy_runner()
+        scheduler = AutonomyScheduler(
+            store, scheduled_runner, settings.scheduler, goal_manager=goal_manager
+        )
         scheduler_thread = Thread(
             target=scheduler.run_forever, args=(scheduler_stop,),
             name="AETHER-Scheduler", daemon=True,
@@ -219,6 +227,169 @@ def main() -> int:
                     f"Brier: {report.brier_score:.4f} | Log loss: {report.log_loss:.4f} | "
                     f"ECE: {report.expected_calibration_error:.4f} | AURC: {report.aurc:.4f}"
                 )
+                continue
+
+            if lower.startswith("/goal "):
+                parts = user_text[len("/goal "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+
+                if action == "discover":
+                    proposals = goal_manager.discover()
+                    print(f"AETHER > {len(proposals)} proposed goal(s) are awaiting review. Nothing was auto-approved.")
+                    for goal in proposals:
+                        print(f"{goal['id']} | score={goal_manager.priority_score(goal)} | risk={goal['risk_score']:.2f} | {goal['title']}")
+                    continue
+
+                if action == "list":
+                    goals = store.list_autonomy_goals(limit=100)
+                    if not goals:
+                        print("AETHER > No autonomy goals.")
+                    for goal in goals:
+                        print(f"{goal['id']} | {goal['status']} | score={goal_manager.priority_score(goal)} | {goal['title']}")
+                    continue
+
+                if action == "show" and argument:
+                    goal = store.get_autonomy_goal(argument.strip())
+                    if goal is None:
+                        print("AETHER > Goal not found.")
+                    else:
+                        print(json.dumps(goal, indent=2))
+                        print(json.dumps(store.autonomy_goal_events(goal['id']), indent=2))
+                    continue
+
+                if action == "create":
+                    fields = argument.split("|", 5)
+                    if len(fields) < 3:
+                        print("Usage: /goal create TITLE | PURPOSE | EXPECTED BENEFIT | priority(0..1) | complexity(1..5) | risk(0..1)")
+                        continue
+                    priority = float(fields[3]) if len(fields) > 3 and fields[3].strip() else 0.5
+                    complexity = int(fields[4]) if len(fields) > 4 and fields[4].strip() else 2
+                    risk_score = float(fields[5]) if len(fields) > 5 and fields[5].strip() else 0.1
+                    goal = goal_manager.create(
+                        title=fields[0].strip(), purpose=fields[1].strip(),
+                        expected_benefit=fields[2].strip(), priority=priority,
+                        complexity=complexity, risk_score=risk_score,
+                        source="operator", source_key=f"operator:{uuid4().hex}",
+                        risks=["Operator-created goal; review generated plan before approving."],
+                        completion_criteria=["The stated purpose is completed and deterministic tool results are verified."],
+                    )
+                    print(f"AETHER > Goal proposal created: {goal['id']}. It is not approved.")
+                    continue
+
+                if action in {"approve", "reject"} and argument.strip():
+                    result = goal_manager.approve(argument.strip()) if action == "approve" else goal_manager.reject(argument.strip())
+                    print(f"AETHER > Goal {result['id']} is now {result['status']}.")
+                    continue
+
+                if action == "run" and argument.strip():
+                    if not settings.autonomy.enabled:
+                        print("AETHER > Autonomy is disabled in config/settings.toml.")
+                        continue
+                    goal = store.get_autonomy_goal(argument.strip())
+                    if goal is None:
+                        print("AETHER > Goal not found.")
+                        continue
+                    if goal["status"] != "approved":
+                        print("AETHER > Only explicitly approved goals can run.")
+                        continue
+                    if not goal_manager.dependencies_satisfied(goal):
+                        print("AETHER > Goal dependencies are not complete.")
+                        continue
+                    task_id = store.enqueue_approved_autonomy_goal(goal["id"], uuid4().hex)
+                    goal_manager.transition(goal["id"], "running", {"execution": "operator_initiated"}, task_id)
+                    result = make_autonomy_runner().run_task(task_id, ask_approval)
+                    goal_manager.sync_task_result(goal["id"], result)
+                    print(f"AETHER > Goal {goal['id']} | {result['status']}")
+                    print(json.dumps(result.get("receipts", []), indent=2))
+                    continue
+
+                if action == "pause" and argument.strip():
+                    goal = store.get_autonomy_goal(argument.strip())
+                    if goal is None or not goal.get("task_id"):
+                        print("AETHER > Goal or task not found.")
+                        continue
+                    task = store.get_task(goal["task_id"])
+                    if task and task["status"] == "running":
+                        engine.tasks.request_pause(task["id"])
+                        print("AETHER > Pause requested. Current tool will finish; task pauses at the next safe boundary.")
+                    else:
+                        print("AETHER > Only a running task can receive a pause request.")
+                    continue
+
+                if action == "resume" and argument.strip():
+                    if not settings.autonomy.enabled:
+                        print("AETHER > Autonomy is disabled in config/settings.toml.")
+                        continue
+                    goal = store.get_autonomy_goal(argument.strip())
+                    if goal is None or goal["status"] != "paused" or not goal.get("task_id"):
+                        print("AETHER > Only a paused goal with a saved task can be resumed.")
+                        continue
+                    goal_manager.transition(goal["id"], "queued", {"resumed_by": "operator"})
+                    goal_manager.transition(goal["id"], "running", {"resumed_by": "operator"}, goal["task_id"])
+                    result = make_autonomy_runner().resume_task(goal["task_id"], ask_approval)
+                    goal_manager.sync_task_result(goal["id"], result)
+                    print(f"AETHER > Goal {goal['id']} | {result['status']}")
+                    continue
+
+                if action == "cancel" and argument.strip():
+                    goal = store.get_autonomy_goal(argument.strip())
+                    if goal is None:
+                        print("AETHER > Goal not found.")
+                        continue
+                    if goal.get("task_id"):
+                        task = store.get_task(goal["task_id"])
+                        if task and task["status"] == "running":
+                            engine.tasks.request_cancel(task["id"], "Goal cancelled by operator")
+                            print("AETHER > Cancellation requested; the active tool will finish before stopping.")
+                            continue
+                        if task and task["status"] in {"queued", "paused"}:
+                            engine.tasks.request_cancel(task["id"], "Goal cancelled by operator")
+                    if goal["status"] not in {"completed", "cancelled", "rejected"}:
+                        goal_manager.transition(goal["id"], "cancelled", {"reason": "Cancelled by operator"})
+                    print("AETHER > Goal cancelled.")
+                    continue
+
+                if action == "replan":
+                    fields = argument.split("|", 6)
+                    if len(fields) < 2:
+                        print("Usage: /goal replan ID | new purpose | benefit(optional) | priority | complexity | risk")
+                        continue
+                    goal = store.get_autonomy_goal(fields[0].strip())
+                    if goal is None:
+                        print("AETHER > Goal not found.")
+                        continue
+                    purpose = fields[1].strip()
+                    benefit = fields[2].strip() if len(fields) > 2 and fields[2].strip() else goal["expected_benefit"]
+                    priority = float(fields[3]) if len(fields) > 3 and fields[3].strip() else goal["priority"]
+                    complexity = int(fields[4]) if len(fields) > 4 and fields[4].strip() else goal["complexity"]
+                    risk_score = float(fields[5]) if len(fields) > 5 and fields[5].strip() else goal["risk_score"]
+                    updated = goal_manager.replan(
+                        goal["id"], purpose=purpose, expected_benefit=benefit,
+                        priority=priority, complexity=complexity, risk_score=risk_score,
+                        resource_budget=goal["resource_budget"], risks=goal["risks"],
+                        deadline_at=goal["deadline_at"], dependencies=goal["dependencies"],
+                        completion_criteria=goal["completion_criteria"],
+                        stop_condition=goal["stop_condition"],
+                    )
+                    print(f"AETHER > Goal replanned: {updated['id']}. It returns to proposed status and needs approval again.")
+                    continue
+
+                print("Usage: /goal discover|list|show ID|create TITLE | PURPOSE | BENEFIT | priority | complexity | risk|approve ID|reject ID|run ID|pause ID|resume ID|cancel ID|replan ...")
+                continue
+
+            if lower == "/notifications":
+                notifications = store.list_notifications(unread_only=True)
+                if not notifications:
+                    print("AETHER > No unread notifications.")
+                for item in notifications:
+                    print(f"{item['id']} | {item['severity']} | {item['title']} | {item['message']}")
+                continue
+
+            if lower.startswith("/notification read "):
+                notification_id = user_text[len("/notification read "):].strip()
+                store.mark_notification_read(notification_id)
+                print("AETHER > Notification marked as read.")
                 continue
 
             if lower.startswith("/schedule "):
