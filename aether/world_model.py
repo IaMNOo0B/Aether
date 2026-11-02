@@ -198,7 +198,7 @@ class WorldModel:
             "expected_resource_cost": sum(action["resource_costs"].values()),
         }
         self.store.insert_world_simulation(simulation)
-        if self.decisions is not None:
+        if self.decisions is not None and simulation["executable"]:
             action_name = action["name"]
             self.decisions.log_typed_prediction(
                 f"Will symbolic world action '{action_name}' succeed?",
