@@ -369,6 +369,14 @@ def main() -> int:
                 if action == "prisma" and argument:
                     print(json.dumps(completion.prisma_flow(argument.strip()), indent=2))
                     continue
+                if action == "prisma-checklist":
+                    fields = argument.split("|", 1)
+                    if len(fields) != 2:
+                        print("Usage: /review-method prisma-checklist REVIEW_ID | RESPONSES_JSON")
+                        continue
+                    result = completion.record_prisma_checklist(fields[0].strip(), json.loads(fields[1]))
+                    print(json.dumps(result, indent=2))
+                    continue
                 if action == "publication-bias" and argument:
                     result = completion.publication_bias_for_review(argument.strip())
                     report_id = uuid4().hex
@@ -397,7 +405,7 @@ def main() -> int:
                         fields[2].strip(), fields[3].strip(), password, json.loads(fields[4]))
                     print(json.dumps(result, indent=2))
                     continue
-                print("Usage: /review-method prisma REVIEW_ID | publication-bias REVIEW_ID | grade ... | rob ...")
+                print("Usage: /review-method prisma REVIEW_ID | prisma-checklist REVIEW_ID | JSON | publication-bias REVIEW_ID | grade ... | rob ...")
                 continue
 
             if lower.startswith("/experiment "):
