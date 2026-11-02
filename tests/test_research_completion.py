@@ -100,7 +100,10 @@ def test_raw_observations_are_validated_and_saved_to_experiment_history(tmp_path
     result = workflow.ingest_raw_observations("exp-raw", data, "group", "value", "treatment", "control")
     assert result["mean_difference_treatment_minus_control"] == -4
     assert result["standard_error_welch"] > 0
-    assert store.list_research_experiment_events("exp-raw")[-1]["event_type"] == "raw_observations_ingested"
+    saved_event = store.list_research_experiment_events("exp-raw")[-1]
+    assert saved_event["event_type"] == "raw_observations_ingested"
+    import base64
+    assert base64.b64decode(saved_event["payload"]["raw_dataset_base64"]) == data
     with pytest.raises(ValueError, match="Unexpected group"):
         workflow.ingest_raw_observations(
             "exp-raw", b"group,value\ncontrol,1\nother,2\n", "group", "value", "treatment", "control"
@@ -179,3 +182,22 @@ def test_prisma_2020_checklist_requires_all_items_and_persists_completed_report(
     assert store.get_research_report(result["report_id"]) is not None
 
 
+
+def test_certainty_grading_requires_authenticated_reviewer_after_registration(tmp_path):
+    workflow = ResearchCompletion(Store(tmp_path / "aether.sqlite3"))
+    workflow.register_reviewer("grade-reviewer", "correct horse battery")
+    judgments = {
+        name: {"judgment": "none", "rationale": "The available evidence does not justify a downgrade."}
+        for name in ("risk_of_bias", "inconsistency", "indirectness", "imprecision", "publication_bias")
+    }
+    with pytest.raises(PermissionError, match="Authenticated reviewer"):
+        workflow.grade_certainty(
+            "review-1", "mortality", "high", judgments,
+            "The evidence is consistent but requires careful interpretation.",
+        )
+    result = workflow.grade_certainty(
+        "review-1", "mortality", "high", judgments,
+        "The evidence is consistent but requires careful interpretation.",
+        reviewer_id="grade-reviewer", password="correct horse battery",
+    )
+    assert result["reviewer_id"] == "grade-reviewer"
