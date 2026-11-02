@@ -73,13 +73,17 @@ class AutonomyScheduler:
                 result.update({"discovered_goals": [], "goal_results": []})
             return result
         discovered, goal_results = self._run_goal_tasks()
-        enqueued = self.store.enqueue_due_schedules(limit=self.settings.max_tasks_per_tick)
+        remaining_capacity = max(0, self.settings.max_tasks_per_tick - len(goal_results))
+        enqueued = (
+            self.store.enqueue_due_schedules(limit=remaining_capacity)
+            if remaining_capacity else []
+        )
         queued_scheduled = [
             task for task in self.store.list_tasks(status="queued", limit=100)
             if task["state"].get("scheduled") is True
         ]
         results = []
-        for task in queued_scheduled[:self.settings.max_tasks_per_tick]:
+        for task in queued_scheduled[:remaining_capacity]:
             try:
                 result = self.runner.run_task(task["id"], self._deny_side_effects)
                 results.append(result)
