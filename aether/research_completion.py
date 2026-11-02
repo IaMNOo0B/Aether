@@ -81,7 +81,7 @@ PRISMA_2020_CHECKLIST = (
 class ResearchCompletion:
     def __init__(self, store: Store):
         self.store = store
-        self.identity_path = store.path.with_name(store.path.stem + ".reviewers.sqlite3")
+        self.identity_path = store.path
         self._init_identity_db()
 
     def _init_identity_db(self) -> None:
