@@ -63,15 +63,15 @@ class AutonomyScheduler:
 
     def run_once(self) -> dict[str, Any]:
         if self.store.emergency_stop_enabled():
-            return {
-                "status": "emergency_stop", "enqueued": [],
-                "results": [], "discovered_goals": [], "goal_results": [],
-            }
+            result = {"status": "emergency_stop", "enqueued": [], "results": []}
+            if self.goal_manager is not None:
+                result.update({"discovered_goals": [], "goal_results": []})
+            return result
         if not self.settings.enabled:
-            return {
-                "status": "disabled", "enqueued": [],
-                "results": [], "discovered_goals": [], "goal_results": [],
-            }
+            result = {"status": "disabled", "enqueued": [], "results": []}
+            if self.goal_manager is not None:
+                result.update({"discovered_goals": [], "goal_results": []})
+            return result
         discovered, goal_results = self._run_goal_tasks()
         enqueued = self.store.enqueue_due_schedules(limit=self.settings.max_tasks_per_tick)
         queued_scheduled = [
