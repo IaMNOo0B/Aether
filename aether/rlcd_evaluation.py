@@ -152,6 +152,8 @@ def evaluate_held_out(
     random.Random(seed).shuffle(indices)
     split_at = int(len(indices) * train_fraction)
     split_at = max(1, min(len(indices) - 1, split_at))
+    if split_at < 5 or len(indices) - split_at < 5:
+        raise ValueError("The split must contain at least five training and five held-out decisions")
     train = [rows[index] for index in indices[:split_at]]
     held_out = [rows[index] for index in indices[split_at:]]
 
