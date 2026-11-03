@@ -162,15 +162,11 @@ class RLCDTrainingAdapter:
         self.root = Path(project_root).resolve()
 
 
-    def create_two_stage_plan(
-        self, config: RLCDExperimentConfig, plan_path: str | Path,
-    ) -> dict[str, Any]:
-        """Generate the exact published stage-1/stage-2 and fork-control command plan."""
+    @staticmethod
+    def _build_two_stage_runs(config: RLCDExperimentConfig) -> list[dict[str, Any]]:
         config.validate()
-        run_root = Path(config.run_root)
-        checkpoint_root = Path(config.checkpoint_root)
-        max_tokens, test_cap, prefix = (
-            (320, 1260, "gv") if config.task == "gsm8kv" else (256, 1000, "mp")
+        prefix, max_tokens, test_cap = (
+            ("gv", 320, 1260) if config.task == "gsm8kv" else ("mp", 256, 1000)
         )
         common = [
             "--task", config.task, "--model", config.model_id,
@@ -184,8 +180,8 @@ class RLCDTrainingAdapter:
         runs = []
         for seed in config.seeds:
             stage1_name = f"{prefix}_warm{config.steps}_seed{seed}"
-            checkpoint = (checkpoint_root / f"{prefix}_warm{config.steps}_s{seed}.pt").as_posix()
-            stage1_output = (run_root / f"{stage1_name}.json").as_posix()
+            checkpoint = (Path(config.checkpoint_root) / f"{prefix}_warm{config.steps}_s{seed}.pt").as_posix()
+            stage1_output = (Path(config.run_root) / f"{stage1_name}.json").as_posix()
             stage1 = [
                 "train", "--objective", "rlcd", *common, "--seed", str(seed),
                 "--kl-beta", "0.04", "--eval-every", str(config.eval_every),
@@ -201,7 +197,7 @@ class RLCDTrainingAdapter:
             stage2 = []
             for arm, flags in arms:
                 name = f"{prefix}_{arm}_seed{seed}"
-                output = (run_root / f"{name}.json").as_posix()
+                output = (Path(config.run_root) / f"{name}.json").as_posix()
                 args = [
                     "train", *common, "--seed", str(seed + 1000),
                     "--eval-every", str(config.eval_every),
@@ -214,6 +210,13 @@ class RLCDTrainingAdapter:
                     "checkpoint": checkpoint, "output": stage1_output},
                 "stage2": stage2,
             })
+        return runs
+
+    def create_two_stage_plan(
+        self, config: RLCDExperimentConfig, plan_path: str | Path,
+    ) -> dict[str, Any]:
+        """Generate the exact published stage-1/stage-2 and fork-control command plan."""
+        config.validate()
         plan = {
             "schema": "aether-openjev-rlcd-two-stage-plan-v1",
             "plan_id": sha256(json.dumps(asdict(config), sort_keys=True).encode()).hexdigest()[:16],
@@ -223,15 +226,17 @@ class RLCDTrainingAdapter:
             "config": asdict(config),
             "python_module": "openjev_rlcd.train",
             "environment": {"HF_HUB_OFFLINE": "1", "HF_DATASETS_OFFLINE": "1",
-                            "OPENJEV_DEVICE": "cuda", "PYTHONUNBUFFERED": "1"},
+                            "OPENJEV_DEVICE": "cuda", "PYTHONUNBUFFERED": "1",
+                            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"},
             "hardware_requirement": {"minimum_gpu_memory_gib": 48,
-                                     "cuda_required": True},
-            "runs": runs,
+                                     "cuda_required": True, "host_ram_gib": "not less than 32; 64 recommended"},
+            "runs": self._build_two_stage_runs(config),
             "status": "planned_not_executed",
             "limitations": [
                 "A plan is not a trained model or reproduced paper result.",
                 "All upstream code, model weights and dataset caches must already be present.",
-                "The upstream source commit is pinned and its working tree must remain clean in tracked source paths.",
+                "The upstream source commit is pinned and tracked training source must be clean.",
+                "Three seeds and four forked stage-2 arms reproduce the published two_stage.sh run structure.",
             ],
         }
         destination = (self.root / plan_path).resolve()
@@ -260,12 +265,26 @@ class RLCDTrainingAdapter:
             raise RLCDConfigurationError("Unsupported RLCD plan schema")
         if plan.get("status") != "planned_not_executed":
             raise RLCDConfigurationError("Only a new, unexecuted RLCD plan can run")
+        if plan.get("upstream_commit") != self.UPSTREAM_COMMIT:
+            raise RLCDConfigurationError("Plan upstream commit does not match the pinned implementation")
+        config_data = dict(plan.get("config", {}))
+        config_data["seeds"] = tuple(config_data.get("seeds", ()))
+        try:
+            config = RLCDExperimentConfig(**config_data)
+            expected_runs = self._build_two_stage_runs(config)
+        except (TypeError, ValueError) as exc:
+            raise RLCDConfigurationError(f"Invalid RLCD experiment configuration: {exc}") from exc
+        expected_id = sha256(json.dumps(asdict(config), sort_keys=True).encode()).hexdigest()[:16]
+        if plan.get("plan_id") != expected_id or plan.get("runs") != expected_runs:
+            raise RLCDConfigurationError("RLCD plan was modified after creation; regenerate it from configuration")
         upstream = (self.root / upstream_path).resolve()
         if self.root not in upstream.parents or not (upstream / ".git").exists():
             raise RLCDConfigurationError("Pinned OpenJev-RLCD checkout must be a Git repository inside project root")
         python = Path(python_executable).expanduser().resolve() if python_executable else (
             upstream / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
         )
+        if upstream not in python.parents:
+            raise RLCDConfigurationError("Training Python must be inside the pinned upstream checkout")
         if not python.is_file():
             raise RLCDConfigurationError(f"Upstream virtual-environment Python not found: {python}")
         def checked(argv: list[str], *, timeout: int = 30) -> subprocess.CompletedProcess:
@@ -281,10 +300,12 @@ class RLCDTrainingAdapter:
         if source_status.returncode or source_status.stdout.strip():
             raise RLCDConfigurationError("OpenJev tracked training source is modified; use a clean pinned checkout")
         probe_code = (
-            "import json, torch, transformers, datasets; "
+            "import json, torch, transformers, datasets, tokenizers, numpy; "
             "p=torch.cuda.is_available(); "
             "m=(torch.cuda.get_device_properties(0).total_memory/(1024**3) if p else 0); "
-            "print(json.dumps({'cuda':p,'gpu':(torch.cuda.get_device_name(0) if p else None),'memory_gib':m}))"
+            "v={'torch':torch.__version__,'torch_cuda':torch.version.cuda,'transformers':transformers.__version__,'datasets':datasets.__version__,'tokenizers':tokenizers.__version__,'numpy':numpy.__version__}; "
+            "expected={'torch':'2.6.0','torch_cuda':'12.4','transformers':'5.17.0','datasets':'5.0.1','tokenizers':'0.23.2','numpy':'2.5.2'}; "
+            "print(json.dumps({'cuda':p,'gpu':(torch.cuda.get_device_name(0) if p else None),'memory_gib':m,'versions':v,'versions_match':v==expected}))"
         )
         probe = checked([str(python), "-c", probe_code], timeout=120)
         if probe.returncode:
@@ -295,6 +316,11 @@ class RLCDTrainingAdapter:
             hardware = json.loads(probe.stdout.strip().splitlines()[-1])
         except (ValueError, IndexError) as exc:
             raise RLCDConfigurationError("Could not parse upstream CUDA probe") from exc
+        if not hardware.get("versions_match"):
+            raise RLCDConfigurationError(
+                "The upstream environment must match its pinned requirements exactly: "
+                + json.dumps(hardware.get("versions", {}), sort_keys=True)
+            )
         if not hardware.get("cuda") or float(hardware.get("memory_gib", 0)) < 48:
             raise RLCDConfigurationError(
                 f"RLCD paper runs require >=48 GiB CUDA memory; detected {hardware.get('memory_gib', 0):.2f} GiB. "
