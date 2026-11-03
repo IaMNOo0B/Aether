@@ -5,6 +5,8 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 from uuid import uuid4
 import json
+from hashlib import sha256
+from datetime import datetime, timezone
 import shutil
 import subprocess
 import sys
@@ -59,6 +61,39 @@ class SelfEngineer:
                 break
         return {"root": str(self.root), "python_files": files}
 
+    def _target_file_hashes(self, patch: str) -> dict[str, str | None]:
+        snapshots: dict[str, str | None] = {}
+        for block in patch.split("diff --git ")[1:]:
+            lines = block.splitlines()
+            old_line = next((line[4:] for line in lines if line.startswith("--- ")), None)
+            new_line = next((line[4:] for line in lines if line.startswith("+++ ")), None)
+            raw = new_line if new_line and new_line != "/dev/null" else old_line
+            if not raw or raw == "/dev/null":
+                continue
+            raw = raw.split("\t", 1)[0]
+            normalized = raw[2:] if raw.startswith(("a/", "b/")) else raw
+            path = (self.root / normalized).resolve()
+            if self.root not in path.parents:
+                raise PatchRejected(f"Patch target escaped project root: {normalized}")
+            if path.is_symlink():
+                raise PatchRejected(f"Patch target is a symlink: {normalized}")
+            snapshots[normalized] = (
+                sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+            )
+        return snapshots
+
+    def _verify_target_snapshot(self, metadata: dict[str, Any]) -> None:
+        expected = metadata.get("target_file_hashes")
+        if not isinstance(expected, dict) or not expected:
+            raise ValueError("Experiment lacks a proposal-time source snapshot; create a new proposal")
+        for relative, original_hash in expected.items():
+            path = (self.root / relative).resolve()
+            if self.root not in path.parents or path.is_symlink():
+                raise ValueError(f"Patch target is no longer a safe project file: {relative}")
+            current_hash = sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+            if current_hash != original_hash:
+                raise ValueError(f"Project file changed since proposal; refusing stale integration: {relative}")
+
     def propose(self, objective: str) -> dict[str, Any]:
         if not objective.strip():
             raise ValueError("Self-engineering objective cannot be empty")
@@ -99,6 +134,8 @@ class SelfEngineer:
             "id": experiment_id, "objective": objective,
             "patch": str(patch_path.relative_to(self.root)),
             "status": "proposed", "integrated": False,
+            "patch_sha256": sha256(patch.encode("utf-8")).hexdigest(),
+            "target_file_hashes": self._target_file_hashes(patch),
         }
         (directory / "experiment.json").write_text(
             json.dumps(metadata, indent=2), encoding="utf-8"
@@ -160,6 +197,9 @@ class SelfEngineer:
 
         patch = patch_path.read_text(encoding="utf-8")
         self.validate_patch_text(patch)
+        if sha256(patch.rstrip("\\n").encode("utf-8")).hexdigest() != metadata.get("patch_sha256"):
+            raise ValueError("Proposal patch changed after review; refusing evaluation")
+        self._verify_target_snapshot(metadata)
         self._audit("self_engineering.evaluation_started", {
             "experiment_id": experiment_id, "approved": True,
         })
@@ -306,6 +346,60 @@ class SelfEngineer:
             "speedup": report["speedup"],
         })
         return report
+
+    def integrate(
+        self,
+        experiment_id: str,
+        *,
+        approved: bool = False,
+        confirmation: str = "",
+    ) -> dict[str, Any]:
+        if not approved or confirmation != "INTEGRATE":
+            raise PermissionError("Production integration requires explicit approval and typing INTEGRATE")
+        directory = (self.experiments / experiment_id).resolve()
+        if self.experiments.resolve() not in directory.parents:
+            raise ValueError("Experiment path is outside the experiment directory")
+        metadata_path = directory / "experiment.json"
+        patch_path = directory / "proposal.patch"
+        if not metadata_path.is_file() or not patch_path.is_file():
+            raise FileNotFoundError(f"Unknown experiment: {experiment_id}")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if metadata.get("status") != "validated_candidate" or metadata.get("integrated"):
+            raise ValueError("Only a validated, unintegrated candidate can be integrated")
+        if metadata.get("performance_status") == "output_regression":
+            raise ValueError("Candidate has an output regression; integration is blocked")
+        patch = patch_path.read_text(encoding="utf-8")
+        self.validate_patch_text(patch)
+        if sha256(patch.rstrip("\\n").encode("utf-8")).hexdigest() != metadata.get("patch_sha256"):
+            raise ValueError("Proposal patch changed after review; refusing integration")
+        self._verify_target_snapshot(metadata)
+        check = subprocess.run(
+            ["git", "apply", "--check", str(patch_path)],
+            cwd=self.root, capture_output=True, text=True,
+            timeout=30, check=False, shell=False,
+        )
+        if check.returncode != 0:
+            raise PatchRejected(f"Patch no longer applies cleanly: {check.stderr[-2000:]}")
+        applied = subprocess.run(
+            ["git", "apply", str(patch_path)],
+            cwd=self.root, capture_output=True, text=True,
+            timeout=30, check=False, shell=False,
+        )
+        if applied.returncode != 0:
+            raise PatchRejected(f"Patch integration failed: {applied.stderr[-2000:]}")
+        metadata.update({
+            "status": "integrated",
+            "integrated": True,
+            "integrated_at": datetime.now(timezone.utc).isoformat(),
+            "integration_note": "Applied after explicit human confirmation. Review the working-tree diff and commit manually.",
+        })
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        self._audit("self_engineering.patch_integrated", {
+            "experiment_id": experiment_id,
+            "target_paths": sorted(metadata["target_file_hashes"]),
+            "confirmation": "INTEGRATE",
+        })
+        return metadata
 
     def rollback(self, experiment_id: str) -> None:
         directory = (self.experiments / experiment_id).resolve()
