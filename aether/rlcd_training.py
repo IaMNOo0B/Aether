@@ -81,8 +81,16 @@ def prepare_dataset(records: Iterable[Mapping[str, Any]], output_path: str | Pat
             raise RLCDConfigurationError(f"Label {label!r} needs at least three examples")
         ordered = sorted(members, key=lambda pair: sha256(f"{seed}:{pair[0]}".encode()).hexdigest())
         for index, (_, row) in enumerate(ordered):
-            bucket = index % 10
-            splits["train" if bucket < 8 else "validation" if bucket == 8 else "test"].append(row)
+            if index == 0:
+                split = "train"
+            elif index == 1:
+                split = "validation"
+            elif index == 2:
+                split = "test"
+            else:
+                bucket = int(sha256(f"{seed}:{row['_aether_example_hash']}:split".encode()).hexdigest()[:8], 16) % 10
+                split = "train" if bucket < 8 else "validation" if bucket == 8 else "test"
+            splits[split].append(row)
     if any(not rows for rows in splits.values()):
         raise RLCDConfigurationError("Stratified split produced an empty partition")
     payload = {
