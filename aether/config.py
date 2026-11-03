@@ -32,6 +32,8 @@ class ModelSettings:
     timeout_seconds: int = 120
     api_key_env: str = "AETHER_API_KEY"
     fallbacks: tuple[ProviderEndpointSettings, ...] = ()
+    retry_attempts: int = 2
+    retry_backoff_seconds: float = 0.25
 
 
 @dataclass(frozen=True)
@@ -172,6 +174,10 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         raise ValueError("models.base_url must be a valid HTTP or HTTPS URL")
     if not models.model.strip() or models.timeout_seconds < 1:
         raise ValueError("Model name and timeout must be valid")
+    if not 1 <= models.retry_attempts <= 5:
+        raise ValueError("models.retry_attempts must be between 1 and 5")
+    if not 0 <= models.retry_backoff_seconds <= 10:
+        raise ValueError("models.retry_backoff_seconds must be between 0 and 10")
 
     for index, fallback in enumerate(models.fallbacks, start=1):
         if fallback.provider.strip().lower() not in {"ollama", "openai_compatible"}:
