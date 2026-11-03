@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from hashlib import sha256
 from typing import Any
 from uuid import uuid4
 import time
@@ -83,7 +84,8 @@ class FailureAnalyzer:
             or side_effect_state == "unknown"
         )
         return FailureReport(
-            uuid4().hex, category, severity, operation[:120], message[:2000],
+            uuid4().hex, category, severity, operation[:120],
+            f"{error_type}; message_sha256={sha256(message.encode('utf-8', errors='replace')).hexdigest()}",
             bool(idempotent), retryable, False, recovery, human_required, basis,
         )
 
