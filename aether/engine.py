@@ -55,6 +55,10 @@ BUILTIN_CAPABILITIES = (
     ("perception.optional_multimodal", "Optional multimodal adapters", "Bounded OCR, local Vosk transcription and FFmpeg frame extraction with explicit limitations."),
     ("agents.independent_parallel", "Independent parallel specialist workers", "Parallel roles require distinct configured providers and a separate verifier."),
     ("research.frontier_ledger", "Persistent frontier research ledger", "Tracks research questions, evidence, limitations and experiments without auto-validating proposals."),
+    ("reasoning.symbolic_logic", "Symbolic proposition evaluator", "Evaluates bounded Boolean expressions and truth tables without executing arbitrary Python."),
+    ("reasoning.linear_algebra", "Numerical linear-system solver", "Solves finite square linear systems with partial pivoting and reports residuals."),
+    ("reasoning.hypothesis_ranking", "Evidence-conditioned hypothesis ranking", "Computes conditional odds from supplied priors and log Bayes factors; does not claim calibrated confidence."),
+    ("world.monte_carlo_scenarios", "Reproducible symbolic scenario sampling", "Samples operator-declared action effects with a fixed seed; simulations are not real-world observations."),
     ("world.symbolic_simulation", "Symbolic world-state simulation", "Versioned state snapshots, declared action effects, preconditions, constraints and observed outcomes."),
 )
 
