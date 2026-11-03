@@ -1,3 +1,5 @@
+import pytest
+
 from aether.audit import SignedAuditLog
 from aether.self_engineering import SelfEngineer
 
