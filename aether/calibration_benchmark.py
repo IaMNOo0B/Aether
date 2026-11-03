@@ -59,9 +59,18 @@ class CalibrationBenchmark:
         ids = [item.case_id for item in items]
         if len(ids) != len(set(ids)):
             raise ValueError("Calibration case IDs must be unique")
-        splits = {item.split for item in items}
-        if splits != SPLITS:
-            raise ValueError("Benchmark requires disjoint train, validation and test splits")
+        split_counts = {
+            split: sum(item.split == split for item in items)
+            for split in ("train", "validation", "test")
+        }
+        if (set(item.split for item in items) != SPLITS
+                or split_counts["train"] < 3
+                or split_counts["validation"] < 2
+                or split_counts["test"] < 4):
+            raise ValueError(
+                "Benchmark requires train, validation and test splits with at least "
+                "3, 2 and 4 cases respectively"
+            )
         train = [item for item in items if item.split == "train"]
         test = [item for item in items if item.split == "test"]
         train_rate = sum(item.outcome for item in train) / len(train)
@@ -79,10 +88,7 @@ class CalibrationBenchmark:
             "dataset_id": dataset_id,
             "seed": seed,
             "input_sha256": data_hash,
-            "split_counts": {
-                split: sum(item.split == split for item in items)
-                for split in ("train", "validation", "test")
-            },
+            "split_counts": split_counts,
             "train_base_rate": train_rate,
             "test_metrics": asdict(model_metrics),
             "train_base_rate_baseline": asdict(baseline_metrics),
