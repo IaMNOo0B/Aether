@@ -58,7 +58,6 @@ class ProviderRegistry:
             raise ValueError("Provider name cannot be empty")
         if key in self._providers:
             raise ValueError(f"Provider already registered: {key}")
-        self._providers[key] = provider
         if descriptor is None:
             model = str(getattr(provider, "model", "unknown"))
             privacy = "local" if isinstance(provider, OllamaProvider) else "remote"
@@ -68,6 +67,7 @@ class ProviderRegistry:
             )
         if descriptor.provider.strip().lower() != key:
             raise ValueError("Model descriptor provider must match the registry key")
+        self._providers[key] = provider
         self._descriptors[key] = descriptor
 
     def descriptor(self, name: str) -> ModelDescriptor:
