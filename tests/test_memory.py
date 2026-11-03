@@ -127,3 +127,23 @@ def test_memory_conflict_results_are_bounded(tmp_path):
     manager.remember_fact("service", "region", "south")
     manager.remember_fact("service", "region", "east")
     assert len(manager.find_contradictions(limit=1)) == 1
+
+
+def test_memory_consolidation_preserves_sources_and_surfaces_conflicts(tmp_path):
+    store = Store(tmp_path / "memory.sqlite3")
+    manager = MemoryManager(store)
+    duplicate_a = manager.remember("AETHER runs on Windows", status="user-provided")
+    duplicate_b = manager.remember("AETHER runs on Windows", status="user-provided")
+    manager.remember_fact("AETHER", "default model", "alpha")
+    manager.remember_fact("AETHER", "default model", "beta")
+    result = manager.consolidate()
+    assert result["summary_id"] is not None
+    assert result["originals_preserved"] is True
+    assert sorted(result["duplicate_groups"][0]) == sorted([duplicate_a, duplicate_b])
+    assert result["fact_summary"][0]["conflict_candidate"] is True
+    assert result["uncertain_memory_ids"]
+    assert store.get_memory(duplicate_a)["status"] == "user-provided"
+    assert store.get_memory(duplicate_b)["status"] == "user-provided"
+    summary = store.get_memory(result["summary_id"])
+    assert summary["status"] == "unverified"
+    assert summary["metadata"]["consolidation"]["source_memory_ids"]
