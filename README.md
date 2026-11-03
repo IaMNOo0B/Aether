@@ -245,3 +245,26 @@ Not implemented: autonomous goal discovery, unrestricted/background project auto
 - Never commit API keys, tokens, private documents, or model files.
 - Destructive and consequential actions are not exposed as autonomous tools.
 - Preserve `data/` and review candidate patches before use.
+
+
+## OMEGA capability extensions
+
+The following engineering adapters are available on the `omega/master-directive-build` branch. Their presence does not imply that optional local hardware or third-party services have been validated.
+
+- **Read-only dashboard:** enter `/dashboard` in the console, then open the printed loopback URL. It exposes task status, model identity, CPU/RAM/GPU telemetry and unread notifications. It binds to loopback and has no mutating HTTP endpoints.
+- **Provider resilience:** `models.retry_attempts` and `models.retry_backoff_seconds` configure bounded exponential retries before provider failover. Model descriptors record provider, model, declared capabilities and local/remote privacy classification.
+- **Calibration benchmark:** `aether.calibration_benchmark.CalibrationBenchmark` evaluates supplied probability predictions against held-out test labels and compares them with a constant baseline estimated from training labels only. It requires train/validation/test cases and a reproducibility manifest.
+- **Typed decision producers:** `aether.decisions.DecisionProposal` records a numeric probability with producer ID, methodology and optional evidence reference. Free-form model confidence prose is not accepted as a calibrated probability.
+- **Procedure learning evaluation:** `aether.learning_benchmarks.SkillBenchmarkRunner` evaluates a draft skill through an explicitly supplied trusted executor on held-out, transfer and retention cases. It does not execute generated code or update model weights.
+- **External RLCD records:** `aether.rlcd.RLCDRunManifest` validates completed OpenJev-RLCD run provenance, separate data splits, seeds, model hashes and baseline/held-out metrics. It does not perform training. Training remains external-compute work; AETHER is not RLCD-trained.
+- **Independent agents:** `MultiAgentCoordinator.run_parallel` requires separate provider instances for researcher, planner and critic plus a separate verifier provider. The default local workflow remains sequential to respect limited VRAM.
+- **Multimodal adapters:** `aether.perception` provides an opt-in OpenAI-compatible vision adapter, bounded shell-free ffmpeg frame/audio extraction, and optional offline Vosk file transcription. Hosted vision sends image bytes to the configured remote endpoint.
+- **Windows Sandbox:** `WindowsSandboxRunner` prepares a disposable input copy, read-only source mapping, separate writable output mapping, disabled networking/clipboard/audio/video/vGPU, and a bounded memory allocation. It requires Windows Sandbox to be installed and enabled; a guest `run.cmd` must write its exit code to the mapped output directory.
+- **Security checks:** `scan_python_sources` flags selected risky Python patterns for human review. `SignedAuditLog` provides HMAC-signed, hash-chained append-only records when a secret key of at least 32 bytes is supplied. The log is tamper-evident, not WORM storage; keep its key in an OS secret store.
+
+Optional external tools:
+- Install `ffmpeg` and place it on PATH for video/audio extraction.
+- Install the existing `.[voice]` extra and a Vosk model directory for offline audio transcription.
+- Enable the Windows Sandbox optional feature on a supported Windows edition before attempting sandbox execution.
+
+Run the deterministic test suite with `python -m pytest`. Run the 12-case OMEGA acceptance suite with `python -m aether.acceptance`; partial acceptance is reported as partial, not as a complete build.
