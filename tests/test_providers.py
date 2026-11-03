@@ -138,3 +138,11 @@ def test_registry_exposes_model_descriptor_for_each_configured_provider():
     assert descriptor.model == "phi3:mini"
     assert descriptor.privacy == "local"
     assert "ollama" in {item.provider for item in registry.descriptors()}
+
+
+def test_loopback_openai_compatible_model_metadata_is_local():
+    registry = build_registry(
+        "http://127.0.0.1:1234/v1", "local-vision", 30,
+        provider="openai_compatible",
+    )
+    assert registry.descriptor("openai_compatible").privacy == "local"
