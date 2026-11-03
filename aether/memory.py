@@ -299,6 +299,84 @@ class MemoryManager:
                                 return conflicts
         return conflicts
 
+
+    def consolidate(self, *, limit: int = 1000) -> dict[str, Any]:
+        """Create a provenance-linked consolidation record without deleting or silently merging memories."""
+        if not 1 <= limit <= 5000:
+            raise ValueError("Consolidation limit must be between 1 and 5000")
+        records = [
+            item for item in self.store.list_memories(limit)
+            if item["status"] not in {"superseded", "rejected", "deleted"}
+        ]
+        if not records:
+            return {"summary_id": None, "source_count": 0, "duplicate_groups": [],
+                    "contradiction_candidates": [], "uncertain_memory_ids": []}
+
+        exact: dict[str, list[int]] = {}
+        fact_groups: dict[tuple[str, str], dict[str, list[int]]] = {}
+        uncertain = []
+        for item in records:
+            normalized = " ".join(item["content"].casefold().split())
+            exact.setdefault(normalized, []).append(item["id"])
+            if item["status"] not in {"verified", "confirmed"}:
+                uncertain.append(item["id"])
+            for fact in item["metadata"].get("facts", []):
+                if not isinstance(fact, dict):
+                    continue
+                subject = " ".join(str(fact.get("subject", "")).casefold().split())
+                predicate = " ".join(str(fact.get("predicate", "")).casefold().split())
+                obj = " ".join(str(fact.get("object", "")).split())
+                if subject and predicate and obj:
+                    fact_groups.setdefault((subject, predicate), {}).setdefault(obj, []).append(item["id"])
+        duplicate_groups = [
+            sorted(ids) for ids in exact.values() if len(ids) > 1
+        ]
+        fact_summary = []
+        for (subject, predicate), objects in sorted(fact_groups.items()):
+            fact_summary.append({
+                "subject": subject, "predicate": predicate,
+                "objects": [{"value": value, "source_memory_ids": sorted(ids)}
+                            for value, ids in sorted(objects.items())],
+                "conflict_candidate": len(objects) > 1,
+            })
+        contradictions = self.find_contradictions()
+        payload = {
+            "source_memory_ids": [item["id"] for item in records],
+            "duplicate_groups": duplicate_groups,
+            "fact_summary": fact_summary,
+            "contradiction_candidates": contradictions,
+            "uncertain_memory_ids": uncertain,
+            "method": "deterministic exact-duplicate and explicit-structured-fact consolidation",
+            "limitations": [
+                "No free-form prose is converted into facts.",
+                "Contradictions are candidates and are not automatically resolved.",
+                "Original memory records and correction history are preserved.",
+                "Derived consolidation is marked unverified until reviewed.",
+            ],
+        }
+        lines = ["AETHER memory consolidation (unverified derived record)."]
+        lines.append(f"Source memories: {len(records)}")
+        lines.append(f"Exact duplicate groups: {len(duplicate_groups)}")
+        for fact in fact_summary:
+            values = "; ".join(item["value"] for item in fact["objects"])
+            lines.append(f"- {fact['subject']} {fact['predicate']}: {values}")
+        if contradictions:
+            lines.append(f"Contradiction candidates: {len(contradictions)} (review required)")
+        if uncertain:
+            lines.append(f"Unverified/uncertain source memories: {len(uncertain)}")
+        summary_id = self.remember(
+            "\n".join(lines), source="aether-memory-consolidation",
+            kind="semantic", status="unverified", metadata={"consolidation": payload},
+        )
+        return {
+            "summary_id": summary_id, "source_count": len(records),
+            "duplicate_groups": duplicate_groups,
+            "fact_summary": fact_summary,
+            "contradiction_candidates": contradictions,
+            "uncertain_memory_ids": uncertain,
+            "originals_preserved": True,
+        }
+
     def correct(self, memory_id: int, corrected_content: str, reason: str) -> int:
         """Supersede a memory without deleting history or rewriting its provenance."""
         previous = self.store.get_memory(memory_id)
