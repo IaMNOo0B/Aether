@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 from pathlib import Path
 from urllib.parse import urlparse
 import tomllib
@@ -126,6 +127,34 @@ class Settings:
     resources: ResourceSettings = ResourceSettings()
 
 
+CONFIG_SCHEMA_VERSION = 2
+
+
+def migrate_config(raw: dict) -> dict:
+    """Apply in-memory, versioned config migrations without rewriting user files."""
+    if not isinstance(raw, dict):
+        raise ValueError("Configuration root must be a TOML table")
+    version = raw.get("schema_version", 1)
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise ValueError("schema_version must be a positive integer")
+    if version > CONFIG_SCHEMA_VERSION:
+        raise ValueError(
+            f"Configuration schema {version} is newer than supported schema {CONFIG_SCHEMA_VERSION}"
+        )
+    migrated = deepcopy(raw)
+    while version < CONFIG_SCHEMA_VERSION:
+        if version == 1:
+            models = dict(migrated.get("models", {}))
+            models.setdefault("retry_attempts", 2)
+            models.setdefault("retry_backoff_seconds", 0.25)
+            migrated["models"] = models
+            version = 2
+            migrated["schema_version"] = version
+        else:
+            raise ValueError(f"No migration exists from configuration schema {version}")
+    return migrated
+
+
 def load_settings(path: Path | str = "config/settings.toml") -> Settings:
     config_path = Path(path)
     if not config_path.exists():
@@ -134,7 +163,7 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         )
 
     with config_path.open("rb") as handle:
-        raw = tomllib.load(handle)
+        raw = migrate_config(tomllib.load(handle))
 
     try:
         app = AppSettings(**raw.get("app", {}))
