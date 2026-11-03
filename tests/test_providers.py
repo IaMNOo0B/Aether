@@ -130,3 +130,11 @@ def test_model_descriptor_exposes_explicit_capabilities_and_privacy():
     assert descriptor.privacy == "local"
     with pytest.raises(ValueError):
         ModelDescriptor("ollama", "phi3:mini", context_window=0)
+
+
+def test_registry_exposes_model_descriptor_for_each_configured_provider():
+    registry = build_registry("http://127.0.0.1:11434", "phi3:mini", 30)
+    descriptor = registry.descriptor("ollama")
+    assert descriptor.model == "phi3:mini"
+    assert descriptor.privacy == "local"
+    assert "ollama" in {item.provider for item in registry.descriptors()}
