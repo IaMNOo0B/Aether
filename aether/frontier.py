@@ -46,7 +46,7 @@ class ResearchFrontier:
 
     def transition(
         self, item_id: str, status: str, *, evidence: str,
-        reviewer: str, limitations: str,
+        reviewer: str, limitations: str, result_observation: str | None = None,
     ) -> dict[str, Any]:
         allowed = {"investigating", "experiment_designed", "experiment_running",
                    "validated", "rejected", "deferred"}
@@ -57,11 +57,12 @@ class ResearchFrontier:
             raise KeyError(item_id)
         if current["status"] in {"validated", "rejected"}:
             raise ValueError("Terminal research records cannot be silently reopened")
-        if status == "validated" and "result" not in evidence.casefold():
-            raise ValueError("Validation transition must explicitly describe an observed result")
+        if status == "validated" and not (result_observation and result_observation.strip()):
+            raise ValueError("Validation transition requires a concrete observed result")
         update = {
             "id": item_id, "status": status, "evidence": evidence,
             "reviewer": reviewer, "limitations": limitations,
+            "result_observation": result_observation,
             "updated_at_epoch": time.time(),
             "evidence_status": "reviewer_asserted_not_independently_verified",
         }
