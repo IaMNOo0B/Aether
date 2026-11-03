@@ -267,6 +267,46 @@ class SelfEngineer:
         })
         return metadata
 
+    def benchmark(
+        self,
+        experiment_id: str,
+        baseline_ref: str,
+        candidate_ref: str,
+        cases: list[Any],
+        executor: Any,
+        *,
+        approved: bool = False,
+        repetitions: int = 5,
+        warmups: int = 1,
+    ) -> dict[str, Any]:
+        if not approved:
+            raise PermissionError("Candidate performance benchmarking requires explicit approval")
+        directory = (self.experiments / experiment_id).resolve()
+        if self.experiments.resolve() not in directory.parents:
+            raise ValueError("Experiment path is outside the experiment directory")
+        metadata_path = directory / "experiment.json"
+        if not metadata_path.is_file():
+            raise FileNotFoundError(f"Unknown experiment: {experiment_id}")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if metadata.get("status") != "validated_candidate":
+            raise ValueError("Only a validated, unintegrated candidate can be benchmarked")
+        from aether.performance import PerformanceBenchmark
+        report = PerformanceBenchmark().compare(
+            baseline_ref, candidate_ref, cases, executor,
+            repetitions=repetitions, warmups=warmups,
+        )
+        metadata["performance_benchmark"] = report
+        metadata["performance_status"] = (
+            "equivalent_outputs" if report["equivalent_outputs"] else "output_regression"
+        )
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        self._audit("self_engineering.performance_benchmarked", {
+            "experiment_id": experiment_id,
+            "equivalent_outputs": report["equivalent_outputs"],
+            "speedup": report["speedup"],
+        })
+        return report
+
     def rollback(self, experiment_id: str) -> None:
         directory = (self.experiments / experiment_id).resolve()
         if self.experiments.resolve() not in directory.parents:
