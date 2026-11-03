@@ -66,6 +66,20 @@ class WindowsSandboxRunner:
         stage = Path(staging_root).resolve()
         if stage == source or source in stage.parents or stage in source.parents:
             raise ValueError("Sandbox staging root must be separate from the source tree")
+        total_bytes = 0
+        file_count = 0
+        for current, directories, files in os.walk(source, followlinks=False):
+            for name in list(directories):
+                if (Path(current) / name).is_symlink():
+                    raise ValueError("Sandbox source cannot contain directory symlinks or junctions")
+            for name in files:
+                candidate = Path(current) / name
+                if candidate.is_symlink():
+                    raise ValueError("Sandbox source cannot contain file symlinks")
+                file_count += 1
+                total_bytes += candidate.stat().st_size
+                if file_count > 10000 or total_bytes > 500_000_000:
+                    raise ValueError("Sandbox source exceeds 10,000 files or 500 MB")
         stage.mkdir(parents=True, exist_ok=True)
         input_dir = stage / "input"
         output_dir = stage / "output"
