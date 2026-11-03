@@ -24,12 +24,20 @@ class SelfEngineer:
         ".gitignore", "INSTALL.bat", "START_AETHER.bat",
     }
 
-    def __init__(self, project_root: str | Path, provider: ChatProvider, timeout: int = 300):
+    def __init__(
+        self, project_root: str | Path, provider: ChatProvider, timeout: int = 300,
+        audit_log: Any | None = None,
+    ):
         self.root = Path(project_root).resolve()
         self.provider = provider
         self.timeout = timeout
+        self.audit_log = audit_log
         self.experiments = self.root / ".aether" / "experiments"
         self.experiments.mkdir(parents=True, exist_ok=True)
+
+    def _audit(self, event_type: str, details: dict[str, Any]) -> None:
+        if self.audit_log is not None:
+            self.audit_log.append(event_type, details)
 
     def inspect(self, max_files: int = 40) -> dict[str, Any]:
         ignored = {".git", ".venv", "__pycache__", ".pytest_cache", "data", "logs",
@@ -95,6 +103,11 @@ class SelfEngineer:
         (directory / "experiment.json").write_text(
             json.dumps(metadata, indent=2), encoding="utf-8"
         )
+        self._audit("self_engineering.patch_proposed", {
+            "experiment_id": experiment_id,
+            "objective": objective[:500],
+            "patch_sha256": __import__("hashlib").sha256(patch.encode("utf-8")).hexdigest(),
+        })
         return metadata
 
     def validate_patch_text(self, patch: str) -> None:
@@ -147,6 +160,9 @@ class SelfEngineer:
 
         patch = patch_path.read_text(encoding="utf-8")
         self.validate_patch_text(patch)
+        self._audit("self_engineering.evaluation_started", {
+            "experiment_id": experiment_id, "approved": True,
+        })
         baseline = subprocess.run(
             [sys.executable, "-m", "pytest", "-q"],
             cwd=self.root, capture_output=True, text=True,
@@ -156,6 +172,9 @@ class SelfEngineer:
             metadata.update({"status": "rejected", "reason": "baseline tests failed",
                              "baseline": baseline.stdout[-6000:] + baseline.stderr[-3000:]})
             metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+            self._audit("self_engineering.baseline_rejected", {
+                "experiment_id": experiment_id, "reason": "baseline tests failed",
+            })
             return metadata
 
         worktree = directory / "worktree"
@@ -194,6 +213,28 @@ class SelfEngineer:
             metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
             return metadata
 
+        from aether.security_scan import scan_python_sources
+        security_report = scan_python_sources([worktree / "aether"])
+        high_findings = [
+            item for item in security_report["findings"] if item["severity"] == "high"
+        ]
+        metadata["security_scan"] = security_report
+        if high_findings:
+            metadata.update({
+                "status": "security_review_required",
+                "integrated": False,
+                "baseline_passed": True,
+                "tests_passed": False,
+                "reason": "Static security scanner found high-severity patterns; candidate tests were not executed.",
+            })
+            metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+            self._audit("self_engineering.security_review_required", {
+                "experiment_id": experiment_id,
+                "finding_count": len(high_findings),
+                "rules": sorted({item["rule"] for item in high_findings}),
+            })
+            return metadata
+
         compile_result = subprocess.run(
             [sys.executable, "-m", "compileall", "-q", "aether"],
             cwd=worktree, capture_output=True, text=True,
@@ -212,10 +253,18 @@ class SelfEngineer:
             "compile_passed": compile_result.returncode == 0,
             "tests_passed": tests.returncode == 0,
             "test_output": tests.stdout[-8000:] + tests.stderr[-4000:],
+            "security_scan": security_report,
             "worktree": str(worktree.relative_to(self.root)),
             "note": "Candidate only. No production files were changed.",
         })
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        self._audit("self_engineering.candidate_evaluated", {
+            "experiment_id": experiment_id,
+            "status": metadata["status"],
+            "compile_passed": metadata["compile_passed"],
+            "tests_passed": metadata["tests_passed"],
+            "security_finding_count": security_report["finding_count"],
+        })
         return metadata
 
     def rollback(self, experiment_id: str) -> None:
@@ -225,3 +274,4 @@ class SelfEngineer:
         worktree = directory / "worktree"
         if worktree.exists():
             shutil.rmtree(worktree)
+        self._audit("self_engineering.candidate_rolled_back", {"experiment_id": experiment_id})
