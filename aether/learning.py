@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from typing import Any
+import json
 from uuid import uuid4
 
 from aether.providers import ChatProvider
+from aether.learning_benchmark import HeldOutCase, run_skill_benchmark
 from aether.storage import Store
 
 
@@ -46,6 +48,27 @@ class SkillLearner:
     def evaluate(self, skill_id: str, passed: bool, evidence: str) -> dict[str, Any]:
         self.store.evaluate_skill(skill_id, passed, evidence)
         return self.store.get_skill(skill_id) or {}
+
+    def benchmark(
+        self, skill_id: str, cases: list[HeldOutCase],
+        executor: Any, baseline_executor: Any | None = None,
+        minimum_accuracy: float = 0.8,
+    ) -> dict[str, Any]:
+        if not 0 <= minimum_accuracy <= 1:
+            raise ValueError("minimum_accuracy must be between zero and one")
+        skill = self.store.get_skill(skill_id)
+        if skill is None:
+            raise KeyError(f"Unknown skill: {skill_id}")
+        report = run_skill_benchmark(
+            cases,
+            lambda item: executor(skill["procedure"], item),
+            (lambda item: baseline_executor(item)) if baseline_executor is not None else None,
+        )
+        passed = report["skill_accuracy"] >= minimum_accuracy
+        report["minimum_accuracy"] = minimum_accuracy
+        report["validated"] = passed
+        self.evaluate(skill_id, passed, json.dumps(report, sort_keys=True))
+        return report
 
     def retrieve(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
         terms = {term.casefold() for term in query.split() if len(term) > 2}
