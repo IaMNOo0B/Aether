@@ -342,3 +342,32 @@ The complete master-directive-to-code status is tracked in docs/MASTER_DIRECTIVE
 - /audit-status verifies the hash chain in logs/audit.jsonl. The journal is tamper-evident, not immutable against a privileged attacker; export checkpoints to separately controlled storage for stronger assurance.
 
 Optional packages, models, Docker images and external compute are never downloaded or purchased automatically.
+
+
+### Exact OpenJev-RLCD two-stage experiment plan
+
+AETHER now generates the upstream two-stage experiment structure rather than a generic shell runner. It pins the OpenJev-RLCD checkout to commit 5859d2b893314fb3581f06e4e36c303e372b3f48 and mirrors scripts/two_stage.sh:
+
+1. Stage 1: per-rationale proper Brier readout optimization, diversity weight 0, REINFORCE disabled, KL beta 0.04 for the reference setup but no token-level KL anchor.
+2. Stage 2: four independent continuations from the same stage-1 checkpoint and fresh optimizer state: RLCD-RL (proper readout reward, score-function coefficient 0.3), readout-only, no-reader anchor control, and GRPO correctness-reward control. Each continuation uses seed + 1000 and KL beta 0.04.
+3. Three seeds (17, 23, 29) produce 15 training runs in total for one task.
+
+The paper run defaults are Qwen/Qwen3-1.7B, MMLU-Pro (256 generated tokens, 1,000 test items) or GSM8K-Verify (320 generated tokens, 1,260 test items), 400 steps, 8 items per step, 4 rationales per item, 4 evaluation rationales and 300 development items. The model and MMLU-Pro cache revisions are pinned and checked before execution. The exact environment is Python 3.12, PyTorch 2.6.0 with CUDA 12.4, Transformers 5.17.0, Datasets 5.0.1, Tokenizers 0.23.2 and NumPy 2.5.2.
+
+External-host setup (run these commands on a host with at least 48 GiB CUDA VRAM; 64 GiB host RAM is recommended):
+
+```powershell
+git clone https://github.com/ZimmyGao/openjev-rlcd.git external/openjev-rlcd
+git -C external/openjev-rlcd checkout 5859d2b893314fb3581f06e4e36c303e372b3f48
+py -3.12 -m venv external/openjev-rlcd/.venv
+external/openjev-rlcd/.venv/Scripts/python.exe -m pip install -r external/openjev-rlcd/requirements.txt
+external/openjev-rlcd/.venv/Scripts/python.exe scripts/prepare_rlcd_cache.py --task mmlupro --confirm-download
+```
+
+For GSM8K-Verify, use --task gsm8kv in the cache-preparation command; its constructed dataset is already shipped in the pinned upstream checkout. Cache preparation downloads the pinned model (and MMLU-Pro data when selected) and updates only those repositories' local Hugging Face refs/main pointers. It requires explicit --confirm-download.
+
+Then, in AETHER:
+- /rlcd-plan mmlupro | Qwen/Qwen3-1.7B | 17,23,29 | plans/rlcd-mmlupro.json
+- /rlcd-run-plan plans/rlcd-mmlupro.json | external/openjev-rlcd
+
+AETHER refuses to start unless the upstream Git commit, tracked training source, virtual environment versions, pinned cache revisions, and at least 48 GiB CUDA memory all match. It does not download model weights or silently substitute a smaller model. The current RTX 2060 6 GB cannot execute these published training runs; it can prepare and validate the plan only. A completed run report is process/artifact evidence, not by itself a scientific reproduction claim.
