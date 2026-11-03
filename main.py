@@ -47,6 +47,7 @@ def main() -> int:
         print("AETHER could not start. Check logs/aether.log and config/settings.toml.")
         return 1
 
+    dashboard = None
     scheduler = None
     scheduler_stop = Event()
     scheduler_thread = None
@@ -69,7 +70,7 @@ def main() -> int:
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
-    print("Commands: /status /resources /self-model /tasks /task-events ID /task pause|resume|cancel|replan ID /goal /notifications /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
+    print("Commands: /status /resources /dashboard /self-model /tasks /task-events ID /task pause|resume|cancel|replan ID /goal /notifications /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
     print("          /remember /memory-search /memory-index /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
 
@@ -84,6 +85,8 @@ def main() -> int:
         lower = user_text.casefold()
 
         if lower in {"/quit", "/exit"}:
+            if dashboard is not None:
+                dashboard.stop()
             print("AETHER session closed.")
             break
 
@@ -115,6 +118,19 @@ def main() -> int:
 
             if lower == "/resources":
                 print(json.dumps(engine.resources.snapshot(), indent=2))
+                continue
+
+            if lower == "/dashboard":
+                if dashboard is None:
+                    dashboard = AetherDashboard(
+                        store,
+                        model_provider=settings.models.provider,
+                        model_id=settings.models.model,
+                    )
+                    host, port = dashboard.start()
+                    print(f"AETHER > Read-only dashboard: http://{host}:{port}/")
+                else:
+                    print(f"AETHER > Dashboard is already running at http://{dashboard.host}:{dashboard.port}/")
                 continue
 
             if lower == "/status":
