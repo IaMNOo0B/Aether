@@ -86,3 +86,33 @@ def test_decision_metrics_require_resolved_outcomes(tmp_path):
         manager.metrics("software-tests")
     manager.resolve(decision_id, True)
     assert manager.metrics("software-tests").count == 1
+
+
+def test_typed_decision_producer_persists_provenance(tmp_path):
+    from aether.decisions import DecisionProposal
+
+    store = Store(tmp_path / "decisions.sqlite3")
+    manager = DecisionManager(store)
+    proposal = DecisionProposal(
+        question="Will the task pass its test?",
+        probability_true=0.82,
+        domain="software-tests",
+        producer_id="calibrated-readout-v1",
+        evidence_ref="run:fixture-42",
+    )
+    decision_id = manager.record_proposal(proposal)
+    saved = store.list_decisions(limit=10)[0]
+    assert saved["id"] == decision_id
+    assert saved["metadata"]["producer_id"] == "calibrated-readout-v1"
+    assert saved["metadata"]["evidence_ref"] == "run:fixture-42"
+    assert saved["metadata"]["methodology"] == "explicit-probability-readout-v1"
+
+
+def test_typed_decision_proposal_rejects_nonfinite_and_boolean_probability():
+    import pytest
+    from aether.decisions import DecisionProposal
+
+    with pytest.raises(ValueError, match="finite"):
+        DecisionProposal("Question", float("nan"), "domain", "producer")
+    with pytest.raises(ValueError, match="numeric"):
+        DecisionProposal("Question", True, "domain", "producer")
