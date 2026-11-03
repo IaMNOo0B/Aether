@@ -218,3 +218,46 @@ def test_rlcd_two_stage_plan_detects_post_creation_modification(tmp_path):
             "plans/rlcd.json", "external/openjev-rlcd",
             approved=True, external_compute_confirmed=True,
         )
+
+
+def test_hierarchical_goal_graph_requires_approval_and_child_completion(tmp_path):
+    from aether.goals import HierarchicalGoalGraph
+
+    graph = HierarchicalGoalGraph(tmp_path / "goal-graph.jsonl")
+    parent = graph.create(
+        "Complete a reliable evaluation subsystem",
+        success_criteria=["All acceptance tests pass"],
+        resource_budget={"max_steps": 20, "max_runtime_seconds": 3600, "max_model_calls": 20},
+    )
+    children = graph.decompose(parent["id"], [
+        {"objective": "Build benchmark cases", "success_criteria": ["Cases are versioned"],
+         "resource_budget": {"max_steps": 5}},
+        {"objective": "Build result reporting", "success_criteria": ["Metrics are reproducible"],
+         "resource_budget": {"max_steps": 5}},
+    ])
+    with pytest.raises(ValueError, match="Invalid goal transition"):
+        graph.transition(parent["id"], "running", actor="user", evidence="start")
+    graph.transition(parent["id"], "approved", actor="user", evidence="Owner approved bounded implementation")
+    graph.transition(parent["id"], "running", actor="user", evidence="Execution started")
+    with pytest.raises(ValueError, match="child goals"):
+        graph.transition(parent["id"], "completed", actor="user", evidence="Parent work complete")
+    for child in children:
+        graph.transition(child["id"], "approved", actor="user", evidence="Child approved")
+        graph.transition(child["id"], "running", actor="agent", evidence="Child started")
+        graph.transition(child["id"], "completed", actor="agent", evidence="Acceptance evidence recorded")
+    graph.transition(parent["id"], "completed", actor="user", evidence="All child acceptance evidence reviewed")
+    assert graph.get(parent["id"])["status"] == "completed"
+    assert len(graph.tree()[0]["children"]) == 2
+
+
+def test_goal_discovery_includes_unverified_self_model_capabilities(tmp_path):
+    from aether.goals import GoalManager
+    from aether.self_model import SelfModel
+    from aether.storage import Store
+
+    store = Store(tmp_path / "goals-selfmodel.sqlite3")
+    model = SelfModel(store.path)
+    model.register_capability("test.capability", "Test capability", "Requires verification",
+                              state="implemented_unverified")
+    candidates = GoalManager(store, model).discover()
+    assert any(item.source == "capability:test.capability" for item in candidates)
