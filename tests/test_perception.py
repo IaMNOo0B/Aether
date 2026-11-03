@@ -12,6 +12,8 @@ def test_vision_adapter_rejects_invalid_image_and_remote_http():
     provider = OpenAICompatibleVisionProvider("https://api.example.com/v1", "vision-model")
     with pytest.raises(ValueError, match="PNG, JPEG and WebP"):
         provider.analyze_image(b"image", "image/gif", "Describe this")
+    with pytest.raises(ValueError, match="MIME type"):
+        provider.analyze_image(b"not-png", "image/png", "Describe this")
     with pytest.raises(ValueError, match="size limit"):
         OpenAICompatibleVisionProvider(
             "https://api.example.com/v1", "vision-model", max_image_bytes=1
