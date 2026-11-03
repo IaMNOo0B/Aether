@@ -370,3 +370,45 @@ def test_project_change_discovery_is_idempotent_for_same_fingerprint(tmp_path):
     second = manager.discover_project_changes()
     assert len(first) == 1
     assert second == []
+
+
+def test_external_event_discovery_creates_review_proposals_only(tmp_path):
+    store = Store(tmp_path / "external-events.sqlite3")
+    manager = GoalManager(store)
+    events = [{
+        "source": "calendar-connector",
+        "event_id": "evt-100",
+        "title": "Dependency security advisory",
+        "description": "A dependency version has a published advisory.",
+        "impact": "AETHER may use an affected version.",
+    }]
+    first = manager.discover_external_events(events)
+    second = manager.discover_external_events(events)
+    assert len(first) == 1
+    assert first[0]["source"] == "external_event"
+    assert first[0]["status"] == "proposed"
+    assert second[0]["id"] == first[0]["id"]
+    assert manager.queue_approved() == []
+
+
+def test_research_opportunity_discovery_preserves_report_reference(tmp_path):
+    manager = GoalManager(Store(tmp_path / "research-opportunities.sqlite3"))
+    opportunities = [{
+        "report_id": "report-42",
+        "question": "Does method X improve reliability?",
+        "gap": "No independent replication studies were found.",
+        "expected_benefit": "Assess reproducibility.",
+    }]
+    proposals = manager.discover_research_opportunities(opportunities)
+    assert len(proposals) == 1
+    assert proposals[0]["source"] == "research_opportunity"
+    assert "report-42" in proposals[0]["purpose"]
+    assert proposals[0]["goal_level"] == "research"
+    assert proposals[0]["status"] == "proposed"
+
+
+def test_external_goal_discovery_rejects_untyped_payloads(tmp_path):
+    manager = GoalManager(Store(tmp_path / "bad-events.sqlite3"))
+    with pytest.raises(ValueError, match="list"):
+        manager.discover_external_events({"source": "not-a-list"})
+    assert manager.discover_external_events([{"title": "missing required fields"}]) == []
