@@ -16,6 +16,7 @@ from aether.config import load_settings
 from aether.desktop import DesktopController
 from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
+from aether.goals import GoalDiscovery
 from aether.learning import SkillLearner
 from aether.research import ResearchError, ResearchSource, Researcher
 from aether.research_quality import ResearchWorkflow
@@ -50,6 +51,7 @@ def main() -> int:
         print("AETHER could not start. Check logs/aether.log and config/settings.toml.")
         return 1
 
+    goal_discovery = GoalDiscovery(store, engine.self_model)
     scheduler = None
     scheduler_stop = Event()
     scheduler_thread = None
@@ -221,6 +223,38 @@ def main() -> int:
                     f"Brier: {report.brier_score:.4f} | Log loss: {report.log_loss:.4f} | "
                     f"ECE: {report.expected_calibration_error:.4f} | AURC: {report.aurc:.4f}"
                 )
+                continue
+
+            if lower.startswith("/goals "):
+                parts = user_text[len("/goals "):].split(maxsplit=1)
+                action = parts[0].casefold()
+                argument = parts[1] if len(parts) == 2 else ""
+                if action == "discover":
+                    limit = int(argument.strip()) if argument.strip() else 20
+                    print(json.dumps(goal_discovery.discover(limit), indent=2))
+                    continue
+                if action == "list":
+                    print(json.dumps(store.list_goal_candidates(limit=100), indent=2))
+                    continue
+                if action in {"approve", "reject"} and argument.strip():
+                    if action == "approve":
+                        goal_discovery.approve(argument.strip())
+                    else:
+                        goal_discovery.reject(argument.strip())
+                    print(f"AETHER > Goal candidate {argument.strip()} {action}d.")
+                    continue
+                if action == "schedule":
+                    fields = argument.split("|")
+                    if len(fields) not in {2, 3}:
+                        print("Usage: /goals schedule CANDIDATE_ID | INTERVAL_SECONDS | MAX_RUNS(optional)")
+                        continue
+                    max_runs = int(fields[2].strip()) if len(fields) == 3 else 1
+                    schedule_id = goal_discovery.schedule(
+                        fields[0].strip(), int(fields[1].strip()), max_runs,
+                    )
+                    print(f"AETHER > Approved candidate scheduled read-only: {schedule_id}")
+                    continue
+                print("Usage: /goals discover [LIMIT]|list|approve ID|reject ID|schedule ID | INTERVAL_SECONDS | MAX_RUNS")
                 continue
 
             if lower.startswith("/schedule "):
