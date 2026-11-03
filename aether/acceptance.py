@@ -59,6 +59,8 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
         "nodes": [
             "tests/test_learning.py::test_skill_requires_held_out_evaluation_before_retrieval",
             "tests/test_learning.py::test_failed_skill_evaluation_keeps_skill_out_of_validated_memory",
+            "tests/test_learning_benchmark.py::test_held_out_benchmark_compares_skill_to_baseline_and_hashes_dataset",
+            "tests/test_learning_benchmark.py::test_skill_is_validated_only_after_actual_held_out_executor_passes",
         ],
         "full_scope": False,
         "limitations": [
@@ -88,6 +90,7 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_decisions.py::test_decision_log_and_resolution_preserve_outcome_provenance",
             "tests/test_decisions.py::test_decision_metrics_require_resolved_outcomes",
             "tests/test_decisions.py::test_decision_gate_abstains_without_sufficient_domain_evidence",
+            "tests/test_rlcd.py::test_typed_decision_producer_is_evaluated_against_held_out_outcomes",
         ],
         "full_scope": True,
         "limitations": [],
@@ -123,6 +126,8 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_scheduler.py::test_scheduler_runs_persisted_goal_with_read_only_tools",
             "tests/test_scheduler.py::test_scheduler_never_approves_workspace_writes",
             "tests/test_emergency_stop.py::test_scheduler_does_not_enqueue_when_emergency_stop_is_active",
+            "tests/test_goals.py::test_goal_discovery_persists_capability_gaps_without_executing_them",
+            "tests/test_goals.py::test_discovered_goal_requires_explicit_approval_before_scheduling",
         ],
         "full_scope": False,
         "limitations": [
@@ -163,6 +168,7 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
         "expected": "Specialist roles produce separate deliverables and an integrated result is independently checked.",
         "nodes": [
             "tests/test_agents.py::test_specialist_roles_run_and_persist_separate_deliverables",
+            "tests/test_agents.py::test_independent_specialists_run_in_parallel_and_receive_separate_verifier",
         ],
         "full_scope": False,
         "limitations": [
