@@ -135,7 +135,7 @@ Conflict detection only flags candidates; it does not decide which source is cor
 - `/decision-metrics [domain]` computes outcome-based calibration metrics.
 - `/decision-assess probability_true | domain` uses historical outcomes in the same domain/confidence band and a Wilson lower confidence bound to accept or abstain.
 
-This is a conservative runtime decision gate, **not RLCD training**. Manually supplied probabilities are labelled as user-supplied; they are not treated as calibrated model outputs.
+This is a conservative runtime decision gate, **not RLCD training**. `aether.rlcd.evaluate_held_out_decision_producer` provides a typed producer contract and reproducible held-out calibration report with baseline comparison. It evaluates supplied producers; it does not reproduce RLCD training. Manually supplied probabilities are labelled as user-supplied; they are not treated as calibrated model outputs.
 
 ### Emergency stop
 
@@ -255,14 +255,14 @@ Voice is push-to-talk, not an always-listening background microphone. The model 
 - `/skill-eval skill-id | pass/fail | held-out test evidence` records an evaluation.
 - Only skills marked validated are injected into relevant chat context.
 
-This is knowledge and procedural learning. It does **not** update Phi-3's model weights, and a saved note is not proof of learning.
+This is knowledge and procedural learning. `SkillLearner.benchmark` can execute a caller-supplied workflow adapter on explicitly held-out cases, compare it with a baseline, hash the evaluation set and validate the skill only when its measured accuracy meets the configured threshold. It does **not** update Phi-3's model weights, and a saved note is not proof of learning.
 
 ### Multi-agent coordination
 
 - `/agents <objective>` runs researcher, planner, and critic roles.
 - Each deliverable is persisted and can be inspected through the agent-run records.
 
-To fit one 6 GB GPU, these roles run sequentially through the same configured model. They are not three independent models, and agreement is not proof. The critic is an additional review pass, not an independent ground-truth oracle.
+`MultiAgentCoordinator.run_independent` also supports bounded parallel specialists when separately configured provider instances and a separate verifier are supplied. The default `/agents` path remains sequential to fit one 6 GB GPU. Independent provider instances do not guarantee different model weights or independent evidence; the verifier is not ground truth.
 
 ### Controlled self-engineering
 
@@ -294,7 +294,7 @@ A candidate is never automatically merged or copied into production. Git for Win
 
 Implemented in this milestone: source-based research, bounded model-planned tool execution, permission checks, persistent task receipts, allowlisted desktop interaction, optional offline push-to-talk voice, draft-to-validated procedural skills, sequential specialist roles, and isolated patch proposal/evaluation.
 
-Not implemented: autonomous goal discovery, unrestricted/background project autonomy, general web browsing, semantic embedding memory, knowledge graph extraction, independent parallel specialist models, true continual model-weight training, LoRA fine-tuning, meta-learning, a secure OS sandbox, automatic production code integration, full multimodal vision/video understanding, the external RLCD training adapter, or full RLCD training. The RTX 2060 6 GB target is not suitable for reproducing the referenced 48 GB RLCD training setup.
+Still incomplete or hardware/external-resource dependent: OS-level isolation for arbitrary generated code; independently configured specialist-model endpoints and real parallel VRAM-budget validation; automatic benchmark datasets and general-purpose transfer/retention measurement; LoRA/model-weight adaptation and catastrophic-forgetting experiments; meta-learning; vision/OCR/audio-event/video model adapters and actual media evaluation; Windows microphone/device acceptance on the target PC; external RLCD training reproduction. The RTX 2060 6 GB target is not suitable for reproducing the referenced 48 GB RLCD training setup. Goal discovery now produces persisted proposals but never authorizes or executes them automatically.
 
 ## Safety and data
 
