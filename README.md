@@ -302,3 +302,43 @@ Not implemented: autonomous goal discovery, unrestricted/background project auto
 - Never commit API keys, tokens, private documents, or model files.
 - Destructive and consequential actions are not exposed as autonomous tools.
 - Preserve `data/` and review candidate patches before use.
+
+
+## Master Directive extension workflows
+
+The complete master-directive-to-code status is tracked in docs/MASTER_DIRECTIVE_TRACEABILITY.md. This does not replace the master directive or claim general intelligence.
+
+### Goal discovery and bounded autonomy
+- /goal-discover lists unfinished tasks and paused schedules as candidates; it does not execute or enable them.
+- /goal-schedule INDEX | INTERVAL_SECONDS creates a one-run bounded schedule only after interactive approval. Scheduled execution remains read-only and opt-in.
+
+### RLCD and calibration
+- /rlcd-prepare INPUT_JSONL | OUTPUT_JSON creates deterministic prompt-deduplicated, label-stratified train/validation/test splits. Each JSONL row requires prompt and label/answer.
+- /rlcd-manifest MODEL | DATASET | OUTPUT_DIR | MANIFEST creates a hashed run manifest with the OpenJev-RLCD research recipe.
+- /rlcd-run MANIFEST | RUNNER_ARGV_JSON launches an explicitly supplied runner only after interactive confirmation of external compute.
+- The current RTX 2060 6 GB machine is not treated as a suitable reproduction target for the published 48 GB GPU runs. Preparing a manifest is not training; a successful external process exit is not proof of reproduction.
+- Calibration benchmark and skill benchmark workflows are separate from RLCD training. Model-reported confidence is not accepted as calibrated probability.
+
+### Learning and skills
+- /skill-benchmark SKILL_ID | CASES_JSON runs a draft workflow against held_out, transfer and retention cases. Each case object contains case_id, split, task and expected. The configured model is prompted with the procedure as untrusted reference material; exact expected-substring matching is the current scorer.
+- Passing a finite case set is not proof of broad generalization or model-weight learning.
+
+### Self-engineering isolation
+- Build the optional local test image after installing Docker: docker build -t aether-python-test:3.12 -f sandbox/Dockerfile sandbox
+- /sandbox-status checks Docker and the local image.
+- /self-improve-test-sandbox EXPERIMENT_ID runs baseline and candidate checks in a no-network container with a read-only container root, dropped Linux capabilities and resource limits. It requires interactive approval.
+- The original /self-improve-test path remains a copy-based local execution path; it is not an OS sandbox. Candidate changes are never auto-integrated.
+
+### Multimodal and collective intelligence
+- /perception-status reports installed optional dependencies and configured local models.
+- /image-inspect PATH performs OCR when Pillow, pytesseract and the Tesseract executable are installed. General visual understanding requires a separately configured vision provider.
+- /audio-inspect PATH reads WAV metadata. /audio-transcribe PATH uses a configured local Vosk model.
+- /video-frames PATH extracts a bounded set of frames with FFmpeg. It does not understand scenes or align audio and video.
+- /agents-independent OBJECTIVE requires four distinct configured provider instances: three specialist workers and one separate verifier. The verifier's output is another review, not ground truth.
+
+### Research frontier and audit
+- /frontier-propose JSON records a research opportunity with sources, evidence, requirements, feasibility, costs, limitations, AETHER application and experiment proposal.
+- /frontier-list displays the persistent research backlog.
+- /audit-status verifies the hash chain in logs/audit.jsonl. The journal is tamper-evident, not immutable against a privileged attacker; export checkpoints to separately controlled storage for stronger assurance.
+
+Optional packages, models, Docker images and external compute are never downloaded or purchased automatically.
