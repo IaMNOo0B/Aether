@@ -129,8 +129,11 @@ class RLCDExperimentConfig:
     def validate(self) -> None:
         if self.task not in {"mmlupro", "gsm8kv"}:
             raise RLCDConfigurationError("Published two-stage plan supports mmlupro or gsm8kv")
-        if not self.model_id.strip():
-            raise RLCDConfigurationError("A model ID is required")
+        if self.model_id != "Qwen/Qwen3-1.7B":
+            raise RLCDConfigurationError(
+                "The exact published two-stage run plan is pinned to Qwen/Qwen3-1.7B; "
+                "use the generic adapter for other backbones."
+            )
         if not self.seeds or len(set(self.seeds)) != len(self.seeds):
             raise RLCDConfigurationError("Seeds must be a non-empty unique sequence")
         if any(isinstance(seed, bool) or not isinstance(seed, int) or seed < 0 for seed in self.seeds):
@@ -224,6 +227,16 @@ class RLCDTrainingAdapter:
             "upstream_commit": self.UPSTREAM_COMMIT,
             "recipe": self.RECIPE,
             "config": asdict(config),
+            "model_revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+            "dataset": ({
+                "repo_id": "TIGER-Lab/MMLU-Pro",
+                "revision": "b189ec765aa7ed75c8acfea42df31fdae71f97be",
+                "cache_ref_required": True,
+            } if config.task == "mmlupro" else {
+                "path": "data/gsm8k_verify.json",
+                "sha256": sha256((self.root / "external" / "openjev-rlcd" / "data" / "gsm8k_verify.json").read_bytes()).hexdigest()
+                    if (self.root / "external" / "openjev-rlcd" / "data" / "gsm8k_verify.json").is_file() else None,
+            }),
             "python_module": "openjev_rlcd.train",
             "environment": {"HF_HUB_OFFLINE": "1", "HF_DATASETS_OFFLINE": "1",
                             "OPENJEV_DEVICE": "cuda", "PYTHONUNBUFFERED": "1",
@@ -305,7 +318,8 @@ class RLCDTrainingAdapter:
             "m=(torch.cuda.get_device_properties(0).total_memory/(1024**3) if p else 0); "
             "v={'torch':torch.__version__,'torch_cuda':torch.version.cuda,'transformers':transformers.__version__,'datasets':datasets.__version__,'tokenizers':tokenizers.__version__,'numpy':numpy.__version__}; "
             "expected={'torch':'2.6.0','torch_cuda':'12.4','transformers':'5.17.0','datasets':'5.0.1','tokenizers':'0.23.2','numpy':'2.5.2'}; "
-            "print(json.dumps({'cuda':p,'gpu':(torch.cuda.get_device_name(0) if p else None),'memory_gib':m,'versions':v,'versions_match':v==expected}))"
+            "ok=(v['torch'].startswith(expected['torch']) and all(v[k]==expected[k] for k in expected if k!='torch')); "
+            "print(json.dumps({'cuda':p,'gpu':(torch.cuda.get_device_name(0) if p else None),'memory_gib':m,'versions':v,'versions_match':ok}))"
         )
         probe = checked([str(python), "-c", probe_code], timeout=120)
         if probe.returncode:
@@ -326,6 +340,27 @@ class RLCDTrainingAdapter:
                 f"RLCD paper runs require >=48 GiB CUDA memory; detected {hardware.get('memory_gib', 0):.2f} GiB. "
                 "This AETHER host's RTX 2060 6 GB cannot run the published experiment."
             )
+
+        hf_cache = Path(os.environ.get("HF_HUB_CACHE", str(
+            Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))) / "hub"
+        ))).expanduser()
+        model_ref = hf_cache / "models--Qwen--Qwen3-1.7B" / "refs" / "main"
+        if not model_ref.is_file() or model_ref.read_text(encoding="utf-8").strip() != plan["model_revision"]:
+            raise RLCDConfigurationError(
+                "Pinned Qwen3-1.7B cache ref is missing or mismatched. Prepare the exact model revision "
+                "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e before running offline."
+            )
+        if plan["config"]["task"] == "mmlupro":
+            dataset_ref = hf_cache / "datasets--TIGER-Lab--MMLU-Pro" / "refs" / "main"
+            if not dataset_ref.is_file() or dataset_ref.read_text(encoding="utf-8").strip() != plan["dataset"]["revision"]:
+                raise RLCDConfigurationError(
+                    "Pinned MMLU-Pro cache ref is missing or mismatched. Prepare revision "
+                    "b189ec765aa7ed75c8acfea42df31fdae71f97be before running offline."
+                )
+        else:
+            dataset_path = upstream / plan["dataset"]["path"]
+            if not dataset_path.is_file() or sha256(dataset_path.read_bytes()).hexdigest() != plan["dataset"]["sha256"]:
+                raise RLCDConfigurationError("Pinned GSM8K-Verify dataset file is missing or has changed")
         for seed_run in plan["runs"]:
             for run in [seed_run["stage1"], *seed_run["stage2"]]:
                 for key in ("output", "checkpoint"):
