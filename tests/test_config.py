@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from aether.config import load_settings
+from aether.config import CONFIG_SCHEMA_VERSION, load_settings, migrate_config
 
 
 def test_load_settings_from_project_config():
@@ -161,3 +161,17 @@ def test_provider_retry_configuration_is_bounded(tmp_path):
     config.write_text(source.replace("max_retries = 1", "max_retries = 9"), encoding="utf-8")
     with pytest.raises(ValueError, match="retry settings"):
         load_settings(config)
+
+
+def test_legacy_config_migrates_in_memory_without_mutating_input():
+    legacy = {"models": {"provider": "ollama", "model": "phi3:mini"}}
+    migrated = migrate_config(legacy)
+    assert migrated["config_schema_version"] == CONFIG_SCHEMA_VERSION
+    assert migrated["models"]["max_retries"] == 1
+    assert migrated["models"]["retry_backoff_seconds"] == 0.25
+    assert "config_schema_version" not in legacy
+
+
+def test_config_migration_rejects_future_schema():
+    with pytest.raises(ValueError, match="newer than supported"):
+        migrate_config({"config_schema_version": CONFIG_SCHEMA_VERSION + 1})
