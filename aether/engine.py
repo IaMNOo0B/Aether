@@ -26,7 +26,7 @@ BUILTIN_CAPABILITIES = (
     ("memory.ranked_hybrid", "Hybrid local memory", "Typed memories, BM25 lexical retrieval, optional Ollama cosine embeddings and correction lineage."),
     ("tasks.event_recovery", "Task continuity and recovery", "Atomic task transitions, event history, checkpoints and conservative interruption recovery."),
     ("providers.openai_compatible", "OpenAI-compatible provider", "Chat Completions adapter with environment-based API key lookup."),
-    ("providers.failover", "Provider failover", "Ordered fallback across explicitly configured model endpoints."),
+    ("providers.failover", "Provider failover", "Ordered fallback with bounded exponential retries across explicitly configured model endpoints."),
     ("research.indexed_sources", "Indexed-source research", "Bounded Crossref, arXiv and Wikipedia research with provenance."),
     ("research.full_text_ingestion", "Bounded full-text ingestion", "Operator-supplied public HTML/plain-text capture with network-target and response-size restrictions."),
     ("research.source_triage", "Transparent source triage", "Factor-based quality heuristics with explicit caveats; scores are not truth probabilities."),
@@ -77,7 +77,11 @@ class AetherEngine:
             (f"fallback_{index}", self.registry.get(f"fallback_{index}"))
             for index in range(1, len(settings.models.fallbacks) + 1)
         )
-        self.provider_chain = ProviderChain(provider_sequence)
+        self.provider_chain = ProviderChain(
+            provider_sequence,
+            max_attempts=settings.models.retry_attempts,
+            backoff_seconds=settings.models.retry_backoff_seconds,
+        )
         self.tasks = TaskManager(store)
         embedding_provider = (
             OllamaEmbeddingProvider(
