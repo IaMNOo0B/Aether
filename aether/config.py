@@ -7,6 +7,30 @@ from urllib.parse import urlparse
 import tomllib
 
 
+CONFIG_SCHEMA_VERSION = 1
+
+
+def migrate_config(raw: dict) -> dict:
+    """Normalize older TOML settings in memory without rewriting user files."""
+    version = raw.get("config_schema_version", 0)
+    if isinstance(version, bool) or not isinstance(version, int) or version < 0:
+        raise ValueError("config_schema_version must be a non-negative integer")
+    if version > CONFIG_SCHEMA_VERSION:
+        raise ValueError(
+            f"Configuration schema {version} is newer than supported schema {CONFIG_SCHEMA_VERSION}"
+        )
+    migrated = dict(raw)
+    while version < CONFIG_SCHEMA_VERSION:
+        if version == 0:
+            models = dict(migrated.get("models", {}))
+            models.setdefault("max_retries", 1)
+            models.setdefault("retry_backoff_seconds", 0.25)
+            migrated["models"] = models
+            migrated["config_schema_version"] = 1
+        version += 1
+    return migrated
+
+
 @dataclass(frozen=True)
 class AppSettings:
     name: str = "AETHER"
@@ -134,7 +158,7 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         )
 
     with config_path.open("rb") as handle:
-        raw = tomllib.load(handle)
+        raw = migrate_config(tomllib.load(handle))
 
     try:
         app = AppSettings(**raw.get("app", {}))
