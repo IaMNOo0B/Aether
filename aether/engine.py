@@ -46,6 +46,15 @@ BUILTIN_CAPABILITIES = (
     ("decisions.empirical_abstention", "Evidence-based abstention gate", "Domain- and confidence-band-specific Wilson lower-bound policy."),
     ("knowledge.provenance_graph", "Provenance-aware knowledge graph", "Typed entities and temporal claims linked to source reports and URLs."),
     ("knowledge.conflict_detection", "Temporal claim conflict detection", "Surfaces overlapping incompatible claims without automatically resolving them."),
+    ("rlcd.external_training_adapter", "External RLCD training adapter", "Prepares hashed, split-safe training manifests and requires explicit external compute approval; does not imply training occurred."),
+    ("calibration.held_out_benchmark", "Held-out calibration benchmark", "Scores test-split probabilities against observed labels and a train-only base-rate baseline."),
+    ("learning.transfer_retention_benchmark", "Transfer and retention skill benchmark", "Evaluates draft procedures on held-out, transfer and retention cases through an injected executor."),
+    ("goals.bounded_discovery", "Bounded goal discovery", "Surfaces unfinished tasks and paused schedules without self-authorizing execution."),
+    ("evolution.docker_sandbox", "OS-isolated candidate test path", "Optional no-network Docker execution with dropped capabilities, read-only root and resource limits."),
+    ("audit.hash_chain", "Tamper-evident audit journal", "Append-only hash chain detects record changes but is not immutable against privileged attackers."),
+    ("perception.optional_multimodal", "Optional multimodal adapters", "Bounded OCR, local Vosk transcription and FFmpeg frame extraction with explicit limitations."),
+    ("agents.independent_parallel", "Independent parallel specialist workers", "Parallel roles require distinct configured providers and a separate verifier."),
+    ("research.frontier_ledger", "Persistent frontier research ledger", "Tracks research questions, evidence, limitations and experiments without auto-validating proposals."),
     ("world.symbolic_simulation", "Symbolic world-state simulation", "Versioned state snapshots, declared action effects, preconditions, constraints and observed outcomes."),
 )
 
