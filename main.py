@@ -70,7 +70,7 @@ def main() -> int:
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
     if recovered_tasks:
         print(f"Recovered {len(recovered_tasks)} interrupted task(s). They are marked failed for manual review; no actions were replayed.")
-    print("Commands: /status /resources /dashboard /self-model /tasks /task-events ID /task pause|resume|cancel|replan ID /goal /notifications /emergency-stop /resume-autonomy /research /agents /autonomy /learn /skills /desktop /voice")
+    print("Commands: /status /resources /dashboard /self-model /tasks /task-events ID /task pause|resume|cancel|replan ID /goal /notifications /emergency-stop /resume-autonomy /research /agents [parallel] /autonomy /learn /skills /desktop /voice")
     print("          /remember /memory-search /memory-index /correct-memory /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
 
@@ -551,16 +551,22 @@ def main() -> int:
                 continue
 
             if lower.startswith("/agents "):
-                engine.resources.check(
-                    "multi-agent task",
-                    gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
-                )
-                coordinator = MultiAgentCoordinator(engine.provider(), store)
-                objective = user_text[len("/agents "):].strip()
-                deliverables = coordinator.run(objective)
+                argument = user_text[len("/agents "):].strip()
+                if argument.casefold().startswith("parallel "):
+                    objective = argument[len("parallel "):].strip()
+                    deliverables = engine.run_parallel_agents(objective)
+                    mode = "independent parallel specialists with a separate verifier"
+                else:
+                    engine.resources.check(
+                        "multi-agent task",
+                        gpu_required=(settings.models.provider == "ollama" and not settings.models.fallbacks),
+                    )
+                    coordinator = MultiAgentCoordinator(engine.provider(), store)
+                    deliverables = coordinator.run(argument)
+                    mode = "sequential role-conditioned specialists"
                 for item in deliverables:
                     print(f"\n--- {item.role.upper()} ---\n{item.output}")
-                print("\nAETHER > Specialist outputs saved. They are not independent proof; verify claims.")
+                print(f"\nAETHER > Saved {mode}. Outputs are not independent proof; verify claims.")
                 continue
 
             if lower.startswith("/autonomy "):
