@@ -125,3 +125,48 @@ def test_decision_ledger_tracks_producer_and_excludes_held_out_from_operational_
     assert item["metadata"]["evaluation_split"] == "held_out"
     assert manager.assess(0.95, "routing").sample_count == 0
     assert manager.metrics("routing", evaluation_split="held_out").count == 40
+
+
+def test_symbolic_logic_truth_table_and_linear_solver():
+    from aether.reasoning import evaluate_proposition, solve_linear_system, truth_table
+
+    assert evaluate_proposition("A and not B", {"A": True, "B": False}) is True
+    table = truth_table("A or not A")
+    assert table["tautology"] is True
+    solved = solve_linear_system([[2, 1], [1, -1]], [5, 1])
+    assert solved["solution"] == pytest.approx([2.0, 1.0])
+    assert solved["max_absolute_residual"] < 1e-10
+
+
+def test_hypothesis_ranking_requires_explicit_evidence_likelihoods():
+    from aether.reasoning import rank_hypotheses
+
+    result = rank_hypotheses([
+        {"id": "H1", "prior_probability": 0.5,
+         "evidence": [{"id": "E1", "log_bayes_factor": 1.0}]},
+        {"id": "H2", "prior_probability": 0.5,
+         "evidence": [{"id": "E2", "log_bayes_factor": -1.0}]},
+    ])
+    assert result["ranked"][0]["id"] == "H1"
+    assert "not empirically calibrated" in result["warning"]
+
+
+def test_world_model_scenarios_are_reproducible_and_not_observations(tmp_path):
+    from aether.storage import Store
+    from aether.world_model import WorldModel
+    from aether.world_scenarios import simulate_scenarios
+
+    world = WorldModel(Store(tmp_path / "world.sqlite3"))
+    world.create_world("factory", {"machine": "idle", "units": 0},
+                       constraints={"units": {"min": 0, "max": 100}})
+    action = world.register_action(
+        "factory", "run", preconditions={"machine": "idle"},
+        effects={"machine": "running", "units": 10},
+        failure_effects={"machine": "idle", "units": 0},
+        failure_probability=0.2,
+    )
+    first = simulate_scenarios(world, "factory", action["id"], trials=500, seed=4)
+    second = simulate_scenarios(world, "factory", action["id"], trials=500, seed=4)
+    assert first["sampled_failures"] == second["sampled_failures"]
+    assert first["state_frequencies"] == second["state_frequencies"]
+    assert "not learned predictions" in first["limitation"]
