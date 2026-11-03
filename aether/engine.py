@@ -77,7 +77,10 @@ class AetherEngine:
             (f"fallback_{index}", self.registry.get(f"fallback_{index}"))
             for index in range(1, len(settings.models.fallbacks) + 1)
         )
-        self.provider_chain = ProviderChain(provider_sequence)
+        self.provider_chain = ProviderChain(
+            provider_sequence, max_retries=settings.models.max_retries,
+            backoff_seconds=settings.models.retry_backoff_seconds,
+        )
         self.tasks = TaskManager(store)
         embedding_provider = (
             OllamaEmbeddingProvider(
