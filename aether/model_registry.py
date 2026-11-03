@@ -107,7 +107,9 @@ class ModelCatalog:
 
     def record_outcome(self, provider_name: str, model_id: str, *,
                        success: bool, latency_ms: float) -> dict[str, Any]:
-        if not isinstance(success, bool) or not isfinite(latency_ms) or latency_ms < 0:
+        if (not isinstance(success, bool) or isinstance(latency_ms, bool)
+                or not isinstance(latency_ms, (int, float))
+                or not isfinite(latency_ms) or latency_ms < 0):
             raise ValueError("Outcome and latency are invalid")
         key = f"{provider_name}:{model_id}"
         with self._lock:
