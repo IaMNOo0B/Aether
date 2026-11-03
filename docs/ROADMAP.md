@@ -16,7 +16,7 @@ A capability is marked complete only when its implementation and tests exist. Op
 - [x] Character-budgeted context construction.
 - [x] Structured logging and redacted diagnostics.
 - [x] Runtime configuration validation.
-- [ ] Provider retry/backoff/fallback policy.
+- [x] Bounded exponential retry/backoff for transient provider failures, with permanent request errors excluded from retry and ordered fallback preserved.
 - [x] Conservative task recovery after process interruption; only read-only pending steps may be resumed automatically, while uncertain side effects require manual review.
 - [ ] Configuration schema migrations and model capability metadata.
 
@@ -76,7 +76,8 @@ Phase 4's implemented software workflow is complete within the documented bounde
 - [x] Identify OpenJev-RLCD and review its two-stage method.
 - [x] Document GPU, benchmark, and licensing constraints in [RLCD feasibility](research/RLCD_FEASIBILITY.md).
 - [x] Persistent binary decision ledger and Brier/log-loss/ECE/AURC metrics.
-- [ ] Held-out calibration benchmarks and typed decision-producer integration.
+- [x] Typed decision-producer protocol and reproducible held-out calibration benchmark with dataset hashing and baseline comparison.
+- [ ] Domain-specific producer integrations and independent evaluation on real held-out datasets.
 - [ ] Training reproduction on suitable GPU resources.
 
 AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX 2060 has 6 GB VRAM, while the paper reports 48 GB GPU runs.
@@ -89,7 +90,8 @@ AETHER is not RLCD-trained. Full reproduction is deferred because the target RTX
 - [x] Test execution requires feature flag and per-action human approval.
 - [x] Workspace path containment, file-size caps, step limits, and execution timeout.
 - [x] Persisted plans, progress, and action receipts.
-- [ ] Background scheduler and bounded goal discovery.
+- [x] Bounded deterministic goal discovery from failed/paused tasks and unverified capability records; proposals persist and require explicit operator approval before scheduling.
+- [x] Background scheduler for bounded, pre-approved read-only recurring goals; emergency stop and run limits remain enforced.
 - [x] Cooperative pause/resume and conservative crash recovery for explicitly queued autonomy tasks.
 - [ ] OS-level sandbox for arbitrary code (not provided by the current copy-based candidate workflow).
 
@@ -112,11 +114,12 @@ The candidate copy is not an OS security sandbox. Generated tests execute with t
 - [x] Extract procedural workflows from supplied reference material using the configured model.
 - [x] Store drafts separately from validated skills.
 - [x] Require held-out evaluation evidence before retrieval into assistant context.
-- [ ] Automated benchmark harness for transfer, retention, and regression.
+- [x] Reproducible held-out skill execution harness with exact-output scoring, dataset hash, category breakdown, and optional baseline comparison.
+- [ ] Curated domain benchmark batteries for transfer, long-term retention and regression.
 - [ ] Continual model-weight adaptation/LoRA and catastrophic-forgetting evaluation.
 - [ ] Meta-learning experiments.
 
-Current learning is knowledge/procedure-level. No model weights are updated.
+Current learning is knowledge/procedure-level. The new benchmark harness evaluates caller-supplied workflow executors on held-out cases; no model weights are updated.
 
 ## Stage 9 — Desktop, voice, and collective intelligence
 
@@ -124,11 +127,12 @@ Current learning is knowledge/procedure-level. No model weights are updated.
 - [x] Optional mouse/keyboard input with explicit per-action approval and small key allowlist.
 - [x] Optional offline Vosk push-to-talk recognition and local speech output.
 - [x] Three persisted specialist roles: researcher, planner, critic.
-- [ ] Independent specialist models, parallel execution, and stronger evidence-based arbitration.
+- [x] Opt-in bounded parallel specialist execution using distinct provider instances, with a separate verifier pass and persisted deliverables.
+- [ ] Independently configured specialist model endpoints, VRAM-aware concurrency enforcement, and red-team validation of evidence arbitration.
 - [ ] Vision/OCR/screenshot understanding, audio event understanding, and video processing.
 - [ ] Local Windows hardware and microphone validation.
 
-Specialist roles currently share one local model and run sequentially to fit constrained VRAM. Voice is push-to-talk, not an always-on wake-word service.
+The default specialist path still shares one local model and runs sequentially to fit constrained VRAM. An opt-in independent-provider parallel path exists but needs configured endpoints and real hardware resource validation. Voice is push-to-talk, not an always-on wake-word service.
 
 ## Engineering rules
 
