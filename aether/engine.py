@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from aether.config import Settings
+from aether.cognitive import CognitiveCoordinator
 from aether.decisions import DecisionManager
 from aether.embeddings import OllamaEmbeddingProvider
 from aether.context import fit_messages
@@ -74,6 +75,7 @@ class AetherEngine:
     def __init__(self, settings: Settings, store: Store):
         self.settings = settings
         self.store = store
+        self.cognitive = CognitiveCoordinator()
         self.resources = ResourceGuard(ResourcePolicy(**settings.resources.__dict__))
         self.registry = build_registry(
             settings.models.base_url,
@@ -163,8 +165,13 @@ class AetherEngine:
         if not text:
             return "Please enter a message."
 
+        route = self.cognitive.route(text)
+        cognitive_plan = route["plan"]
         self.store.add_message("user", text)
-        task = self.tasks.create("Respond to user message", {"input_length": len(text)})
+        task = self.tasks.create("Respond to user message", {
+            "input_length": len(text), "cognitive_intent": cognitive_plan["intent"],
+            "cognitive_strategy": cognitive_plan["strategy"],
+        })
         self.tasks.transition(task.id, "running")
         try:
             memories = self.memory.search(text, limit=8)
@@ -196,8 +203,18 @@ class AetherEngine:
                 history = self.store.recent_messages(
                     self.settings.limits.max_history_messages
                 )
+                strategy_context = (
+                    "\\n\\nSelected cognitive strategy: " + cognitive_plan["strategy"] + ". "
+                    + " ".join(cognitive_plan["steps"]) + " "
+                    + "Limitations: " + " ".join(cognitive_plan["limitations"])
+                )
+                if cognitive_plan["intent"] == "research":
+                    strategy_context += (
+                        " Do not claim current web research or source verification unless the research workflow "
+                        "has actually been run and its captured sources are provided."
+                    )
                 messages = fit_messages(
-                    SYSTEM_PROMPT + memory_context + skill_context,
+                    SYSTEM_PROMPT + strategy_context + memory_context + skill_context,
                     history,
                     self.settings.limits.max_prompt_characters,
                 )
