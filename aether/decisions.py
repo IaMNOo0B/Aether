@@ -47,6 +47,9 @@ class DecisionManager:
     def log_prediction(
         self, question: str, probability_true: float, domain: str,
         probability_source: str = "user-supplied",
+        producer_id: str = "manual",
+        model_id: str | None = None,
+        evaluation_split: str = "operational",
     ) -> str:
         text = question.strip()
         category = domain.strip().casefold()
@@ -56,8 +59,12 @@ class DecisionManager:
                 or not isinstance(probability_true, (int, float))
                 or not 0 <= probability_true <= 1):
             raise ValueError("probability_true must be between zero and one")
-        if not probability_source.strip():
-            raise ValueError("probability_source is required for provenance")
+        if not probability_source.strip() or not producer_id.strip():
+            raise ValueError("probability_source and producer_id are required for provenance")
+        if evaluation_split not in {"train", "validation", "held_out", "operational"}:
+            raise ValueError("evaluation_split must be train, validation, held_out or operational")
+        if model_id is not None and not model_id.strip():
+            raise ValueError("model_id cannot be empty when supplied")
         decision_id = uuid4().hex
         self.store.record_decision(
             decision_id, text, float(probability_true),
@@ -65,7 +72,10 @@ class DecisionManager:
             metadata={
                 "domain": category,
                 "probability_source": probability_source,
-                "decision_schema": "binary-v1",
+                "producer_id": producer_id,
+                "model_id": model_id,
+                "evaluation_split": evaluation_split,
+                "decision_schema": "binary-v2",
             },
         )
         return decision_id
@@ -95,6 +105,7 @@ class DecisionManager:
         comparable = [
             item for item in self.store.list_decisions(resolved_only=True, limit=10000)
             if item["metadata"].get("domain") == category
+            and item["metadata"].get("evaluation_split", "operational") == "operational"
             and min(9, int(max(
                 item["probability"], 1 - item["probability"]
             ) * 10)) == band
@@ -129,11 +140,17 @@ class DecisionManager:
             wilson_lower_bound=lower, action=action, reason=reason,
         )
 
-    def metrics(self, domain: str | None = None) -> CalibrationReport:
+    def metrics(
+        self, domain: str | None = None, evaluation_split: str = "operational",
+    ) -> CalibrationReport:
+        if evaluation_split not in {"train", "validation", "held_out", "operational"}:
+            raise ValueError("Unknown evaluation split")
         records = self.store.list_decisions(resolved_only=True, limit=10000)
+        records = [
+            item for item in records
+            if item["metadata"].get("evaluation_split", "operational") == evaluation_split
+        ]
         if domain is not None:
             category = domain.strip().casefold()
-            records = [
-                item for item in records if item["metadata"].get("domain") == category
-            ]
+            records = [item for item in records if item["metadata"].get("domain") == category]
         return evaluate_binary_decisions(records)
