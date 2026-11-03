@@ -4,12 +4,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+import time
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from aether.config import ProviderEndpointSettings
-from aether.ollama import ModelUnavailable, OllamaClient
+from aether.ollama import ModelUnavailable, TransientModelError, OllamaClient
 
 
 class ChatProvider(Protocol):
@@ -123,11 +124,12 @@ class OpenAICompatibleProvider:
                 detail = exc.read(1500).decode("utf-8", errors="replace")
             except OSError:
                 detail = "response body unavailable"
-            raise ModelUnavailable(
+            error_type = TransientModelError if exc.code == 429 or 500 <= exc.code < 600 else ModelUnavailable
+            raise error_type(
                 f"OpenAI-compatible provider returned HTTP {exc.code}: {detail[:1500]}"
             ) from exc
         except (OSError, URLError, TimeoutError) as exc:
-            raise ModelUnavailable(
+            raise TransientModelError(
                 f"OpenAI-compatible provider request failed: {type(exc).__name__}"
             ) from exc
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
@@ -156,10 +158,18 @@ class ProviderChain:
 
     name = "provider_chain"
 
-    def __init__(self, providers: list[tuple[str, ChatProvider]]):
+    def __init__(
+        self, providers: list[tuple[str, ChatProvider]], max_retries: int = 1,
+        backoff_seconds: float = 0.25, sleeper=time.sleep,
+    ):
         if not providers:
             raise ValueError("Provider chain requires at least one configured provider")
+        if not 0 <= max_retries <= 5 or not 0 <= backoff_seconds <= 10:
+            raise ValueError("Provider retry settings exceed safe bounds")
         self.providers = tuple(providers)
+        self.max_retries = max_retries
+        self.backoff_seconds = backoff_seconds
+        self.sleeper = sleeper
         self.last_provider: str | None = None
 
     def is_available(self) -> bool:
@@ -174,12 +184,22 @@ class ProviderChain:
     def chat(self, messages: list[dict[str, str]]) -> str:
         failures = []
         for label, provider in self.providers:
-            try:
-                answer = provider.chat(messages)
-                self.last_provider = label
-                return answer
-            except ModelUnavailable as exc:
-                failures.append(f"{label}: {str(exc)[:400]}")
+            for attempt in range(self.max_retries + 1):
+                try:
+                    answer = provider.chat(messages)
+                    self.last_provider = label
+                    return answer
+                except TransientModelError as exc:
+                    if attempt < self.max_retries:
+                        delay = self.backoff_seconds * (2 ** attempt)
+                        if delay:
+                            self.sleeper(delay)
+                        continue
+                    failures.append(f"{label}: transient failure after {attempt + 1} attempt(s): {str(exc)[:300]}")
+                    break
+                except ModelUnavailable as exc:
+                    failures.append(f"{label}: {str(exc)[:400]}")
+                    break
         self.last_provider = None
         raise ModelUnavailable(
             "All configured model providers failed. " + " | ".join(failures)
