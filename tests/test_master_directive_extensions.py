@@ -170,3 +170,11 @@ def test_world_model_scenarios_are_reproducible_and_not_observations(tmp_path):
     assert first["sampled_failures"] == second["sampled_failures"]
     assert first["state_frequencies"] == second["state_frequencies"]
     assert "not learned predictions" in first["limitation"]
+\n
+def test_rlcd_small_but_valid_dataset_keeps_each_label_in_every_split(tmp_path):
+    rows = [{"prompt": f"short {i}", "label": str(i % 2)} for i in range(10)]
+    report = prepare_dataset(rows, tmp_path / "small.json", seed=3)
+    payload = json.loads((tmp_path / "small.json").read_text())
+    assert all(payload["splits"][split] for split in ("train", "validation", "test"))
+    for split in ("train", "validation", "test"):
+        assert {row["label"] for row in payload["splits"][split]} == {"0", "1"}
