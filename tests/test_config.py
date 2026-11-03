@@ -151,3 +151,22 @@ def test_resource_budget_rejects_invalid_percentages(tmp_path):
     )
     with pytest.raises(ValueError, match="max_cpu_percent"):
         load_settings(config)
+
+
+def test_config_migration_adds_retry_defaults_without_mutating_source():
+    from aether.config import migrate_config
+
+    original = {"models": {"provider": "ollama"}}
+    migrated = migrate_config(original)
+    assert migrated["schema_version"] == 2
+    assert migrated["models"]["retry_attempts"] == 2
+    assert migrated["models"]["retry_backoff_seconds"] == 0.25
+    assert "schema_version" not in original
+    assert "retry_attempts" not in original["models"]
+
+
+def test_config_migration_rejects_future_schema_versions():
+    from aether.config import migrate_config
+
+    with pytest.raises(ValueError, match="newer than supported"):
+        migrate_config({"schema_version": 999})
