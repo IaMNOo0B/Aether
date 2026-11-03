@@ -105,6 +105,20 @@ class Store:
                 );
                 CREATE INDEX IF NOT EXISTS idx_scheduled_goals_due
                     ON scheduled_goals(enabled, next_run_at);
+                CREATE TABLE IF NOT EXISTS goal_candidates (
+                    id TEXT PRIMARY KEY,
+                    objective TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    priority REAL NOT NULL CHECK(priority >= 0 AND priority <= 1),
+                    rationale TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'proposed'
+                        CHECK(status IN ('proposed', 'approved', 'rejected', 'scheduled')),
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_goal_candidates_status_priority
+                    ON goal_candidates(status, priority DESC, created_at);
                 CREATE TABLE IF NOT EXISTS system_controls (
                     name TEXT PRIMARY KEY,
                     enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
@@ -1324,6 +1338,61 @@ class Store:
             )
             if cursor.rowcount != 1:
                 raise KeyError(f"Unknown schedule: {schedule_id}")
+
+    def save_goal_candidate(
+        self, candidate_id: str, objective: str, source: str, priority: float,
+        rationale: str, metadata: dict[str, Any] | None = None,
+    ) -> None:
+        if not all(isinstance(value, str) and value.strip()
+                   for value in (candidate_id, objective, source, rationale)):
+            raise ValueError("Goal candidate ID, objective, source and rationale are required")
+        if isinstance(priority, bool) or not isinstance(priority, (int, float)) or not 0 <= priority <= 1:
+            raise ValueError("Goal candidate priority must be between zero and one")
+        now = utc_now()
+        with self._connect() as db:
+            db.execute(
+                """INSERT INTO goal_candidates
+                   (id, objective, source, priority, rationale, status, metadata_json, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 'proposed', ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                     objective=excluded.objective, source=excluded.source,
+                     priority=excluded.priority, rationale=excluded.rationale,
+                     metadata_json=excluded.metadata_json, updated_at=excluded.updated_at
+                   WHERE goal_candidates.status='proposed'""",
+                (candidate_id, objective.strip(), source.strip(), float(priority),
+                 rationale.strip(), json.dumps(metadata or {}), now, now),
+            )
+
+    def list_goal_candidates(
+        self, status: str | None = None, limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            if status is None:
+                rows = db.execute(
+                    "SELECT * FROM goal_candidates ORDER BY priority DESC, created_at LIMIT ?",
+                    (max(0, min(limit, 1000)),),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT * FROM goal_candidates WHERE status=? ORDER BY priority DESC, created_at LIMIT ?",
+                    (status, max(0, min(limit, 1000))),
+                ).fetchall()
+        return [
+            {**dict(row), "metadata": json.loads(row["metadata_json"])}
+            for row in rows
+        ]
+
+    def set_goal_candidate_status(self, candidate_id: str, status: str) -> None:
+        if status not in {"approved", "rejected", "scheduled"}:
+            raise ValueError("Goal candidate status must be approved, rejected or scheduled")
+        with self._connect() as db:
+            cursor = db.execute(
+                """UPDATE goal_candidates SET status=?, updated_at=?
+                   WHERE id=? AND status='proposed'""",
+                (status, utc_now(), candidate_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("Unknown or already-reviewed goal candidate")
 
     def enqueue_due_schedules(
         self, now_epoch: float | None = None, limit: int = 1,
