@@ -121,6 +121,34 @@ class AetherEngine:
             self.provider() if settings.models.enabled else None,
         )
 
+    def run_parallel_agents(self, objective: str, context: str = ""):
+        if not self.settings.agents.parallel_enabled:
+            raise PermissionError("Independent parallel agents are disabled in config/settings.toml")
+        routes = {
+            "researcher": self.settings.agents.researcher_provider,
+            "planner": self.settings.agents.planner_provider,
+            "critic": self.settings.agents.critic_provider,
+        }
+        verifier_route = self.settings.agents.verifier_provider
+        providers = {role: self.registry.get(route) for role, route in routes.items()}
+        verifier = self.registry.get(verifier_route)
+        all_routes = [*routes.values(), verifier_route]
+        descriptors = [self.registry.descriptor(route) for route in all_routes]
+        local_count = sum(item.privacy == "local" for item in descriptors)
+        if local_count > 1:
+            raise ValueError(
+                "Parallel mode allows at most one local model endpoint to protect constrained VRAM; "
+                "configure the other specialist routes to separate remote endpoints."
+            )
+        if local_count:
+            self.resources.check("parallel local specialist inference", gpu_required=True)
+        from aether.agents import MultiAgentCoordinator
+        coordinator = MultiAgentCoordinator(self.provider(), self.store)
+        return coordinator.run_parallel(
+            objective, providers, context=context, verifier=verifier,
+            max_workers=self.settings.agents.max_workers,
+        )
+
     def provider(self):
         if not self.settings.models.enabled:
             raise ModelUnavailable("The configured language model is disabled")
@@ -136,6 +164,7 @@ class AetherEngine:
             "provider": self.settings.models.provider,
             "registered_providers": self.registry.names(),
             "fallback_count": len(self.settings.models.fallbacks),
+            "parallel_agents_enabled": self.settings.agents.parallel_enabled,
             "last_successful_provider": self.provider_chain.last_provider,
             "model": self.settings.models.model,
             "model_enabled": self.settings.models.enabled,
