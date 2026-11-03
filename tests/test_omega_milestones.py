@@ -122,3 +122,30 @@ def test_decision_ledger_records_typed_producer_model_and_split(tmp_path):
     assert item["metadata"]["producer_id"] == "rlcd-readout-v1"
     assert item["metadata"]["model_id"] == "local-model@sha256:abc"
     assert item["metadata"]["evaluation_split"] == "held_out"
+
+
+def test_frontier_research_lifecycle_is_auditable_and_not_auto_validated(tmp_path):
+    from aether.frontier import ResearchFrontier
+
+    frontier = ResearchFrontier(tmp_path / "frontier.jsonl")
+    proposal = frontier.propose({
+        "question": "Can a smaller model improve AETHER task routing?",
+        "current_state": "Single configured local model.",
+        "primary_sources": ["https://arxiv.org/abs/0000.00000"],
+        "reproducible_evidence": "No local benchmark yet.",
+        "technical_requirements": ["Versioned task set", "Independent held-out set"],
+        "feasibility": "Needs local measurement.",
+        "resource_cost": "CPU/GPU benchmark time.",
+        "limitations": "Synthetic test tasks may not generalize.",
+        "aether_application": "Adaptive model routing.",
+        "proposed_experiment": "Compare current router against a held-out routing benchmark.",
+    })
+    assert proposal["status"] == "proposed"
+    assert proposal["evidence_status"] == "not_independently_validated"
+    with pytest.raises(ValueError, match="observed result"):
+        frontier.transition(proposal["id"], "validated", evidence="looks promising",
+                            reviewer="reviewer", limitations="small sample")
+    updated = frontier.transition(proposal["id"], "investigating", evidence="Reviewed two papers",
+                                  reviewer="reviewer", limitations="No local replication")
+    assert updated["status"] == "investigating"
+    assert frontier.integrity()["valid"] is True
