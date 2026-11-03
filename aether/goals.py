@@ -200,6 +200,84 @@ class GoalManager:
         discovered.extend(self.discover_project_changes(limit=max(0, discovery_limit - len(discovered))))
         return discovered
 
+    def discover_external_events(
+        self, events: list[dict[str, Any]], limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Turn normalized connector events into review-only goal proposals."""
+        if not isinstance(events, list):
+            raise ValueError("External events must be a list of normalized event objects")
+        proposals = []
+        for event in events[:max(0, min(limit, 50))]:
+            if not isinstance(event, dict):
+                continue
+            required = ("source", "event_id", "title", "description", "impact")
+            if any(not isinstance(event.get(key), str) or not event[key].strip() for key in required):
+                continue
+            source = event["source"].strip()[:80]
+            event_id = event["event_id"].strip()[:160]
+            proposal = self.propose(
+                title=f"Review external event: {event['title'][:100]}",
+                purpose=(
+                    f"Source: {source}; event ID: {event_id}. "
+                    f"Description: {event['description'][:1200]}. "
+                    f"Reported impact: {event['impact'][:600]}. "
+                    "Verify the event through its authoritative source before acting."
+                ),
+                source="external_event",
+                source_key=f"external-event:{source}:{event_id}",
+                expected_benefit="Convert an externally observed change into a traceable, human-reviewed response.",
+                priority=0.6, complexity=2, goal_level="system",
+                risks=[
+                    "Connector payloads may be stale, duplicated, spoofed or incomplete.",
+                    "External events never grant permission to mutate local or remote systems.",
+                ],
+                completion_criteria=[
+                    "Verify the event against its authoritative source.",
+                    "Determine whether it affects AETHER or the configured project.",
+                    "Record a safe recommendation or close the proposal with evidence.",
+                ],
+                stop_condition="Stop if source authenticity or event relevance cannot be established.",
+            )
+            proposals.append(proposal)
+        return proposals
+
+    def discover_research_opportunities(
+        self, opportunities: list[dict[str, Any]], limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Convert explicit evidence gaps into bounded research proposals."""
+        if not isinstance(opportunities, list):
+            raise ValueError("Research opportunities must be a list of normalized objects")
+        proposals = []
+        for item in opportunities[:max(0, min(limit, 50))]:
+            if not isinstance(item, dict):
+                continue
+            required = ("report_id", "question", "gap", "expected_benefit")
+            if any(not isinstance(item.get(key), str) or not item[key].strip() for key in required):
+                continue
+            report_id = item["report_id"].strip()[:160]
+            gap = item["gap"].strip()[:600]
+            proposal = self.propose(
+                title=f"Investigate evidence gap: {item['question'][:100]}",
+                purpose=(
+                    f"Prior research report: {report_id}. Question: {item['question'][:600]}. "
+                    f"Unresolved evidence gap: {gap}. Re-run or extend the search strategy and "
+                    "record supporting, contradictory and missing evidence."
+                ),
+                source="research_opportunity",
+                source_key=f"research-gap:{report_id}:{sha256(gap.encode('utf-8')).hexdigest()[:16]}",
+                expected_benefit=item["expected_benefit"][:500],
+                priority=0.55, complexity=3, goal_level="research",
+                risks=["A reported gap may be caused by search coverage or indexing limitations."],
+                completion_criteria=[
+                    "Inspect the originating report and its search strategy.",
+                    "Search for additional primary sources and record provenance.",
+                    "Update the evidence synthesis without silently overwriting prior conclusions.",
+                ],
+                stop_condition="Stop if the question is outside scope or primary evidence cannot be obtained.",
+            )
+            proposals.append(proposal)
+        return proposals
+
     def discover_project_changes(self, limit: int = 5) -> list[dict[str, Any]]:
         """Detect tracked source/config changes and propose review goals only.
 
