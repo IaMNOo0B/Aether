@@ -1,3 +1,5 @@
+schema_version = 2
+
 [app]
 name = "AETHER"
 environment = "local"
@@ -12,6 +14,8 @@ timeout_seconds = 120
 # For openai_compatible only: read the API key from this environment variable.
 # Leave empty for local OpenAI-compatible servers that do not require a key.
 api_key_env = "AETHER_API_KEY"
+retry_attempts = 2
+retry_backoff_seconds = 0.25
 
 # Optional ordered fallback endpoints. AETHER tries the primary provider first,
 # then each fallback only when the previous provider raises a provider error.
