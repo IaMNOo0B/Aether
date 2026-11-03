@@ -319,13 +319,13 @@ class RLCDTrainingAdapter:
         if source_status.returncode or source_status.stdout.strip():
             raise RLCDConfigurationError("OpenJev tracked training source is modified; use a clean pinned checkout")
         probe_code = (
-            "import json, torch, transformers, datasets, tokenizers, numpy; "
+            "import json, sys, torch, transformers, datasets, tokenizers, numpy; "
             "p=torch.cuda.is_available(); "
             "m=(torch.cuda.get_device_properties(0).total_memory/(1024**3) if p else 0); "
             "v={'torch':torch.__version__,'torch_cuda':torch.version.cuda,'transformers':transformers.__version__,'datasets':datasets.__version__,'tokenizers':tokenizers.__version__,'numpy':numpy.__version__}; "
             "expected={'torch':'2.6.0','torch_cuda':'12.4','transformers':'5.17.0','datasets':'5.0.1','tokenizers':'0.23.2','numpy':'2.5.2'}; "
-            "ok=(v['torch'].startswith(expected['torch']) and all(v[k]==expected[k] for k in expected if k!='torch')); "
-            "print(json.dumps({'cuda':p,'gpu':(torch.cuda.get_device_name(0) if p else None),'memory_gib':m,'versions':v,'versions_match':ok}))"
+            "ok=(sys.version_info[:2]==(3,12) and v['torch'].startswith(expected['torch']) and all(v[k]==expected[k] for k in expected if k!='torch')); "
+            "print(json.dumps({'python':sys.version.split()[0],'cuda':p,'gpu':(torch.cuda.get_device_name(0) if p else None),'memory_gib':m,'versions':v,'versions_match':ok}))"
         )
         probe = checked([str(python), "-c", probe_code], timeout=120)
         if probe.returncode:
@@ -351,14 +351,20 @@ class RLCDTrainingAdapter:
             Path(os.environ.get("HF_HOME", str(Path.home() / ".cache" / "huggingface"))) / "hub"
         ))).expanduser()
         model_ref = hf_cache / "models--Qwen--Qwen3-1.7B" / "refs" / "main"
-        if not model_ref.is_file() or model_ref.read_text(encoding="utf-8").strip() != plan["model_revision"]:
+        model_snapshot = hf_cache / "models--Qwen--Qwen3-1.7B" / "snapshots" / plan["model_revision"]
+        if (not model_ref.is_file()
+                or model_ref.read_text(encoding="utf-8").strip() != plan["model_revision"]
+                or not model_snapshot.is_dir()):
             raise RLCDConfigurationError(
                 "Pinned Qwen3-1.7B cache ref is missing or mismatched. Prepare the exact model revision "
                 "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e before running offline."
             )
         if plan["config"]["task"] == "mmlupro":
             dataset_ref = hf_cache / "datasets--TIGER-Lab--MMLU-Pro" / "refs" / "main"
-            if not dataset_ref.is_file() or dataset_ref.read_text(encoding="utf-8").strip() != plan["dataset"]["revision"]:
+            dataset_snapshot = hf_cache / "datasets--TIGER-Lab--MMLU-Pro" / "snapshots" / plan["dataset"]["revision"]
+            if (not dataset_ref.is_file()
+                    or dataset_ref.read_text(encoding="utf-8").strip() != plan["dataset"]["revision"]
+                    or not dataset_snapshot.is_dir()):
                 raise RLCDConfigurationError(
                     "Pinned MMLU-Pro cache ref is missing or mismatched. Prepare revision "
                     "b189ec765aa7ed75c8acfea42df31fdae71f97be before running offline."
@@ -412,7 +418,10 @@ class RLCDTrainingAdapter:
         if report["status"] == "running":
             report["status"] = "completed"
         report["started_at_epoch"], report["finished_at_epoch"] = started, time.time()
-        report["note"] = "Execution status records process and artifact completion only. Run the upstream analysis plan and inspect per-item held-out results before claiming reproduction."
+        report["note"] = (
+            "Execution status records process and artifact completion only. The two_stage.sh default test split is the upstream validation split, not the independent fresh final test. "
+            "Run the upstream analysis plan and inspect per-item fresh held-out results before claiming reproduction."
+        )
         (report_dir / "run_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
         plan["status"] = "executed"
         plan["execution_report"] = str((report_dir / "run_report.json").relative_to(self.root))
