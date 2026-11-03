@@ -127,3 +127,24 @@ def test_provider_chain_does_not_retry_permanent_errors():
     with pytest.raises(ModelUnavailable):
         chain.chat([{"role": "user", "content": "hello"}])
     assert provider.calls == 1
+
+
+def test_registry_exposes_explicit_model_capability_metadata_without_inventing_unknowns():
+    from aether.providers import ModelDescriptor
+
+    registry = ProviderRegistry()
+    registry.register(
+        "local", FakeProvider(),
+        ModelDescriptor(
+            provider="ollama", model="phi3:mini-4k-q4_0",
+            capabilities=("chat",), context_window=4096,
+            license="model-card-required", privacy="local",
+            hardware_requirements="6GB VRAM target; verify runtime telemetry",
+        ),
+    )
+    descriptor = registry.describe("local")
+    assert descriptor.model == "phi3:mini-4k-q4_0"
+    assert descriptor.context_window == 4096
+    assert descriptor.license == "model-card-required"
+    assert descriptor.privacy == "local"
+    assert registry.describe("local").capabilities == ("chat",)
