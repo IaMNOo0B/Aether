@@ -6,6 +6,7 @@ outcomes from comparable decisions in the same domain and confidence band.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from math import sqrt
 from typing import Any
 from uuid import uuid4
@@ -38,6 +39,26 @@ def wilson_lower_bound(successes: int, trials: int, z: float = 1.96) -> float:
     return (center - margin) / denominator
 
 
+@dataclass(frozen=True)
+class DecisionProposal:
+    question: str
+    probability_true: float
+    domain: str
+    producer_id: str
+    evidence_ref: str | None = None
+    methodology: str = "explicit-probability-readout-v1"
+
+    def __post_init__(self) -> None:
+        if not self.question.strip() or not self.domain.strip() or not self.producer_id.strip():
+            raise ValueError("Decision question, domain and producer_id are required")
+        if isinstance(self.probability_true, bool) or not isinstance(self.probability_true, (int, float)):
+            raise ValueError("Decision probability must be numeric")
+        if not math.isfinite(float(self.probability_true)) or not 0 <= self.probability_true <= 1:
+            raise ValueError("Decision probability must be finite and between zero and one")
+        if not self.methodology.strip():
+            raise ValueError("Decision methodology is required")
+
+
 class DecisionManager:
     """Record typed binary predictions and abstain until empirical evidence is sufficient."""
 
@@ -47,6 +68,8 @@ class DecisionManager:
     def log_prediction(
         self, question: str, probability_true: float, domain: str,
         probability_source: str = "user-supplied",
+        producer_id: str | None = None, evidence_ref: str | None = None,
+        methodology: str = "binary-v1",
     ) -> str:
         text = question.strip()
         category = domain.strip().casefold()
@@ -65,10 +88,27 @@ class DecisionManager:
             metadata={
                 "domain": category,
                 "probability_source": probability_source,
-                "decision_schema": "binary-v1",
+                "producer_id": producer_id or probability_source,
+                "evidence_ref": evidence_ref,
+                "methodology": methodology,
+                "decision_schema": "binary-v2",
             },
         )
         return decision_id
+
+    def record_proposal(self, proposal: DecisionProposal) -> str:
+        """Record a typed probability emitted by a declared producer.
+
+        A language model's prose confidence is not a valid producer; callers must
+        supply a numeric readout and identify the producing model/tool.
+        """
+        return self.log_prediction(
+            proposal.question, proposal.probability_true, proposal.domain,
+            probability_source=f"typed-producer:{proposal.producer_id}",
+            producer_id=proposal.producer_id,
+            evidence_ref=proposal.evidence_ref,
+            methodology=proposal.methodology,
+        )
 
     def resolve(self, decision_id: str, outcome: bool) -> None:
         self.store.resolve_decision(decision_id, outcome)
