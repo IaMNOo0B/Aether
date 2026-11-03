@@ -55,17 +55,16 @@ class RLCDRunConfig:
 
 def _stable_key(record: Mapping[str, Any]) -> str:
     prompt = " ".join(str(record.get("prompt", "")).casefold().split())
-    label = str(record.get("label", record.get("answer", ""))).strip().casefold()
-    if not prompt or not label:
-        raise RLCDConfigurationError("Every RLCD row requires non-empty prompt and label/answer")
-    return sha256((prompt + "\0" + label).encode("utf-8")).hexdigest()
+    if not prompt:
+        raise RLCDConfigurationError("Every RLCD row requires a non-empty prompt")
+    return sha256(prompt.encode("utf-8")).hexdigest()
 
 
 def prepare_dataset(
     records: Iterable[Mapping[str, Any]], output_path: str | Path, *,
     seed: int = 17, train_ratio: float = 0.8, validation_ratio: float = 0.1,
 ) -> dict[str, Any]:
-    """Deduplicate by prompt+label and create deterministic leakage-resistant splits."""
+    """Deduplicate by prompt and stratify deterministic splits by answer label."""
     if seed < 0 or not 0 < train_ratio < 1 or not 0 < validation_ratio < 1:
         raise RLCDConfigurationError("Invalid seed or split ratios")
     if train_ratio + validation_ratio >= 1:
@@ -77,25 +76,42 @@ def prepare_dataset(
             raise RLCDConfigurationError("Dataset rows must be objects")
         row = dict(raw)
         key = _stable_key(row)
+        label = str(row.get("label", row.get("answer", ""))).strip()
+        if not label:
+            raise RLCDConfigurationError("Every RLCD row requires a non-empty label/answer")
         if key in unique:
+            prior_label = str(unique[key].get("label", unique[key].get("answer", ""))).strip()
+            if prior_label != label:
+                raise RLCDConfigurationError("Conflicting labels for the same prompt; resolve before splitting")
             duplicates += 1
             continue
         unique[key] = {**row, "_aether_example_hash": key}
     if len(unique) < 10:
         raise RLCDConfigurationError("At least 10 unique examples are required for a three-way split")
+    by_label: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for key, row in unique.items():
+        label = str(row.get("label", row.get("answer", ""))).strip()
+        by_label.setdefault(label, []).append((key, row))
     train, validation, test = [], [], []
-    for key, row in sorted(unique.items()):
-        bucket = int(sha256(f"{seed}:{key}".encode()).hexdigest()[:12], 16) / float(16 ** 12)
-        if bucket < train_ratio:
-            train.append(row)
-        elif bucket < train_ratio + validation_ratio:
-            validation.append(row)
-        else:
-            test.append(row)
-    if not train or not validation or not test:
-        raise RLCDConfigurationError(
-            "Deterministic split produced an empty partition; add more examples or change the seed"
+    for label, members in sorted(by_label.items()):
+        if len(members) < 3:
+            raise RLCDConfigurationError(
+                f"Label {label!r} needs at least three examples for leakage-resistant train/validation/test splits"
+            )
+        ordered = sorted(
+            members,
+            key=lambda pair: sha256(f"{seed}:{pair[0]}".encode()).hexdigest(),
         )
+        for index, (_, row) in enumerate(ordered):
+            bucket = index % 10
+            if bucket < 8:
+                train.append(row)
+            elif bucket == 8:
+                validation.append(row)
+            else:
+                test.append(row)
+    if not train or not validation or not test:
+        raise RLCDConfigurationError("Stratified split produced an empty partition")
     payload = {
         "schema": "aether-rlcd-dataset-v1",
         "seed": seed,
@@ -104,8 +120,9 @@ def prepare_dataset(
         "duplicate_count": duplicates,
         "splits": {"train": train, "validation": validation, "test": test},
         "split_counts": {"train": len(train), "validation": len(validation), "test": len(test)},
+        "label_counts": {label: len(items) for label, items in sorted(by_label.items())},
         "test_hashes": sorted(row["_aether_example_hash"] for row in test),
-        "warning": "Hash splitting is deterministic, not a substitute for temporal, subject, or benchmark-specific leakage controls.",
+        "warning": "Prompt-level deduplication and deterministic label stratification reduce leakage; temporal, subject and benchmark-specific leakage controls remain the dataset owner's responsibility.",
     }
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
