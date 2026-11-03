@@ -6,7 +6,7 @@ outcomes from comparable decisions in the same domain and confidence band.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import sqrt
+from math import isfinite, sqrt
 from typing import Any
 from uuid import uuid4
 
@@ -47,6 +47,8 @@ class DecisionManager:
     def log_prediction(
         self, question: str, probability_true: float, domain: str,
         probability_source: str = "user-supplied",
+        *, producer_type: str | None = None, source_ref: str | None = None,
+        model_id: str | None = None, evidence_hash: str | None = None,
     ) -> str:
         text = question.strip()
         category = domain.strip().casefold()
@@ -54,6 +56,7 @@ class DecisionManager:
             raise ValueError("Decision question and domain are required")
         if (isinstance(probability_true, bool)
                 or not isinstance(probability_true, (int, float))
+                or not isfinite(float(probability_true))
                 or not 0 <= probability_true <= 1):
             raise ValueError("probability_true must be between zero and one")
         if not probability_source.strip():
@@ -65,10 +68,49 @@ class DecisionManager:
             metadata={
                 "domain": category,
                 "probability_source": probability_source,
-                "decision_schema": "binary-v1",
+                "decision_schema": "typed-binary-v2" if producer_type else "binary-v1",
+                **({"producer_type": producer_type} if producer_type else {}),
+                **({"source_ref": source_ref} if source_ref else {}),
+                **({"model_id": model_id} if model_id else {}),
+                **({"evidence_hash": evidence_hash} if evidence_hash else {}),
             },
         )
         return decision_id
+
+    def log_typed_prediction(
+        self, question: str, probability_true: float, domain: str, *,
+        producer_type: str, source_ref: str, model_id: str | None = None,
+        evidence_hash: str | None = None,
+    ) -> str:
+        """Record a prediction emitted by a named subsystem with traceable provenance.
+
+        The producer label is metadata, not authentication or proof that the
+        probability is calibrated. Outcomes must still be independently observed.
+        """
+        allowed = {
+            "assistant_model", "research_claim", "experiment_prediction",
+            "tool_verification", "world_model", "operator",
+        }
+        producer = producer_type.strip().casefold()
+        reference = source_ref.strip()
+        if producer not in allowed:
+            raise ValueError(f"Unsupported decision producer: {producer_type}")
+        if not reference:
+            raise ValueError("Typed decisions require a non-empty source_ref")
+        if evidence_hash is not None:
+            normalized_hash = evidence_hash.strip().casefold()
+            if len(normalized_hash) != 64 or any(
+                character not in "0123456789abcdef" for character in normalized_hash
+            ):
+                raise ValueError("evidence_hash must be a 64-character SHA-256 hex digest")
+        if model_id is not None and not model_id.strip():
+            raise ValueError("model_id cannot be empty when supplied")
+        return self.log_prediction(
+            question, probability_true, domain,
+            probability_source=f"typed-producer:{producer}",
+            producer_type=producer, source_ref=reference,
+            model_id=model_id, evidence_hash=evidence_hash,
+        )
 
     def resolve(self, decision_id: str, outcome: bool) -> None:
         self.store.resolve_decision(decision_id, outcome)
