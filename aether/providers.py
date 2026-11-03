@@ -27,6 +27,11 @@ class ModelDescriptor:
     provider: str
     model: str
     enabled: bool = True
+    capabilities: tuple[str, ...] = ("chat",)
+    context_window: int | None = None
+    license: str = "unknown"
+    privacy: str = "provider-defined"
+    hardware_requirements: str = "unknown"
 
 
 class ProviderRegistry:
@@ -34,14 +39,29 @@ class ProviderRegistry:
 
     def __init__(self) -> None:
         self._providers: dict[str, ChatProvider] = {}
+        self._descriptors: dict[str, ModelDescriptor] = {}
 
-    def register(self, name: str, provider: ChatProvider) -> None:
+    def register(
+        self, name: str, provider: ChatProvider,
+        descriptor: ModelDescriptor | None = None,
+    ) -> None:
         key = name.strip().lower()
         if not key:
             raise ValueError("Provider name cannot be empty")
         if key in self._providers:
             raise ValueError(f"Provider already registered: {key}")
         self._providers[key] = provider
+        self._descriptors[key] = descriptor or ModelDescriptor(
+            provider=getattr(provider, "name", key),
+            model=str(getattr(provider, "model", "unknown")),
+        )
+
+    def describe(self, name: str) -> ModelDescriptor:
+        key = name.strip().lower()
+        try:
+            return self._descriptors[key]
+        except KeyError as exc:
+            raise ModelUnavailable(f"No model descriptor registered for: {key}") from exc
 
     def get(self, name: str) -> ChatProvider:
         key = name.strip().lower()
@@ -225,7 +245,13 @@ def build_registry(
     registry = ProviderRegistry()
     selected = provider.strip().lower()
     registry.register(
-        selected, _make_provider(selected, base_url, model, timeout_seconds, api_key_env)
+        selected, _make_provider(selected, base_url, model, timeout_seconds, api_key_env),
+        ModelDescriptor(
+            provider=selected, model=model, enabled=True,
+            capabilities=("chat",), context_window=None,
+            license="unknown", privacy="local" if selected == "ollama" else "provider-defined",
+            hardware_requirements="operator/model-card supplied",
+        ),
     )
     for index, fallback in enumerate(fallbacks, start=1):
         registry.register(
@@ -233,6 +259,11 @@ def build_registry(
             _make_provider(
                 fallback.provider, fallback.base_url, fallback.model,
                 fallback.timeout_seconds, fallback.api_key_env,
+            ),
+            ModelDescriptor(
+                provider=fallback.provider, model=fallback.model, enabled=True,
+                capabilities=("chat",), context_window=None, license="unknown",
+                privacy="provider-defined", hardware_requirements="operator/model-card supplied",
             ),
         )
     return registry
