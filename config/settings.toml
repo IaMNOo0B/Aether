@@ -81,3 +81,15 @@ max_gpu_utilization_percent = 98.0
 min_free_vram_mb = 512
 require_gpu_telemetry = false
 cpu_sample_seconds = 0.1
+
+
+[agents]
+# Parallel specialists require four distinct configured provider registry keys.
+# Example routes: "ollama", "fallback_1", "fallback_2", "fallback_3".
+# Keep disabled on constrained VRAM unless most roles use separate remote endpoints.
+parallel_enabled = false
+researcher_provider = ""
+planner_provider = ""
+critic_provider = ""
+verifier_provider = ""
+max_workers = 3
