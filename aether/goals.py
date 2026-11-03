@@ -138,7 +138,7 @@ class HierarchicalGoalGraph:
         objective = " ".join(objective.split())
         if not objective or len(objective) > 2000:
             raise ValueError("Goal objective must contain 1..2000 characters")
-        if isinstance(priority, bool) or not 1 <= priority <= 5:
+        if isinstance(priority, bool) or not isinstance(priority, int) or not 1 <= priority <= 5:
             raise ValueError("Goal priority must be between 1 and 5")
         if not owner.strip():
             raise ValueError("Goal owner is required")
