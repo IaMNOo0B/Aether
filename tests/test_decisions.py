@@ -101,7 +101,7 @@ def test_typed_decision_producer_persists_provenance(tmp_path):
         evidence_ref="run:fixture-42",
     )
     decision_id = manager.record_proposal(proposal)
-    saved = store.list_decisions(limit=10)[0]
+    saved = store.list_decisions(resolved_only=False, limit=10)[0]
     assert saved["id"] == decision_id
     assert saved["metadata"]["producer_id"] == "calibrated-readout-v1"
     assert saved["metadata"]["evidence_ref"] == "run:fixture-42"
