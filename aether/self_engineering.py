@@ -218,6 +218,87 @@ class SelfEngineer:
         metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         return metadata
 
+
+    def evaluate_sandboxed(
+        self, experiment_id: str, *, approved: bool = False,
+        sandbox_image: str = "aether-python-test:3.12",
+    ) -> dict[str, Any]:
+        """Run baseline and candidate tests in an OS-isolated, no-network Docker container."""
+        if not approved:
+            raise PermissionError("OS-sandboxed candidate evaluation requires explicit approval")
+        from aether.sandbox import DockerSandbox, SandboxUnavailable
+
+        directory = (self.experiments / experiment_id).resolve()
+        if self.experiments.resolve() not in directory.parents:
+            raise ValueError("Experiment path is outside the experiment directory")
+        metadata_path = directory / "experiment.json"
+        patch_path = directory / "proposal.patch"
+        if not metadata_path.is_file() or not patch_path.is_file():
+            raise FileNotFoundError(f"Unknown experiment: {experiment_id}")
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if metadata.get("status") != "proposed":
+            raise ValueError("Only proposed experiments can be evaluated")
+        patch = patch_path.read_text(encoding="utf-8")
+        self.validate_patch_text(patch)
+        sandbox = DockerSandbox(self.root, image=sandbox_image, timeout_seconds=self.timeout)
+        availability = sandbox.availability()
+        if not availability["available"]:
+            raise SandboxUnavailable(availability["reason"])
+
+        ignored = shutil.ignore_patterns(
+            ".git", ".venv", "__pycache__", ".pytest_cache", "data", "logs",
+            "workspace", ".aether", "node_modules",
+        )
+        baseline = directory / "baseline"
+        candidate = directory / "sandbox-candidate"
+        for path in (baseline, candidate):
+            if path.exists():
+                shutil.rmtree(path)
+        shutil.copytree(self.root, baseline, ignore=ignored)
+        shutil.copytree(self.root, candidate, ignore=ignored)
+        (candidate / ".git").mkdir(exist_ok=True)
+        patch_in_candidate = candidate / "candidate.patch"
+        patch_in_candidate.write_text(patch, encoding="utf-8")
+        applied = subprocess.run(
+            ["git", "apply", str(patch_in_candidate)], cwd=candidate,
+            capture_output=True, text=True, timeout=30, check=False, shell=False,
+        )
+        patch_in_candidate.unlink(missing_ok=True)
+        if applied.returncode:
+            metadata.update({"status": "rejected", "reason": "patch did not apply",
+                             "patch_error": applied.stderr[-4000:]})
+            metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+            return metadata
+
+        baseline_compile = sandbox.run_tests(
+            baseline, approved=True, command=("python", "-m", "compileall", "-q", "aether")
+        )
+        baseline_tests = sandbox.run_tests(baseline, approved=True)
+        if baseline_compile["status"] != "passed" or baseline_tests["status"] != "passed":
+            metadata.update({
+                "status": "rejected", "reason": "sandbox baseline failed",
+                "baseline_compile": baseline_compile, "baseline_tests": baseline_tests,
+                "integrated": False,
+            })
+        else:
+            candidate_compile = sandbox.run_tests(
+                candidate, approved=True, command=("python", "-m", "compileall", "-q", "aether")
+            )
+            candidate_tests = sandbox.run_tests(candidate, approved=True)
+            passed = candidate_compile["status"] == "passed" and candidate_tests["status"] == "passed"
+            metadata.update({
+                "status": "validated_candidate" if passed else "rejected",
+                "integrated": False, "baseline_passed": True,
+                "compile_passed": candidate_compile["status"] == "passed",
+                "tests_passed": candidate_tests["status"] == "passed",
+                "baseline_compile": baseline_compile, "baseline_tests": baseline_tests,
+                "candidate_compile": candidate_compile, "candidate_tests": candidate_tests,
+                "note": "OS-isolated candidate only. No production files were changed or integrated.",
+            })
+        metadata["sandbox"] = availability
+        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        return metadata
+
     def rollback(self, experiment_id: str) -> None:
         directory = (self.experiments / experiment_id).resolve()
         if self.experiments.resolve() not in directory.parents:
