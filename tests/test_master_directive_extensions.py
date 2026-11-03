@@ -1,0 +1,127 @@
+import json
+import wave
+
+import pytest
+
+from aether.audit import AuditJournal
+from aether.goals import GoalManager
+from aether.perception import AudioPerception, PerceptionSuite
+from aether.rlcd_training import RLCDConfigurationError, RLCDRunConfig, RLCDTrainingAdapter, prepare_dataset
+from aether.sandbox import DockerSandbox
+
+
+def test_rlcd_dataset_is_prompt_deduplicated_stratified_and_reproducible(tmp_path):
+    rows = [{"prompt": f"case {i}", "label": str(i % 2), "rationale": f"why {i}"}
+            for i in range(120)]
+    one = prepare_dataset(rows, tmp_path / "one.json", seed=9)
+    two = prepare_dataset(rows, tmp_path / "two.json", seed=9)
+    left, right = json.loads((tmp_path / "one.json").read_text()), json.loads((tmp_path / "two.json").read_text())
+    assert one["sha256"] == two["sha256"]
+    assert left["split_counts"] == right["split_counts"]
+    groups = [{item["_aether_example_hash"] for item in left["splits"][key]}
+              for key in ("train", "validation", "test")]
+    assert not groups[0] & groups[1] and not groups[0] & groups[2] and not groups[1] & groups[2]
+    assert all(groups)
+
+
+def test_rlcd_dataset_rejects_same_prompt_with_conflicting_labels(tmp_path):
+    with pytest.raises(RLCDConfigurationError, match="Conflicting labels"):
+        prepare_dataset([{"prompt": "same", "label": "A"},
+                         {"prompt": "same", "label": "B"}], tmp_path / "split.json")
+
+
+def test_rlcd_adapter_requires_external_gpu_and_immutable_dataset(tmp_path):
+    rows = [{"prompt": f"case {i}", "label": str(i % 2)} for i in range(120)]
+    prepare_dataset(rows, tmp_path / "data" / "split.json")
+    adapter = RLCDTrainingAdapter(tmp_path)
+    adapter.create_manifest(RLCDRunConfig("model/id", "data/split.json", "runs/output"),
+                             "runs/manifest.json")
+    with pytest.raises(PermissionError, match="external GPU"):
+        adapter.run("runs/manifest.json", ["python", "runner.py"])
+    (tmp_path / "data" / "split.json").write_text("{}")
+    with pytest.raises(RLCDConfigurationError, match="Dataset changed"):
+        adapter.run("runs/manifest.json", ["python", "runner.py"],
+                    approved=True, external_compute_confirmed=True)
+
+
+def test_audit_journal_detects_tampering_and_refuses_append(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    journal = AuditJournal(path)
+    journal.append("task.started", {"id": "one"})
+    assert journal.verify()["valid"]
+    item = json.loads(path.read_text().splitlines()[0])
+    item["payload"]["id"] = "tampered"
+    path.write_text(json.dumps(item) + "\n")
+    assert not journal.verify()["valid"]
+    with pytest.raises(RuntimeError, match="integrity"):
+        journal.append("task.finished", {})
+
+
+def test_docker_sandbox_requires_explicit_approval():
+    with pytest.raises(PermissionError, match="explicit approval"):
+        DockerSandbox(".").run_tests(".", approved=False)
+
+
+def test_audio_inspection_and_perception_capabilities_are_truthful(tmp_path):
+    path = tmp_path / "test.wav"
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(16000)
+        handle.writeframes(b"\x00\x00" * 16000)
+    result = AudioPerception().inspect_wav(path)
+    assert result.data["duration_seconds"] == 1
+    assert PerceptionSuite().capabilities()["audio"]["configured_model"] is False
+
+
+def test_goal_discovery_requires_approval_before_scheduling(tmp_path):
+    from aether.storage import Store
+    store = Store(tmp_path / "goals.sqlite3")
+    store.create_task("pending-task", "Review unfinished design")
+    manager = GoalManager(store)
+    candidates = manager.discover()
+    assert candidates
+    with pytest.raises(PermissionError, match="explicit approval"):
+        manager.schedule(candidates[0], interval_seconds=120)
+
+
+def test_frontier_requires_observed_result_before_validation(tmp_path):
+    from aether.frontier import ResearchFrontier
+    frontier = ResearchFrontier(tmp_path / "frontier.jsonl")
+    item = frontier.propose({
+        "question": "Can a smaller router reduce latency?",
+        "current_state": "One model route.",
+        "primary_sources": ["https://arxiv.org/abs/0000.00000"],
+        "reproducible_evidence": "No benchmark yet.",
+        "technical_requirements": ["Held-out tasks"],
+        "feasibility": "Needs measurement.",
+        "resource_cost": "Benchmark time.",
+        "limitations": "Synthetic examples may not generalize.",
+        "aether_application": "Model routing.",
+        "proposed_experiment": "Compare routes on a held-out task set.",
+    })
+    with pytest.raises(ValueError, match="observed result"):
+        frontier.transition(item["id"], "validated", evidence="Seems good",
+                            reviewer="reviewer", limitations="small sample")
+    updated = frontier.transition(item["id"], "investigating", evidence="Reviewed sources",
+                                   reviewer="reviewer", limitations="No replication")
+    assert updated["status"] == "investigating"
+    assert frontier.integrity()["valid"]
+
+
+def test_decision_ledger_tracks_producer_and_excludes_held_out_from_operational_gate(tmp_path):
+    from aether.decisions import DecisionManager
+    from aether.storage import Store
+    manager = DecisionManager(Store(tmp_path / "decisions.sqlite3"))
+    for index in range(40):
+        decision_id = manager.log_prediction(
+            f"held-out case {index}", 0.95, "routing",
+            probability_source="calibrated_readout", producer_id="rlcd-v1",
+            model_id="model@revision", evaluation_split="held_out",
+        )
+        manager.resolve(decision_id, True)
+    item = manager.store.list_decisions(resolved_only=False)[0]
+    assert item["metadata"]["producer_id"] == "rlcd-v1"
+    assert item["metadata"]["evaluation_split"] == "held_out"
+    assert manager.assess(0.95, "routing").sample_count == 0
+    assert manager.metrics("routing", evaluation_split="held_out").count == 40
