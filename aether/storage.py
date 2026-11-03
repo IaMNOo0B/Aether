@@ -1385,11 +1385,12 @@ class Store:
     def set_goal_candidate_status(self, candidate_id: str, status: str) -> None:
         if status not in {"approved", "rejected", "scheduled"}:
             raise ValueError("Goal candidate status must be approved, rejected or scheduled")
+        expected_current = "approved" if status == "scheduled" else "proposed"
         with self._connect() as db:
             cursor = db.execute(
                 """UPDATE goal_candidates SET status=?, updated_at=?
-                   WHERE id=? AND status='proposed'""",
-                (status, utc_now(), candidate_id),
+                   WHERE id=? AND status=?""",
+                (status, utc_now(), candidate_id, expected_current),
             )
             if cursor.rowcount != 1:
                 raise ValueError("Unknown or already-reviewed goal candidate")
