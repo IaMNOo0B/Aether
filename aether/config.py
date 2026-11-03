@@ -37,6 +37,16 @@ class ModelSettings:
 
 
 @dataclass(frozen=True)
+class AgentSettings:
+    parallel_enabled: bool = False
+    researcher_provider: str = ""
+    planner_provider: str = ""
+    critic_provider: str = ""
+    verifier_provider: str = ""
+    max_workers: int = 3
+
+
+@dataclass(frozen=True)
 class StorageSettings:
     database: str = "data/aether.sqlite3"
 
@@ -124,6 +134,7 @@ class Settings:
     scheduler: SchedulerSettings = SchedulerSettings()
     memory: MemorySettings = MemorySettings()
     resources: ResourceSettings = ResourceSettings()
+    agents: AgentSettings = AgentSettings()
 
 
 def load_settings(path: Path | str = "config/settings.toml") -> Settings:
@@ -156,6 +167,7 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         scheduler = SchedulerSettings(**raw.get("scheduler", {}))
         memory = MemorySettings(**raw.get("memory", {}))
         resources = ResourceSettings(**raw.get("resources", {}))
+        agents = AgentSettings(**raw.get("agents", {}))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Unknown or invalid configuration field: {exc}") from exc
 
@@ -229,9 +241,20 @@ def load_settings(path: Path | str = "config/settings.toml") -> Settings:
         raise ValueError("Scheduler requires both autonomy.enabled and models.enabled")
     if not voice.wake_word.strip() or not voice.vosk_model_path.strip():
         raise ValueError("Voice wake word and Vosk model path cannot be empty")
+    if not 1 <= agents.max_workers <= 3:
+        raise ValueError("agents.max_workers must be between 1 and 3")
+    if agents.parallel_enabled:
+        routes = (
+            agents.researcher_provider, agents.planner_provider,
+            agents.critic_provider, agents.verifier_provider,
+        )
+        if any(not isinstance(item, str) or not item.strip() for item in routes):
+            raise ValueError("Parallel agents require provider routes for researcher, planner, critic and verifier")
+        if len(set(routes)) != 4:
+            raise ValueError("Parallel agent roles must use four distinct provider registry keys")
 
     return Settings(
         app=app, models=models, storage=storage, limits=limits,
         research=research, autonomy=autonomy, desktop=desktop, voice=voice,
-        scheduler=scheduler, memory=memory, resources=resources,
+        scheduler=scheduler, memory=memory, resources=resources, agents=agents,
     )
