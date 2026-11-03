@@ -60,7 +60,9 @@ class ProviderRegistry:
             raise ValueError(f"Provider already registered: {key}")
         if descriptor is None:
             model = str(getattr(provider, "model", "unknown"))
-            privacy = "local" if isinstance(provider, OllamaProvider) else "remote"
+            base_url = str(getattr(provider, "base_url", "")).casefold()
+            local_endpoint = base_url.startswith(("http://127.0.0.1", "http://localhost", "http://[::1]"))
+            privacy = "local" if isinstance(provider, OllamaProvider) or local_endpoint else "remote"
             descriptor = ModelDescriptor(
                 provider=key, model=model, privacy=privacy,
                 supports_vision=callable(getattr(provider, "analyze_image", None)),
