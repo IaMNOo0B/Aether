@@ -11,6 +11,8 @@ def test_load_settings_from_project_config():
     assert settings.models.provider == "ollama"
     assert settings.models.enabled is False
     assert settings.models.api_key_env == "AETHER_API_KEY"
+    assert settings.models.max_retries == 1
+    assert settings.models.retry_backoff_seconds == 0.25
 
 
 def test_load_settings_accepts_openai_compatible_provider(tmp_path):
@@ -150,4 +152,12 @@ def test_resource_budget_rejects_invalid_percentages(tmp_path):
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="max_cpu_percent"):
+        load_settings(config)
+
+
+def test_provider_retry_configuration_is_bounded(tmp_path):
+    source = Path("config/settings.toml").read_text(encoding="utf-8")
+    config = tmp_path / "settings.toml"
+    config.write_text(source.replace("max_retries = 1", "max_retries = 9"), encoding="utf-8")
+    with pytest.raises(ValueError, match="retry settings"):
         load_settings(config)
