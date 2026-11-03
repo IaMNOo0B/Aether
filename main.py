@@ -13,6 +13,7 @@ from aether.audit import AuditJournal
 from aether.agents import MultiAgentCoordinator
 from aether.autonomy import AutonomyRunner
 from aether.calibration import evaluate_binary_decisions
+from aether.calibration_benchmark import CalibrationBenchmark, CalibrationCase
 from aether.config import load_settings
 from aether.desktop import DesktopController
 from aether.diagnostics import configure_logging, write_diagnostics
@@ -22,6 +23,8 @@ from aether.learning_benchmarks import SkillBenchmarkRunner, SkillEvaluationCase
 from aether.goals import GoalManager
 from aether.frontier import ResearchFrontier
 from aether.perception import PerceptionSuite
+from aether.reasoning import evaluate_proposition, truth_table, solve_linear_system, rank_hypotheses
+from aether.world_scenarios import simulate_scenarios
 from aether.rlcd_training import RLCDRunConfig, RLCDTrainingAdapter, prepare_dataset
 from aether.sandbox import DockerSandbox
 from aether.research import ResearchError, ResearchSource, Researcher
@@ -94,7 +97,9 @@ def main() -> int:
     print("          /goal-discover /goal-schedule INDEX | SECONDS /sandbox-status /self-improve-test-sandbox ID")
     print("          /rlcd-prepare INPUT_JSONL | OUTPUT_JSON /rlcd-manifest MODEL | DATASET | OUTPUT_DIR | MANIFEST /rlcd-run MANIFEST | RUNNER_ARGV_JSON")
     print("          /skill-benchmark SKILL_ID | CASES_JSON /perception-status /image-inspect PATH /audio-inspect PATH /audio-transcribe PATH /video-frames PATH")
-    print("          /frontier-list /frontier-propose JSON /agents-independent OBJECTIVE /audit-status")
+    print("          /frontier-list /frontier-propose JSON /frontier-update ID | STATUS | EVIDENCE | REVIEWER | LIMITATIONS | RESULT")
+    print("          /agents-independent OBJECTIVE /audit-status /logic EXPR | VALUES_JSON /truth-table EXPR /solve-linear MATRIX_JSON | VECTOR_JSON /hypotheses JSON /world-scenarios WORLD | ACTION_ID | TRIALS | SEED")
+    print("          /calibration-benchmark CASES_JSON | MODEL_ID | DATASET_ID | SEED")
 
     while True:
         try:
@@ -141,6 +146,81 @@ def main() -> int:
                 print(f"AETHER > Report: {report.get('output_path', 'not saved')}")
                 continue
 
+
+
+            if lower.startswith("/logic "):
+                fields = user_text[len("/logic "):].split("|", 1)
+                if len(fields) != 2:
+                    print("Usage: /logic EXPRESSION | VALUES_JSON")
+                    continue
+                print(json.dumps({"result": evaluate_proposition(
+                    fields[0].strip(), json.loads(fields[1])
+                )}, indent=2))
+                continue
+
+            if lower.startswith("/truth-table "):
+                print(json.dumps(truth_table(user_text[len("/truth-table "):].strip()), indent=2))
+                continue
+
+            if lower.startswith("/solve-linear "):
+                fields = user_text[len("/solve-linear "):].split("|", 1)
+                if len(fields) != 2:
+                    print("Usage: /solve-linear MATRIX_JSON | VECTOR_JSON")
+                    continue
+                result = solve_linear_system(json.loads(fields[0]), json.loads(fields[1]))
+                print(json.dumps(result, indent=2))
+                continue
+
+            if lower.startswith("/hypotheses "):
+                print(json.dumps(rank_hypotheses(
+                    json.loads(user_text[len("/hypotheses "):].strip())
+                ), indent=2))
+                continue
+
+            if lower.startswith("/world-scenarios "):
+                fields = user_text[len("/world-scenarios "):].split("|")
+                if len(fields) != 4:
+                    print("Usage: /world-scenarios WORLD | ACTION_ID | TRIALS | SEED")
+                    continue
+                result = simulate_scenarios(
+                    engine.world, fields[0].strip(), fields[1].strip(),
+                    trials=int(fields[2]), seed=int(fields[3]),
+                )
+                print(json.dumps(result, indent=2))
+                continue
+
+            if lower.startswith("/calibration-benchmark "):
+                fields = user_text[len("/calibration-benchmark "):].split("|")
+                if len(fields) != 4:
+                    print("Usage: /calibration-benchmark CASES_JSON | MODEL_ID | DATASET_ID | SEED")
+                    continue
+                cases = [CalibrationCase(**item) for item in json.loads(fields[0])]
+                report = CalibrationBenchmark().run(
+                    cases, model_id=fields[1].strip(), dataset_id=fields[2].strip(),
+                    seed=int(fields[3]),
+                )
+                destination = Path("reports/calibration/benchmark.json")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(json.dumps(report, indent=2), encoding="utf-8")
+                print(json.dumps({
+                    "report": str(destination), "input_sha256": report["input_sha256"],
+                    "test_metrics": report["test_metrics"],
+                    "brier_improvement_vs_train_base_rate": report["brier_improvement_vs_train_base_rate"],
+                }, indent=2))
+                continue
+
+            if lower.startswith("/frontier-update "):
+                fields = user_text[len("/frontier-update "):].split("|", 5)
+                if len(fields) != 6:
+                    print("Usage: /frontier-update ID | STATUS | EVIDENCE | REVIEWER | LIMITATIONS | OBSERVED_RESULT")
+                    continue
+                result = ResearchFrontier("data/frontier.jsonl").transition(
+                    fields[0].strip(), fields[1].strip(), evidence=fields[2].strip(),
+                    reviewer=fields[3].strip(), limitations=fields[4].strip(),
+                    result_observation=fields[5].strip() or None,
+                )
+                print(json.dumps(result, indent=2))
+                continue
 
             if lower == "/audit-status":
                 print(json.dumps(audit.verify(), indent=2))
