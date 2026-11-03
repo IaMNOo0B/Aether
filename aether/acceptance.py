@@ -56,6 +56,8 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
         "nodes": [
             "tests/test_learning.py::test_skill_requires_held_out_evaluation_before_retrieval",
             "tests/test_learning.py::test_failed_skill_evaluation_keeps_skill_out_of_validated_memory",
+            "tests/test_learning_benchmark.py::test_learning_benchmark_is_deterministic_and_excludes_drafts",
+            "tests/test_learning_benchmark.py::test_learning_benchmark_rejects_invalid_k",
         ],
         "full_scope": False,
         "limitations": [
