@@ -72,3 +72,9 @@ def test_self_engineer_rejects_symlink_or_file_mode_changes(tmp_path):
     )
     with pytest.raises(PatchRejected, match="File mode"):
         engineer.validate_patch_text(patch)
+
+
+def test_sandboxed_self_engineering_requires_explicit_approval(tmp_path):
+    engineer = SelfEngineer(tmp_path, FakeProvider())
+    with pytest.raises(PermissionError, match="explicit approval"):
+        engineer.evaluate_sandboxed("missing", approved=False)
