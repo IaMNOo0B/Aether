@@ -40,3 +40,27 @@ def test_self_engineering_security_scan_blocks_high_risk_candidate_before_tests(
 def test_self_engineering_audit_is_optional_and_candidate_remains_unintegrated(tmp_path):
     engineer = SelfEngineer(tmp_path, PatchProvider("NO_SAFE_PATCH"))
     assert engineer.audit_log is None
+
+
+def test_self_engineering_benchmark_requires_approval_and_persists_metrics(tmp_path):
+    import json
+    from aether.performance import PerformanceCase
+
+    engineer = SelfEngineer(tmp_path, PatchProvider("NO_SAFE_PATCH"))
+    directory = engineer.experiments / "validated-1"
+    directory.mkdir(parents=True)
+    metadata_path = directory / "experiment.json"
+    metadata_path.write_text(json.dumps({
+        "id": "validated-1", "status": "validated_candidate", "integrated": False,
+    }), encoding="utf-8")
+    cases = [PerformanceCase("normalization", "  AETHER  ")]
+    executor = lambda model, value: value.strip().lower()
+    with pytest.raises(PermissionError, match="explicit approval"):
+        engineer.benchmark("validated-1", "baseline", "candidate", cases, executor)
+    report = engineer.benchmark(
+        "validated-1", "baseline", "candidate", cases, executor, approved=True,
+        repetitions=2, warmups=0,
+    )
+    saved = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert saved["performance_status"] == "equivalent_outputs"
+    assert report["equivalent_outputs"] is True
