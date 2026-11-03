@@ -105,3 +105,20 @@ def test_goal_discovery_does_not_self_authorize_scheduling(tmp_path):
     assert candidates
     with pytest.raises(PermissionError, match="explicit approval"):
         manager.schedule(candidates[0], interval_seconds=120)
+\n
+def test_decision_ledger_records_typed_producer_model_and_split(tmp_path):
+    from aether.decisions import DecisionManager
+    from aether.storage import Store
+
+    manager = DecisionManager(Store(tmp_path / "decision-provenance.sqlite3"))
+    decision_id = manager.log_prediction(
+        "Will held-out task succeed?", 0.72, "workflow-transfer",
+        probability_source="calibrated_readout",
+        producer_id="rlcd-readout-v1", model_id="local-model@sha256:abc",
+        evaluation_split="held_out",
+    )
+    item = manager.store.list_decisions(resolved_only=False)[0]
+    assert item["id"] == decision_id
+    assert item["metadata"]["producer_id"] == "rlcd-readout-v1"
+    assert item["metadata"]["model_id"] == "local-model@sha256:abc"
+    assert item["metadata"]["evaluation_split"] == "held_out"
