@@ -151,3 +151,71 @@ def test_resource_budget_rejects_invalid_percentages(tmp_path):
     )
     with pytest.raises(ValueError, match="max_cpu_percent"):
         load_settings(config)
+
+
+def test_parallel_agent_routes_are_disabled_by_default():
+    settings = load_settings(Path("config/settings.toml"))
+    assert settings.agents.parallel_enabled is False
+    assert settings.agents.max_workers == 3
+
+
+def test_parallel_agent_routes_require_four_distinct_provider_keys(tmp_path):
+    config = tmp_path / "settings.toml"
+    config.write_text(
+        """
+[app]
+name = "AETHER"
+[models]
+provider = "ollama"
+enabled = true
+base_url = "http://127.0.0.1:11434"
+model = "local-model"
+[[models.fallbacks]]
+provider = "openai_compatible"
+base_url = "https://one.example.invalid/v1"
+model = "one"
+[[models.fallbacks]]
+provider = "openai_compatible"
+base_url = "https://two.example.invalid/v1"
+model = "two"
+[[models.fallbacks]]
+provider = "openai_compatible"
+base_url = "https://three.example.invalid/v1"
+model = "three"
+[storage]
+database = "data/aether.sqlite3"
+[limits]
+max_history_messages = 8
+max_prompt_characters = 12000
+max_autonomy_steps = 5
+max_research_results = 8
+tool_timeout_seconds = 60
+[agents]
+parallel_enabled = true
+researcher_provider = "ollama"
+planner_provider = "fallback_1"
+critic_provider = "fallback_2"
+verifier_provider = "fallback_3"
+max_workers = 3
+""",
+        encoding="utf-8",
+    )
+    settings = load_settings(config)
+    assert settings.agents.parallel_enabled is True
+    assert settings.agents.verifier_provider == "fallback_3"
+
+
+def test_parallel_agent_routes_reject_duplicate_provider_keys(tmp_path):
+    source = Path("config/settings.toml").read_text(encoding="utf-8")
+    source += """
+[agents]
+parallel_enabled = true
+researcher_provider = "ollama"
+planner_provider = "ollama"
+critic_provider = "fallback_1"
+verifier_provider = "fallback_2"
+"""
+    config = tmp_path / "settings.toml"
+    config.write_text(source, encoding="utf-8")
+    with pytest.raises(ValueError, match="four distinct"):
+        load_settings(config)
