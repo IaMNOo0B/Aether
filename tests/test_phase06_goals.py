@@ -336,3 +336,37 @@ def test_model_call_budget_stops_before_planning(tmp_path):
     assert result["status"] == "cancelled"
     assert "model-call budget exhausted" in result["reason"]
     assert runner.provider.calls == 0
+
+
+def test_project_change_discovery_proposes_review_without_authorizing_execution(tmp_path):
+    project = tmp_path / "project"
+    (project / "aether").mkdir(parents=True)
+    (project / "tests").mkdir()
+    (project / "pyproject.toml").write_text("[project]\nname='aether'\n", encoding="utf-8")
+    (project / "aether" / "engine.py").write_text("VALUE = 1\n", encoding="utf-8")
+    store = Store(tmp_path / "project-goals.sqlite3")
+    manager = GoalManager(store, project)
+
+    assert manager.discover_project_changes() == []
+    (project / "pyproject.toml").write_text("[project]\nname='aether'\nversion='2'\n", encoding="utf-8")
+    proposals = manager.discover_project_changes()
+
+    assert len(proposals) == 1
+    assert proposals[0]["source"] == "project_change"
+    assert proposals[0]["status"] == "proposed"
+    assert manager.queue_approved() == []
+    assert store.list_tasks(status="queued") == []
+    assert (project / "data" / ".aether_project_manifest.json").is_file()
+
+
+def test_project_change_discovery_is_idempotent_for_same_fingerprint(tmp_path):
+    project = tmp_path / "project"
+    (project / "aether").mkdir(parents=True)
+    (project / "aether" / "engine.py").write_text("VALUE = 1\n", encoding="utf-8")
+    manager = GoalManager(Store(tmp_path / "idempotent.sqlite3"), project)
+    manager.discover_project_changes()
+    (project / "aether" / "engine.py").write_text("VALUE = 2\n", encoding="utf-8")
+    first = manager.discover_project_changes()
+    second = manager.discover_project_changes()
+    assert len(first) == 1
+    assert second == []
