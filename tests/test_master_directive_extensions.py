@@ -284,3 +284,40 @@ def test_failure_intelligence_never_auto_retries_and_checks_side_effect_state(tm
     analyzer.record(unsafe)
     assert analyzer.trends()["total"] == 2
     assert analyzer.trends()["automatic_retries"] == 0
+
+
+def test_model_catalog_selects_only_capable_privacy_compatible_measured_models(tmp_path):
+    from aether.model_registry import ModelCatalog, ModelProfile
+
+    catalog = ModelCatalog(tmp_path / "models.json")
+    local = ModelProfile(
+        model_id="phi3:mini", provider_name="ollama",
+        capabilities=["text", "symbolic_logic"], context_window=4096,
+        max_output_tokens=1024, privacy="local", local=True, max_vram_mb=4096,
+    )
+    remote = ModelProfile(
+        model_id="public-model", provider_name="remote",
+        capabilities=["text", "symbolic_logic", "web_search"], context_window=32000,
+        max_output_tokens=4096, privacy="public", local=False,
+    )
+    catalog.register(local)
+    catalog.register(remote)
+    for _ in range(25):
+        catalog.record_outcome("ollama", "phi3:mini", success=True, latency_ms=80)
+    selected = catalog.select(["symbolic_logic"], privacy="local")
+    assert selected["selected"]["model_id"] == "phi3:mini"
+    assert selected["evidence_status"] == "measured"
+    rejected = catalog.select(["web_search"], privacy="confidential")
+    assert rejected["selected"] is None
+
+
+def test_cognitive_coordinator_routes_to_specialized_workflows_without_claiming_execution(tmp_path):
+    from aether.cognitive import CognitiveCoordinator
+    from aether.model_registry import ModelCatalog
+
+    router = CognitiveCoordinator(ModelCatalog(tmp_path / "models.json"))
+    assert router.route("Research the latest papers on RLCD")["plan"]["intent"] == "research"
+    assert router.route("Solve this linear equation")["plan"]["strategy"] == "deterministic_numerical_solver"
+    dangerous = router.route("Delete the production database")
+    assert dangerous["plan"]["needs_human_approval"] is True
+    assert "does not itself execute" in dangerous["not_claimed"]
