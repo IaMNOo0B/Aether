@@ -77,3 +77,53 @@ def test_registry_registers_fallback_endpoint():
         ),),
     )
     assert registry.names() == ("fallback_1", "ollama")
+
+
+def test_provider_chain_retries_only_transient_failures_with_bounded_backoff():
+    from aether.ollama import TransientModelError
+    from aether.providers import ProviderChain
+
+    class FlakyProvider:
+        name = "flaky"
+
+        def __init__(self):
+            self.calls = 0
+
+        def is_available(self):
+            return True
+
+        def chat(self, messages):
+            self.calls += 1
+            if self.calls < 3:
+                raise TransientModelError("temporary overload")
+            return "recovered"
+
+    delays = []
+    provider = FlakyProvider()
+    chain = ProviderChain(
+        [("primary", provider)], max_retries=2,
+        backoff_seconds=0.1, sleeper=delays.append,
+    )
+    assert chain.chat([{"role": "user", "content": "hello"}]) == "recovered"
+    assert provider.calls == 3
+    assert delays == [0.1, 0.2]
+
+
+def test_provider_chain_does_not_retry_permanent_errors():
+    from aether.providers import ProviderChain
+
+    class PermanentFailure(FailingProvider):
+        def __init__(self):
+            self.calls = 0
+
+        def chat(self, messages):
+            self.calls += 1
+            raise ModelUnavailable("invalid model name")
+
+    provider = PermanentFailure()
+    chain = ProviderChain(
+        [("primary", provider)], max_retries=3, sleeper=lambda delay: None,
+    )
+    with pytest.raises(ModelUnavailable):
+        chain.chat([{"role": "user", "content": "hello"}])
+    assert provider.calls == 1
