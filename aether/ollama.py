@@ -10,6 +10,11 @@ class ModelUnavailable(RuntimeError):
     pass
 
 
+class TransientModelError(ModelUnavailable):
+    """Provider failure that may succeed when retried after a short delay."""
+
+
+
 class OllamaClient:
     def __init__(self, base_url: str, model: str, timeout_seconds: int = 120):
         self.base_url = base_url.rstrip("/")
@@ -39,8 +44,11 @@ class OllamaClient:
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 result = json.loads(response.read().decode("utf-8"))
-        except (OSError, URLError, HTTPError, TimeoutError) as exc:
-            raise ModelUnavailable(f"Ollama request failed: {exc}") from exc
+        except HTTPError as exc:
+            error_type = TransientModelError if exc.code == 429 or 500 <= exc.code < 600 else ModelUnavailable
+            raise error_type(f"Ollama returned HTTP {exc.code}") from exc
+        except (OSError, URLError, TimeoutError) as exc:
+            raise TransientModelError(f"Ollama request failed: {type(exc).__name__}") from exc
         except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
             raise ModelUnavailable(f"Ollama returned an invalid response: {exc}") from exc
 
