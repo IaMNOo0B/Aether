@@ -149,3 +149,22 @@ def test_frontier_research_lifecycle_is_auditable_and_not_auto_validated(tmp_pat
                                   reviewer="reviewer", limitations="No local replication")
     assert updated["status"] == "investigating"
     assert frontier.integrity()["valid"] is True
+
+
+def test_held_out_decisions_are_excluded_from_operational_policy(tmp_path):
+    from aether.decisions import DecisionManager
+    from aether.storage import Store
+
+    manager = DecisionManager(Store(tmp_path / "decision-splits.sqlite3"))
+    for index in range(40):
+        decision_id = manager.log_prediction(
+            f"Training prediction {index}", 0.95, "routing",
+            evaluation_split="train",
+        )
+        manager.resolve(decision_id, True)
+    assessment = manager.assess(0.95, "routing", min_samples=30)
+    assert assessment.action == "abstain"
+    assert assessment.sample_count == 0
+    with pytest.raises(ValueError, match="At least one resolved decision"):
+        manager.metrics("routing", evaluation_split="held_out")
+    assert manager.metrics("routing", evaluation_split="train").count == 40
