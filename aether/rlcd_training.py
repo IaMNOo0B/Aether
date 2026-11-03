@@ -220,6 +220,12 @@ class RLCDTrainingAdapter:
     ) -> dict[str, Any]:
         """Generate the exact published stage-1/stage-2 and fork-control command plan."""
         config.validate()
+        gsm8k_dataset = self.root / "external" / "openjev-rlcd" / "data" / "gsm8k_verify.json"
+        if config.task == "gsm8kv" and not gsm8k_dataset.is_file():
+            raise RLCDConfigurationError(
+                "Clone the pinned OpenJev-RLCD checkout into external/openjev-rlcd before planning gsm8kv; "
+                "its constructed verification dataset is part of that upstream repository."
+            )
         plan = {
             "schema": "aether-openjev-rlcd-two-stage-plan-v1",
             "plan_id": sha256(json.dumps(asdict(config), sort_keys=True).encode()).hexdigest()[:16],
