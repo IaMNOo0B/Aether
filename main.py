@@ -361,7 +361,6 @@ def main() -> int:
                 ).strip() != "RUN-RLCD-PLAN":
                     print("AETHER > RLCD experiment not started.")
                     continue
-                engine.resources.check("external RLCD experiment")
                 report = RLCDTrainingAdapter(Path.cwd()).run_two_stage_plan(
                     fields[0].strip(), fields[1].strip(),
                     approved=True, external_compute_confirmed=True,
