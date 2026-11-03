@@ -39,10 +39,12 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
         "nodes": [
             "tests/test_learning.py::test_skill_requires_held_out_evaluation_before_retrieval",
             "tests/test_learning.py::test_failed_skill_evaluation_keeps_skill_out_of_validated_memory",
+            "tests/test_learning.py::test_skill_benchmark_requires_held_out_transfer_and_retention",
+            "tests/test_learning.py::test_skill_benchmark_does_not_validate_when_transfer_fails",
         ],
         "full_scope": False,
         "limitations": [
-            "Skill evaluation evidence is manually supplied; AETHER does not yet independently execute and score arbitrary workflows on held-out examples."
+            "The benchmark uses a caller-supplied trusted executor; it does not train model weights, establish broad distributional generalization, or demonstrate meta-learning."
         ],
     },
     {
@@ -65,9 +67,14 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_decisions.py::test_decision_log_and_resolution_preserve_outcome_provenance",
             "tests/test_decisions.py::test_decision_metrics_require_resolved_outcomes",
             "tests/test_decisions.py::test_decision_gate_abstains_without_sufficient_domain_evidence",
+            "tests/test_decisions.py::test_typed_decision_producer_persists_provenance",
+            "tests/test_calibration_benchmark.py::test_calibration_benchmark_uses_test_split_and_train_only_baseline",
+            "tests/test_rlcd.py::test_rlcd_manifest_requires_method_identity_and_separate_data_splits",
         ],
-        "full_scope": True,
-        "limitations": [],
+        "full_scope": False,
+        "limitations": [
+            "Held-out calibration and typed producer provenance are implemented, but AETHER has not reproduced OpenJev-RLCD training; the manifest validates external evidence only."
+        ],
     },
     {
         "id": "F", "name": "Software engineering",
@@ -87,10 +94,14 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
         "expected": "An improvement is proposed, tested in isolation and compared against the baseline.",
         "nodes": [
             "tests/test_self_engineering.py::test_self_engineer_requires_approval_before_running_generated_code",
+            "tests/test_security_audit.py::test_signed_audit_log_appends_and_verifies_hash_chain",
+            "tests/test_security_audit.py::test_signed_audit_log_detects_tampering_and_wrong_key",
+            "tests/test_security_audit.py::test_static_security_scanner_detects_high_risk_python_patterns",
+            "tests/test_windows_sandbox.py::test_windows_sandbox_prepares_network_disabled_read_only_input",
         ],
         "full_scope": False,
         "limitations": [
-            "Candidate tests run in a copied working tree, not a secure OS sandbox; automatic performance comparison and integration are not implemented."
+            "The Windows Sandbox runner is optional and not yet the default self-engineering executor. Static scanning is incomplete; signed logs are tamper-evident, not WORM storage. Performance comparison and reviewed production integration remain outstanding."
         ],
     },
     {
@@ -100,6 +111,8 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_scheduler.py::test_scheduler_runs_persisted_goal_with_read_only_tools",
             "tests/test_scheduler.py::test_scheduler_never_approves_workspace_writes",
             "tests/test_emergency_stop.py::test_scheduler_does_not_enqueue_when_emergency_stop_is_active",
+            "tests/test_phase06_goals.py::test_project_change_discovery_proposes_review_without_authorizing_execution",
+            "tests/test_phase06_goals.py::test_project_change_discovery_is_idempotent_for_same_fingerprint",
             "tests/test_phase06_goals.py::test_goal_discovery_creates_proposal_without_auto_approval_or_execution",
             "tests/test_phase06_goals.py::test_capability_gap_discovery_creates_system_goal_proposal",
             "tests/test_phase06_goals.py::test_acceptance_gap_discovery_uses_persisted_report_as_signal",
@@ -120,10 +133,13 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
             "tests/test_autonomy.py::test_autonomy_rejects_unknown_model_generated_tools",
             "tests/test_knowledge.py::test_extractor_prompt_marks_research_summaries_as_untrusted",
             "tests/test_emergency_stop.py::test_emergency_stop_while_waiting_for_approval_blocks_write",
+            "tests/test_security_audit.py::test_static_security_scanner_detects_high_risk_python_patterns",
+            "tests/test_security_audit.py::test_signed_audit_log_detects_tampering_and_wrong_key",
+            "tests/test_windows_sandbox.py::test_windows_sandbox_prepares_network_disabled_read_only_input",
         ],
         "full_scope": False,
         "limitations": [
-            "The bounded tool registry and prompt-injection checks are tested, but a complete adversarial red-team suite and OS-level sandbox are not implemented."
+            "The bounded tool registry and prompt-injection checks are tested, but the static scanner is not a complete red-team suite. Windows Sandbox requires local Windows feature validation and is not automatically used by every code execution path."
         ],
     },
     {
@@ -151,10 +167,12 @@ ACCEPTANCE_CASES: tuple[dict[str, Any], ...] = (
         "expected": "Specialist roles produce separate deliverables and an integrated result is independently checked.",
         "nodes": [
             "tests/test_agents.py::test_specialist_roles_run_and_persist_separate_deliverables",
+            "tests/test_agents.py::test_parallel_agents_require_independent_provider_instances_and_verifier",
+            "tests/test_agents.py::test_parallel_agents_run_distinct_workers_and_persist_independent_review",
         ],
         "full_scope": False,
         "limitations": [
-            "Roles currently run sequentially through the same configured model; independent specialist models and an independent verifier are not implemented."
+            "Parallel orchestration now accepts separate provider instances and a separate verifier, but the default Windows runtime still uses sequential shared-model roles unless independent endpoints are explicitly configured."
         ],
     },
     {
