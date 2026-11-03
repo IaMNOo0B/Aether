@@ -5,6 +5,7 @@ Discovered goals are proposals only. No discovery path grants execution permissi
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 import json
@@ -196,7 +197,97 @@ class GoalManager:
             if len(discovered) >= discovery_limit:
                 break
 
+        discovered.extend(self.discover_project_changes(limit=max(0, discovery_limit - len(discovered))))
         return discovered
+
+    def discover_project_changes(self, limit: int = 5) -> list[dict[str, Any]]:
+        """Detect tracked source/config changes and propose review goals only.
+
+        The baseline manifest is a new, separate file under data/. It never rewrites
+        application data, executes code, approves goals, or starts tasks.
+        """
+        if limit <= 0:
+            return []
+        tracked_roots = ("aether", "tests", "config", ".github/workflows")
+        tracked_files = (
+            "pyproject.toml", "README.md", "INSTALL.bat", "START_AETHER.bat",
+        )
+        candidates: set[Path] = set()
+        for relative in tracked_files:
+            path = self.project_root / relative
+            if path.is_file() and not path.is_symlink():
+                candidates.add(path)
+        for relative in tracked_roots:
+            root = self.project_root / relative
+            if not root.is_dir() or root.is_symlink():
+                continue
+            for path in root.rglob("*"):
+                if not path.is_file() or path.is_symlink():
+                    continue
+                if any(part in {"__pycache__", ".pytest_cache", "node_modules"} for part in path.parts):
+                    continue
+                try:
+                    if path.stat().st_size <= 5_000_000:
+                        candidates.add(path)
+                except OSError:
+                    continue
+        manifest: dict[str, str] = {}
+        for path in sorted(candidates):
+            relative = path.relative_to(self.project_root).as_posix()
+            try:
+                manifest[relative] = sha256(path.read_bytes()).hexdigest()
+            except OSError:
+                continue
+        if not manifest:
+            return []
+        fingerprint = sha256(json.dumps(manifest, sort_keys=True).encode("utf-8")).hexdigest()
+        state_path = self.project_root / "data" / ".aether_project_manifest.json"
+        previous: dict[str, str] = {}
+        try:
+            if state_path.is_file() and state_path.stat().st_size <= 2_000_000:
+                raw = json.loads(state_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict) and isinstance(raw.get("files"), dict):
+                    previous = raw["files"]
+        except (OSError, ValueError, TypeError):
+            previous = {}
+        changed = sorted(
+            path for path in set(previous) | set(manifest)
+            if previous.get(path) != manifest.get(path)
+        )
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = state_path.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps({"schema": 1, "fingerprint": fingerprint, "files": manifest},
+                       sort_keys=True, indent=2),
+            encoding="utf-8",
+        )
+        temporary.replace(state_path)
+        if not previous or not changed:
+            return []
+        goal = self.propose(
+            title=f"Review project change set ({len(changed)} files)",
+            purpose=(
+                "Inspect recent source, test, dependency and configuration changes. "
+                "Identify affected capabilities, run relevant non-destructive tests, "
+                "and record regressions or required migrations. Changed paths: "
+                + ", ".join(changed[:40])
+            ),
+            source="project_change",
+            source_key=f"project-change:{fingerprint}",
+            expected_benefit="Detect dependency drift and regressions before changed capabilities are trusted.",
+            priority=0.65, complexity=3, goal_level="project",
+            risks=[
+                "Changes may be intentional and must not be reverted automatically.",
+                "Tests and generated candidate code require their configured approval gates.",
+            ],
+            completion_criteria=[
+                "Review the changed paths and their dependency relationships.",
+                "Run targeted tests and the relevant OMEGA acceptance checks.",
+                "Record any regression, migration requirement or verified no-regression result.",
+            ],
+            stop_condition="Stop before changing production code, secrets, permissions or user data.",
+        )
+        return [goal]
 
     def approve(self, goal_id: str) -> dict[str, Any]:
         goal = self.store.get_autonomy_goal(goal_id)
