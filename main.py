@@ -10,6 +10,8 @@ from uuid import uuid4
 
 from aether.acceptance import run_acceptance_suite
 from aether.audit import AuditJournal
+from aether.failure_intelligence import FailureAnalyzer
+from aether.observability import TelemetryRegistry
 from aether.agents import MultiAgentCoordinator
 from aether.autonomy import AutonomyRunner
 from aether.calibration import evaluate_binary_decisions
@@ -20,7 +22,7 @@ from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.learning import SkillLearner
 from aether.learning_benchmarks import SkillBenchmarkRunner, SkillEvaluationCase
-from aether.goals import GoalManager
+from aether.goals import GoalManager, HierarchicalGoalGraph
 from aether.frontier import ResearchFrontier
 from aether.perception import PerceptionSuite
 from aether.reasoning import evaluate_proposition, truth_table, solve_linear_system, rank_hypotheses
@@ -56,6 +58,8 @@ def main() -> int:
         engine = AetherEngine(settings, store)
         audit = AuditJournal("logs/audit.jsonl")
         audit_integrity = audit.verify()
+        failure_analyzer = FailureAnalyzer("logs/failures.jsonl")
+        telemetry = TelemetryRegistry("logs/telemetry.jsonl")
         recovered_tasks = engine.tasks.recover_interrupted()
     except Exception:
         logging.exception("AETHER could not initialize")
@@ -99,6 +103,8 @@ def main() -> int:
     print("          /rlcd-plan TASK | MODEL | SEEDS_CSV | PLAN_JSON /rlcd-run-plan PLAN_JSON | UPSTREAM_CHECKOUT")
     print("          /skill-benchmark SKILL_ID | CASES_JSON /perception-status /image-inspect PATH /audio-inspect PATH /audio-transcribe PATH /video-frames PATH")
     print("          /frontier-list /frontier-propose JSON /frontier-update ID | STATUS | EVIDENCE | REVIEWER | LIMITATIONS | RESULT")
+    print("          /memory-consolidate /goal-tree /goal-create JSON /goal-decompose ID | JSON /goal-transition ID | STATUS | ACTOR | EVIDENCE")
+    print("          /failure-trends /telemetry")
     print("          /agents-independent OBJECTIVE /audit-status /logic EXPR | VALUES_JSON /truth-table EXPR /solve-linear MATRIX_JSON | VECTOR_JSON /hypotheses JSON /world-scenarios WORLD | ACTION_ID | TRIALS | SEED")
     print("          /calibration-benchmark CASES_JSON | MODEL_ID | DATASET_ID | SEED")
 
@@ -111,9 +117,12 @@ def main() -> int:
         if not user_text:
             continue
         lower = user_text.casefold()
+        command_name = lower.split(maxsplit=1)[0] if lower else "empty"
+        telemetry.increment("commands." + command_name.lstrip("/").replace("/", "."))
+        telemetry.event("console.command", status="received", attributes={"command": command_name})
         if audit_integrity["valid"]:
             try:
-                audit.append("console.command", {"command": lower.split(maxsplit=1)[0]})
+                audit.append("console.command", {"command": command_name})
             except Exception:
                 logging.exception("Could not append audit command event")
 
@@ -223,12 +232,64 @@ def main() -> int:
                 print(json.dumps(result, indent=2))
                 continue
 
+
+            if lower == "/telemetry":
+                print(json.dumps(telemetry.snapshot(), indent=2))
+                continue
+
+            if lower == "/failure-trends":
+                print(json.dumps(failure_analyzer.trends(), indent=2))
+                continue
+
+            if lower == "/memory-consolidate":
+                result = engine.memory.consolidate()
+                print(json.dumps(result, indent=2))
+                continue
+
+            if lower == "/goal-tree":
+                print(json.dumps(HierarchicalGoalGraph("data/goals.jsonl").tree(), indent=2))
+                continue
+
+            if lower.startswith("/goal-create "):
+                payload = json.loads(user_text[len("/goal-create "):].strip())
+                node = HierarchicalGoalGraph("data/goals.jsonl").create(**payload)
+                print(json.dumps(node, indent=2))
+                continue
+
+            if lower.startswith("/goal-decompose "):
+                fields = user_text[len("/goal-decompose "):].split("|", 1)
+                if len(fields) != 2:
+                    print("Usage: /goal-decompose GOAL_ID | CHILD_GOALS_JSON")
+                    continue
+                children = HierarchicalGoalGraph("data/goals.jsonl").decompose(
+                    fields[0].strip(), json.loads(fields[1])
+                )
+                print(json.dumps(children, indent=2))
+                continue
+
+            if lower.startswith("/goal-transition "):
+                fields = user_text[len("/goal-transition "):].split("|", 3)
+                if len(fields) != 4:
+                    print("Usage: /goal-transition GOAL_ID | STATUS | ACTOR | EVIDENCE")
+                    continue
+                status = fields[1].strip()
+                if status in {"approved", "running"}:
+                    token = "APPROVE-GOAL" if status == "approved" else "START-GOAL"
+                    if input(f"This changes goal state to {status}. Type {token}: ").strip() != token:
+                        print("AETHER > Goal transition cancelled.")
+                        continue
+                node = HierarchicalGoalGraph("data/goals.jsonl").transition(
+                    fields[0].strip(), status, actor=fields[2].strip(), evidence=fields[3].strip()
+                )
+                print(json.dumps(node, indent=2))
+                continue
+
             if lower == "/audit-status":
                 print(json.dumps(audit.verify(), indent=2))
                 continue
 
             if lower == "/goal-discover":
-                manager = GoalManager(store)
+                manager = GoalManager(store, engine.self_model)
                 candidates = manager.discover()
                 print(json.dumps([manager.serialize(item) for item in candidates], indent=2))
                 continue
@@ -1357,14 +1418,20 @@ def main() -> int:
                 break
 
             print(f"AETHER > {engine.respond(user_text)}\n")
-        except (
-            ValueError, PermissionError, FileNotFoundError, ResearchError,
-            VoiceUnavailable, ResourceLimitExceeded,
-        ) as exc:
-            print(f"AETHER > {exc}")
-        except Exception:
+        except Exception as exc:
             logging.exception("Command failed")
-            print("AETHER > The command failed. Check logs/aether.log for details.")
+            try:
+                report = failure_analyzer.classify_and_record(
+                    exc, operation=command_name, idempotent=False, side_effect_state="unknown"
+                )
+                telemetry.increment("failures." + report.category)
+                telemetry.event("command.failure", status=report.category, attributes={
+                    "operation": command_name, "severity": report.severity,
+                    "human_intervention": report.human_intervention_required,
+                })
+                print("AETHER > " + json.dumps(report.__dict__, indent=2))
+            except Exception:
+                print("AETHER > The command failed. Check logs/aether.log and verify failure journal integrity.")
 
     if scheduler_thread is not None:
         scheduler_stop.set()
