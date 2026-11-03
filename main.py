@@ -9,6 +9,7 @@ from threading import Event, Thread
 from uuid import uuid4
 
 from aether.acceptance import run_acceptance_suite
+from aether.audit import AuditJournal
 from aether.agents import MultiAgentCoordinator
 from aether.autonomy import AutonomyRunner
 from aether.calibration import evaluate_binary_decisions
@@ -17,6 +18,12 @@ from aether.desktop import DesktopController
 from aether.diagnostics import configure_logging, write_diagnostics
 from aether.engine import AetherEngine
 from aether.learning import SkillLearner
+from aether.goals import GoalManager
+from aether.frontier import ResearchFrontier
+from aether.learning_eval import LearningCase, evaluate_executor, compare_learning_runs, save_evaluation
+from aether.perception import PerceptionSuite
+from aether.rlcd_training import RLCDRunConfig, RLCDTrainingAdapter, prepare_dataset
+from aether.sandbox import DockerSandbox
 from aether.research import ResearchError, ResearchSource, Researcher
 from aether.research_quality import ResearchWorkflow
 from aether.research_advanced import AdvancedResearch
@@ -44,6 +51,8 @@ def main() -> int:
         configure_logging(settings.app.log_level)
         store = Store(settings.storage.database)
         engine = AetherEngine(settings, store)
+        audit = AuditJournal("logs/audit.jsonl")
+        audit_integrity = audit.verify()
         recovered_tasks = engine.tasks.recover_interrupted()
     except Exception:
         logging.exception("AETHER could not initialize")
@@ -67,6 +76,9 @@ def main() -> int:
         )
         scheduler_thread.start()
 
+    if not audit_integrity["valid"]:
+        print(f"AETHER WARNING > Audit journal integrity failure: {audit_integrity.get('error')}")
+        print("AETHER WARNING > The journal will not be appended until manually inspected.")
     status = engine.status()
     print(f"{status['name']} v{status['version']} | Windows-first local AI")
     print(f"Model enabled: {status['model_enabled']} | Reachable: {status['model_reachable']}")
@@ -78,6 +90,10 @@ def main() -> int:
     print("          /memory-backup PATH /memory-restore PATH /decision-log /decision-resolve /decision-assess /decision-metrics")
     print("          /schedule add|list|pause|resume /knowledge /world /acceptance /self-improve /self-improve-test /reports /calibration /quit\n")
     print("          /research QUERY|ingest|verify|score|review /experiment create|start|complete|cancel|list|show")
+    print("          /goal-discover /goal-schedule INDEX | SECONDS /sandbox-status /self-improve-test-sandbox ID")
+    print("          /rlcd-prepare INPUT_JSONL | OUTPUT_JSON /rlcd-manifest MODEL | DATASET | OUTPUT_DIR | MANIFEST /rlcd-run MANIFEST | RUNNER_ARGV_JSON")
+    print("          /learning-eval CASES_JSON | VERSION /perception-status /image-inspect PATH /audio-inspect PATH /audio-transcribe PATH /video-frames PATH")
+    print("          /frontier-list /frontier-propose JSON /agents-independent OBJECTIVE /audit-status")
     print("          /review create|add|screen|resolve|finalize|stage|adjudicate-stage|synthesize|show /citation-check /citation-review /citation-resolve /experiment analyze|ingest-raw /reviewer register /review-method")
 
     while True:
@@ -89,6 +105,11 @@ def main() -> int:
         if not user_text:
             continue
         lower = user_text.casefold()
+        if audit_integrity["valid"]:
+            try:
+                audit.append("console.command", {"command": lower.split(maxsplit=1)[0]})
+            except Exception:
+                logging.exception("Could not append audit command event")
 
         if lower in {"/quit", "/exit"}:
             print("AETHER session closed.")
@@ -118,6 +139,197 @@ def main() -> int:
                 print(json.dumps(report["counts"], indent=2))
                 print(f"AETHER > Acceptance complete: {report['complete']}")
                 print(f"AETHER > Report: {report.get('output_path', 'not saved')}")
+                continue
+
+
+            if lower == "/audit-status":
+                print(json.dumps(audit.verify(), indent=2))
+                continue
+
+            if lower == "/goal-discover":
+                manager = GoalManager(store)
+                candidates = manager.discover()
+                print(json.dumps([manager.serialize(item) for item in candidates], indent=2))
+                continue
+
+            if lower.startswith("/goal-schedule "):
+                fields = user_text[len("/goal-schedule "):].split("|", 1)
+                if len(fields) != 2:
+                    print("Usage: /goal-schedule INDEX | INTERVAL_SECONDS")
+                    continue
+                manager = GoalManager(store)
+                candidates = manager.discover()
+                index = int(fields[0].strip())
+                if not 0 <= index < len(candidates):
+                    print("AETHER > Candidate index is out of range. Run /goal-discover again.")
+                    continue
+                candidate = candidates[index]
+                print(json.dumps(manager.serialize(candidate), indent=2))
+                if input("Schedule this low-risk goal once? Type YES: ").strip() != "YES":
+                    print("AETHER > Scheduling cancelled.")
+                    continue
+                schedule_id = manager.schedule(
+                    candidate, interval_seconds=int(fields[1].strip()),
+                    approved=True, max_runs=1,
+                )
+                print(f"AETHER > Bounded read-only schedule created: {schedule_id}")
+                continue
+
+            if lower == "/sandbox-status":
+                print(json.dumps(DockerSandbox(Path.cwd()).availability(), indent=2))
+                continue
+
+            if lower.startswith("/self-improve-test-sandbox "):
+                if store.emergency_stop_enabled():
+                    print("AETHER > Emergency stop is active; candidate evaluation is blocked.")
+                    continue
+                experiment_id = user_text[len("/self-improve-test-sandbox "):].strip()
+                if input(
+                    "This runs baseline and candidate tests in a no-network Docker sandbox. "
+                    "Type TEST-SANDBOX to approve: "
+                ).strip() != "TEST-SANDBOX":
+                    print("AETHER > Evaluation cancelled.")
+                    continue
+                engine.resources.check("sandboxed candidate tests")
+                engineer = SelfEngineer(Path.cwd(), engine.registry.get(settings.models.provider),
+                                        settings.limits.tool_timeout_seconds * 5)
+                result = engineer.evaluate_sandboxed(experiment_id, approved=True)
+                print(json.dumps(result, indent=2))
+                continue
+
+            if lower == "/perception-status":
+                print(json.dumps(PerceptionSuite(
+                    vosk_model_path=settings.voice.vosk_model_path
+                ).capabilities(), indent=2))
+                continue
+
+            if lower.startswith("/audio-inspect "):
+                path = user_text[len("/audio-inspect "):].strip()
+                result = PerceptionSuite().audio.inspect_wav(path)
+                print(json.dumps({"status": result.status, **result.data,
+                                  "limitations": result.limitations}, indent=2))
+                continue
+
+            if lower.startswith("/audio-transcribe "):
+                path = user_text[len("/audio-transcribe "):].strip()
+                result = PerceptionSuite(
+                    vosk_model_path=settings.voice.vosk_model_path
+                ).audio.transcribe_wav(path)
+                print(json.dumps({"status": result.status, **result.data,
+                                  "limitations": result.limitations}, indent=2))
+                continue
+
+            if lower.startswith("/image-inspect "):
+                path = user_text[len("/image-inspect "):].strip()
+                result = PerceptionSuite().image.analyze(path)
+                print(json.dumps({"status": result.status, **result.data,
+                                  "limitations": result.limitations}, indent=2))
+                continue
+
+            if lower.startswith("/video-frames "):
+                path = user_text[len("/video-frames "):].strip()
+                output = Path("workspace") / "media" / Path(path).stem
+                result = PerceptionSuite().video.extract_frames(path, output)
+                print(json.dumps({"status": result.status, **result.data,
+                                  "limitations": result.limitations}, indent=2))
+                continue
+
+            if lower == "/frontier-list":
+                frontier = ResearchFrontier("data/frontier.jsonl")
+                print(json.dumps(frontier.list(), indent=2))
+                continue
+
+            if lower.startswith("/frontier-propose "):
+                payload = json.loads(user_text[len("/frontier-propose "):].strip())
+                result = ResearchFrontier("data/frontier.jsonl").propose(payload)
+                print(f"AETHER > Research frontier item recorded: {result['id']}")
+                continue
+
+            if lower.startswith("/rlcd-prepare "):
+                fields = user_text[len("/rlcd-prepare "):].split("|", 1)
+                if len(fields) != 2:
+                    print("Usage: /rlcd-prepare INPUT_JSONL | OUTPUT_JSON")
+                    continue
+                source = Path(fields[0].strip()).expanduser().resolve()
+                destination = Path(fields[1].strip()).expanduser().resolve()
+                root = Path.cwd().resolve()
+                if root not in source.parents or root not in destination.parents or not source.is_file():
+                    raise ValueError("RLCD dataset input and output must be project files")
+                rows = [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines()
+                        if line.strip()]
+                report = prepare_dataset(rows, destination)
+                print(json.dumps(report, indent=2))
+                continue
+
+            if lower.startswith("/rlcd-manifest "):
+                fields = user_text[len("/rlcd-manifest "):].split("|")
+                if len(fields) != 4:
+                    print("Usage: /rlcd-manifest MODEL | DATASET | OUTPUT_DIR | MANIFEST")
+                    continue
+                config = RLCDRunConfig(
+                    model_id=fields[0].strip(), dataset_path=fields[1].strip(),
+                    output_dir=fields[2].strip(),
+                )
+                manifest = RLCDTrainingAdapter(Path.cwd()).create_manifest(config, fields[3].strip())
+                print(json.dumps(manifest, indent=2))
+                continue
+
+            if lower.startswith("/rlcd-run "):
+                fields = user_text[len("/rlcd-run "):].split("|", 1)
+                if len(fields) != 2:
+                    print("Usage: /rlcd-run MANIFEST | RUNNER_ARGV_JSON")
+                    continue
+                argv = json.loads(fields[1])
+                if not isinstance(argv, list):
+                    raise ValueError("Runner command must be a JSON argument array")
+                if input(
+                    "This launches external RLCD training. Confirm external GPU is provisioned. "
+                    "Type RUN-RLCD: "
+                ).strip() != "RUN-RLCD":
+                    print("AETHER > Training not started.")
+                    continue
+                result = RLCDTrainingAdapter(Path.cwd()).run(
+                    fields[0].strip(), argv, approved=True,
+                    external_compute_confirmed=True,
+                )
+                print(json.dumps(result, indent=2))
+                continue
+
+            if lower.startswith("/learning-eval "):
+                fields = user_text[len("/learning-eval "):].split("|", 1)
+                if len(fields) != 2:
+                    print("Usage: /learning-eval CASES_JSON | SYSTEM_VERSION")
+                    continue
+                cases_raw = json.loads(fields[0])
+                cases = [LearningCase(**item) for item in cases_raw]
+                provider = engine.provider()
+                def execute_learning_case(task: str) -> str:
+                    return provider.chat([
+                        {"role": "system", "content": "Solve the supplied held-out task. Return only the requested result; do not invent tool execution."},
+                        {"role": "user", "content": task},
+                    ])
+                report = evaluate_executor(
+                    cases, execute_learning_case, system_version=fields[1].strip()
+                )
+                digest = save_evaluation(report, "reports/learning/latest.json")
+                print(json.dumps({"report": "reports/learning/latest.json",
+                                  "sha256": digest, "metrics": report["metrics"]}, indent=2))
+                continue
+
+            if lower.startswith("/agents-independent "):
+                objective = user_text[len("/agents-independent "):].strip()
+                provider_names = engine.registry.names()
+                if len(provider_names) < 3:
+                    print("AETHER > Configure three distinct provider endpoints to enable independent workers.")
+                    continue
+                role_providers = {
+                    role: engine.registry.get(name)
+                    for role, name in zip(("researcher", "planner", "critic"), provider_names[:3])
+                }
+                outputs = MultiAgentCoordinator(
+                    engine.provider(), store, role_providers=role_providers
+                ).run_independent(objective)
+                print(json.dumps([item.__dict__ for item in outputs], indent=2))
                 continue
 
             if lower == "/resources":
