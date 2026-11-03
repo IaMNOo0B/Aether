@@ -4,7 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
-from typing import Protocol
+from typing import Callable, Protocol
+import time
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -26,6 +27,19 @@ class ModelDescriptor:
     provider: str
     model: str
     enabled: bool = True
+    capabilities: tuple[str, ...] = ("chat",)
+    context_window: int | None = None
+    supports_tools: bool = False
+    supports_vision: bool = False
+    privacy: str = "provider-defined"
+
+    def __post_init__(self) -> None:
+        if not self.provider.strip() or not self.model.strip():
+            raise ValueError("Model provider and identifier are required")
+        if self.context_window is not None and self.context_window < 1:
+            raise ValueError("Model context_window must be positive")
+        if self.privacy not in {"local", "remote", "provider-defined"}:
+            raise ValueError("Model privacy must be local, remote, or provider-defined")
 
 
 class ProviderRegistry:
@@ -156,11 +170,23 @@ class ProviderChain:
 
     name = "provider_chain"
 
-    def __init__(self, providers: list[tuple[str, ChatProvider]]):
+    def __init__(
+        self, providers: list[tuple[str, ChatProvider]], *,
+        max_attempts: int = 2, backoff_seconds: float = 0.25,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
         if not providers:
             raise ValueError("Provider chain requires at least one configured provider")
+        if not 1 <= max_attempts <= 5:
+            raise ValueError("Provider max_attempts must be between 1 and 5")
+        if not 0 <= backoff_seconds <= 10:
+            raise ValueError("Provider backoff_seconds must be between 0 and 10")
         self.providers = tuple(providers)
+        self.max_attempts = max_attempts
+        self.backoff_seconds = backoff_seconds
+        self._sleep = sleep
         self.last_provider: str | None = None
+        self.last_attempts: dict[str, int] = {}
 
     def is_available(self) -> bool:
         for _, provider in self.providers:
@@ -173,13 +199,18 @@ class ProviderChain:
 
     def chat(self, messages: list[dict[str, str]]) -> str:
         failures = []
+        self.last_attempts = {}
         for label, provider in self.providers:
-            try:
-                answer = provider.chat(messages)
-                self.last_provider = label
-                return answer
-            except ModelUnavailable as exc:
-                failures.append(f"{label}: {str(exc)[:400]}")
+            for attempt in range(1, self.max_attempts + 1):
+                self.last_attempts[label] = attempt
+                try:
+                    answer = provider.chat(messages)
+                    self.last_provider = label
+                    return answer
+                except ModelUnavailable as exc:
+                    failures.append(f"{label} attempt {attempt}: {str(exc)[:400]}")
+                    if attempt < self.max_attempts and self.backoff_seconds:
+                        self._sleep(self.backoff_seconds * (2 ** (attempt - 1)))
         self.last_provider = None
         raise ModelUnavailable(
             "All configured model providers failed. " + " | ".join(failures)
