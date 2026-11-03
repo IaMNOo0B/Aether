@@ -32,7 +32,7 @@ def test_calibration_benchmark_uses_test_split_and_train_only_baseline():
 def test_calibration_benchmark_requires_all_disjoint_splits_and_unique_ids():
     benchmark = CalibrationBenchmark()
     with pytest.raises(ValueError, match="train, validation and test"):
-        benchmark.run(cases()[:-1], model_id="m", dataset_id="d", seed=1)
+        benchmark.run(cases()[:5], model_id="m", dataset_id="d", seed=1)
     duplicate = cases()
     duplicate[-1] = CalibrationCase("tr1", "test", "general", 0.2, False, "dataset-v1")
     with pytest.raises(ValueError, match="unique"):
