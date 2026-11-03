@@ -47,14 +47,38 @@ class ProviderRegistry:
 
     def __init__(self) -> None:
         self._providers: dict[str, ChatProvider] = {}
+        self._descriptors: dict[str, ModelDescriptor] = {}
 
-    def register(self, name: str, provider: ChatProvider) -> None:
+    def register(
+        self, name: str, provider: ChatProvider,
+        descriptor: ModelDescriptor | None = None,
+    ) -> None:
         key = name.strip().lower()
         if not key:
             raise ValueError("Provider name cannot be empty")
         if key in self._providers:
             raise ValueError(f"Provider already registered: {key}")
         self._providers[key] = provider
+        if descriptor is None:
+            model = str(getattr(provider, "model", "unknown"))
+            privacy = "local" if isinstance(provider, OllamaProvider) else "remote"
+            descriptor = ModelDescriptor(
+                provider=key, model=model, privacy=privacy,
+                supports_vision=callable(getattr(provider, "analyze_image", None)),
+            )
+        if descriptor.provider.strip().lower() != key:
+            raise ValueError("Model descriptor provider must match the registry key")
+        self._descriptors[key] = descriptor
+
+    def descriptor(self, name: str) -> ModelDescriptor:
+        key = name.strip().lower()
+        try:
+            return self._descriptors[key]
+        except KeyError as exc:
+            raise ModelUnavailable(f"No model descriptor registered for: {key}") from exc
+
+    def descriptors(self) -> tuple[ModelDescriptor, ...]:
+        return tuple(self._descriptors[key] for key in sorted(self._descriptors))
 
     def get(self, name: str) -> ChatProvider:
         key = name.strip().lower()
