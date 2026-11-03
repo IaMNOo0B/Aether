@@ -129,7 +129,11 @@ refresh();setInterval(refresh,5000);
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("Referrer-Policy", "no-referrer")
-                self.send_header("Content-Security-Policy", "default-src 'self'; object-src 'none'; base-uri 'none'")
+                self.send_header(
+                    "Content-Security-Policy",
+                    "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+                    "connect-src 'self'; object-src 'none'; base-uri 'none'",
+                )
                 self.end_headers()
                 self.wfile.write(payload)
 
