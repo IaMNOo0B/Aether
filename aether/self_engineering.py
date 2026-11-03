@@ -61,6 +61,18 @@ class SelfEngineer:
                 break
         return {"root": str(self.root), "python_files": files}
 
+    def _safe_target(self, relative: str) -> Path:
+        candidate = self.root / relative
+        cursor = candidate
+        while cursor != self.root:
+            if cursor.is_symlink():
+                raise ValueError(f"Patch target traverses a symlink: {relative}")
+            cursor = cursor.parent
+        resolved = candidate.resolve()
+        if self.root not in resolved.parents:
+            raise ValueError(f"Patch target escaped project root: {relative}")
+        return resolved
+
     def _target_file_hashes(self, patch: str) -> dict[str, str | None]:
         snapshots: dict[str, str | None] = {}
         for block in patch.split("diff --git ")[1:]:
@@ -72,11 +84,7 @@ class SelfEngineer:
                 continue
             raw = raw.split("\t", 1)[0]
             normalized = raw[2:] if raw.startswith(("a/", "b/")) else raw
-            path = (self.root / normalized).resolve()
-            if self.root not in path.parents:
-                raise PatchRejected(f"Patch target escaped project root: {normalized}")
-            if path.is_symlink():
-                raise PatchRejected(f"Patch target is a symlink: {normalized}")
+            path = self._safe_target(normalized)
             snapshots[normalized] = (
                 sha256(path.read_bytes()).hexdigest() if path.is_file() else None
             )
@@ -87,9 +95,7 @@ class SelfEngineer:
         if not isinstance(expected, dict) or not expected:
             raise ValueError("Experiment lacks a proposal-time source snapshot; create a new proposal")
         for relative, original_hash in expected.items():
-            path = (self.root / relative).resolve()
-            if self.root not in path.parents or path.is_symlink():
-                raise ValueError(f"Patch target is no longer a safe project file: {relative}")
+            path = self._safe_target(relative)
             current_hash = sha256(path.read_bytes()).hexdigest() if path.is_file() else None
             if current_hash != original_hash:
                 raise ValueError(f"Project file changed since proposal; refusing stale integration: {relative}")
