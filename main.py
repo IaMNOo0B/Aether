@@ -25,7 +25,7 @@ from aether.frontier import ResearchFrontier
 from aether.perception import PerceptionSuite
 from aether.reasoning import evaluate_proposition, truth_table, solve_linear_system, rank_hypotheses
 from aether.world_scenarios import simulate_scenarios
-from aether.rlcd_training import RLCDRunConfig, RLCDTrainingAdapter, prepare_dataset
+from aether.rlcd_training import RLCDExperimentConfig, RLCDRunConfig, RLCDTrainingAdapter, prepare_dataset
 from aether.sandbox import DockerSandbox
 from aether.research import ResearchError, ResearchSource, Researcher
 from aether.research_quality import ResearchWorkflow
@@ -96,6 +96,7 @@ def main() -> int:
     print("          /review create|add|screen|resolve|finalize|stage|adjudicate-stage|synthesize|show /citation-check /citation-review /citation-resolve /experiment analyze|ingest-raw /reviewer register /review-method")
     print("          /goal-discover /goal-schedule INDEX | SECONDS /sandbox-status /self-improve-test-sandbox ID")
     print("          /rlcd-prepare INPUT_JSONL | OUTPUT_JSON /rlcd-manifest MODEL | DATASET | OUTPUT_DIR | MANIFEST /rlcd-run MANIFEST | RUNNER_ARGV_JSON")
+    print("          /rlcd-plan TASK | MODEL | SEEDS_CSV | PLAN_JSON /rlcd-run-plan PLAN_JSON | UPSTREAM_CHECKOUT")
     print("          /skill-benchmark SKILL_ID | CASES_JSON /perception-status /image-inspect PATH /audio-inspect PATH /audio-transcribe PATH /video-frames PATH")
     print("          /frontier-list /frontier-propose JSON /frontier-update ID | STATUS | EVIDENCE | REVIEWER | LIMITATIONS | RESULT")
     print("          /agents-independent OBJECTIVE /audit-status /logic EXPR | VALUES_JSON /truth-table EXPR /solve-linear MATRIX_JSON | VECTOR_JSON /hypotheses JSON /world-scenarios WORLD | ACTION_ID | TRIALS | SEED")
@@ -324,6 +325,48 @@ def main() -> int:
                 payload = json.loads(user_text[len("/frontier-propose "):].strip())
                 item = ResearchFrontier("data/frontier.jsonl").propose(payload)
                 print(f"AETHER > Frontier research item recorded: {item['id']}")
+                continue
+
+
+            if lower.startswith("/rlcd-plan "):
+                fields = user_text[len("/rlcd-plan "):].split("|")
+                if len(fields) != 4:
+                    print("Usage: /rlcd-plan TASK | MODEL | SEEDS_CSV | PLAN_JSON")
+                    continue
+                config = RLCDExperimentConfig(
+                    task=fields[0].strip(), model_id=fields[1].strip(),
+                    seeds=tuple(int(value.strip()) for value in fields[2].split(",") if value.strip()),
+                )
+                plan = RLCDTrainingAdapter(Path.cwd()).create_two_stage_plan(
+                    config, fields[3].strip()
+                )
+                print(json.dumps({
+                    "plan_id": plan["plan_id"], "upstream_commit": plan["upstream_commit"],
+                    "runs": sum(1 + len(item["stage2"]) for item in plan["runs"]),
+                    "seeds": config.seeds, "status": plan["status"],
+                    "plan_path": fields[3].strip(),
+                    "hardware_requirement": plan["hardware_requirement"],
+                }, indent=2))
+                continue
+
+            if lower.startswith("/rlcd-run-plan "):
+                fields = user_text[len("/rlcd-run-plan "):].split("|", 1)
+                if len(fields) != 2:
+                    print("Usage: /rlcd-run-plan PLAN_JSON | UPSTREAM_CHECKOUT")
+                    continue
+                if input(
+                    "This runs the pinned OpenJev two-stage RLCD experiment and four forked controls "
+                    "per seed. It requires the exact upstream checkout, cached pinned model/data, "
+                    "and a CUDA GPU with at least 48 GiB VRAM. Type RUN-RLCD-PLAN: "
+                ).strip() != "RUN-RLCD-PLAN":
+                    print("AETHER > RLCD experiment not started.")
+                    continue
+                engine.resources.check("external RLCD experiment")
+                report = RLCDTrainingAdapter(Path.cwd()).run_two_stage_plan(
+                    fields[0].strip(), fields[1].strip(),
+                    approved=True, external_compute_confirmed=True,
+                )
+                print(json.dumps(report, indent=2))
                 continue
 
             if lower.startswith("/rlcd-prepare "):
