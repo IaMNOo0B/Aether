@@ -6,7 +6,7 @@ import pytest
 from aether.audit import AuditJournal
 from aether.goals import GoalManager
 from aether.perception import AudioPerception, PerceptionSuite
-from aether.rlcd_training import RLCDConfigurationError, RLCDRunConfig, RLCDTrainingAdapter, prepare_dataset
+from aether.rlcd_training import RLCDConfigurationError, RLCDExperimentConfig, RLCDRunConfig, RLCDTrainingAdapter, prepare_dataset
 from aether.sandbox import DockerSandbox
 
 
@@ -178,3 +178,42 @@ def test_rlcd_small_but_valid_dataset_keeps_each_label_in_every_split(tmp_path):
     assert all(payload["splits"][split] for split in ("train", "validation", "test"))
     for split in ("train", "validation", "test"):
         assert {row["label"] for row in payload["splits"][split]} == {"0", "1"}
+
+
+def test_exact_rlcd_two_stage_plan_matches_published_fork_structure(tmp_path):
+    adapter = RLCDTrainingAdapter(tmp_path)
+    plan = adapter.create_two_stage_plan(
+        RLCDExperimentConfig(task="mmlupro", seeds=(17, 23, 29)),
+        "plans/rlcd.json",
+    )
+    assert plan["upstream_commit"] == adapter.UPSTREAM_COMMIT
+    assert plan["model_revision"] == "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e"
+    assert plan["dataset"]["revision"] == "b189ec765aa7ed75c8acfea42df31fdae71f97be"
+    assert len(plan["runs"]) == 3
+    assert sum(1 + len(item["stage2"]) for item in plan["runs"]) == 15
+    first = plan["runs"][0]
+    stage1 = first["stage1"]["argv"]
+    assert "--no-score-function" in stage1
+    assert "--diversity-weight" in stage1 and stage1[stage1.index("--diversity-weight") + 1] == "0"
+    assert stage1[stage1.index("--kl-beta") + 1] == "0.04"
+    assert [item["arm"] for item in first["stage2"]] == [
+        "fork_rl", "fork_ro", "fork_anchor", "fork_grpo"
+    ]
+    rlcd = first["stage2"][0]["argv"]
+    assert rlcd[rlcd.index("--seed") + 1] == "1017"
+    assert rlcd[rlcd.index("--sf-coef") + 1] == "0.3"
+    assert rlcd[rlcd.index("--init-checkpoint") + 1] == first["stage1"]["checkpoint"]
+
+
+def test_rlcd_two_stage_plan_detects_post_creation_modification(tmp_path):
+    adapter = RLCDTrainingAdapter(tmp_path)
+    adapter.create_two_stage_plan(RLCDExperimentConfig(seeds=(17,)), "plans/rlcd.json")
+    path = tmp_path / "plans" / "rlcd.json"
+    payload = json.loads(path.read_text())
+    payload["runs"][0]["stage2"][0]["argv"].append("--no-score-function")
+    path.write_text(json.dumps(payload))
+    with pytest.raises(RLCDConfigurationError, match="modified"):
+        adapter.run_two_stage_plan(
+            "plans/rlcd.json", "external/openjev-rlcd",
+            approved=True, external_compute_confirmed=True,
+        )
