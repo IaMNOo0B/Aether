@@ -60,6 +60,13 @@ class OpenAICompatibleVisionProvider:
             raise ValueError("Image bytes must be non-empty and within the configured size limit")
         if mime_type not in self.ALLOWED_MIME:
             raise ValueError("Only PNG, JPEG and WebP images are supported")
+        signatures = {
+            "image/png": image.startswith(b"\\x89PNG\\r\\n\\x1a\\n"),
+            "image/jpeg": image.startswith(b"\\xff\\xd8\\xff"),
+            "image/webp": len(image) >= 12 and image[:4] == b"RIFF" and image[8:12] == b"WEBP",
+        }
+        if not signatures[mime_type]:
+            raise ValueError("Image bytes do not match the declared MIME type")
         if not prompt.strip():
             raise ValueError("Image analysis prompt is required")
         encoded = base64.b64encode(image).decode("ascii")
