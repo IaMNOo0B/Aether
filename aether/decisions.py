@@ -105,6 +105,7 @@ class DecisionManager:
         comparable = [
             item for item in self.store.list_decisions(resolved_only=True, limit=10000)
             if item["metadata"].get("domain") == category
+            and item["metadata"].get("evaluation_split", "operational") == "operational"
             and min(9, int(max(
                 item["probability"], 1 - item["probability"]
             ) * 10)) == band
@@ -139,8 +140,16 @@ class DecisionManager:
             wilson_lower_bound=lower, action=action, reason=reason,
         )
 
-    def metrics(self, domain: str | None = None) -> CalibrationReport:
+    def metrics(
+        self, domain: str | None = None, evaluation_split: str = "operational",
+    ) -> CalibrationReport:
+        if evaluation_split not in {"train", "validation", "held_out", "operational"}:
+            raise ValueError("Unknown evaluation split")
         records = self.store.list_decisions(resolved_only=True, limit=10000)
+        records = [
+            item for item in records
+            if item["metadata"].get("evaluation_split", "operational") == evaluation_split
+        ]
         if domain is not None:
             category = domain.strip().casefold()
             records = [
