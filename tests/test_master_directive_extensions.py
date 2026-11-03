@@ -261,3 +261,26 @@ def test_goal_discovery_includes_unverified_self_model_capabilities(tmp_path):
                               state="implemented_unverified")
     candidates = GoalManager(store, model).discover()
     assert any(item.source == "capability:test.capability" for item in candidates)
+
+
+def test_failure_intelligence_never_auto_retries_and_checks_side_effect_state(tmp_path):
+    from aether.failure_intelligence import FailureAnalyzer
+
+    analyzer = FailureAnalyzer(tmp_path / "failures.jsonl")
+    safe = analyzer.analyze(
+        "request timed out", operation="read_status",
+        idempotent=True, side_effect_state="not_started",
+    )
+    unsafe = analyzer.analyze(
+        "request timed out", operation="send_payment",
+        idempotent=False, side_effect_state="unknown",
+    )
+    auth = analyzer.analyze("401 invalid API key", operation="provider_call")
+    assert safe.retryable is True
+    assert safe.automatic_retry_allowed is False
+    assert unsafe.retryable is False and unsafe.human_intervention_required
+    assert auth.category == "authentication"
+    analyzer.record(safe)
+    analyzer.record(unsafe)
+    assert analyzer.trends()["total"] == 2
+    assert analyzer.trends()["automatic_retries"] == 0
