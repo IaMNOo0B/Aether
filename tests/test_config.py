@@ -207,14 +207,17 @@ max_workers = 3
 
 def test_parallel_agent_routes_reject_duplicate_provider_keys(tmp_path):
     source = Path("config/settings.toml").read_text(encoding="utf-8")
-    source += """
-[agents]
-parallel_enabled = true
-researcher_provider = "ollama"
-planner_provider = "ollama"
-critic_provider = "fallback_1"
-verifier_provider = "fallback_2"
-"""
+    source = source.replace(
+        'parallel_enabled = false', 'parallel_enabled = true'
+    ).replace(
+        'researcher_provider = ""', 'researcher_provider = "ollama"'
+    ).replace(
+        'planner_provider = ""', 'planner_provider = "ollama"'
+    ).replace(
+        'critic_provider = ""', 'critic_provider = "fallback_1"'
+    ).replace(
+        'verifier_provider = ""', 'verifier_provider = "fallback_2"'
+    )
     config = tmp_path / "settings.toml"
     config.write_text(source, encoding="utf-8")
     with pytest.raises(ValueError, match="four distinct"):
